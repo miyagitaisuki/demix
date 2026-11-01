@@ -1078,6 +1078,13 @@ def make_import_template():
                     "Lời giải (tùy chọn). Thứ tự cột tùy ý. Furigana viết dạng {試験|しけん}. "
                     "TN: mỗi phương án một dòng bắt đầu bằng A. B. C. D.; # đầu phương án = cố định vị trí. "
                     "DS: mỗi ý một dòng bắt đầu a) b) c); đáp án Đ S Đ S. DT: nhiều đáp án cách nhau bằng |.")
+    d.add_paragraph("Hướng dẫn cho AI khi soạn câu hỏi: mỗi câu là một dòng trong bảng; không ghi đáp án hay "
+                    "lời giải vào cột Nội dung; giữ đúng tên tiêu đề cột như trên; Mã chương phải lấy từ danh sách "
+                    "chương của giáo trình đích; Loại chỉ ghi TN, DS, DT hoặc TL; Mức chỉ ghi số 1 đến 5; "
+                    "TN ít nhất 2 phương án và Đáp án là một chữ cái (A, B, C…); DS là các ý a) b) c) và Đáp án "
+                    "gồm Đ/S đủ số ý; DT ghi Đáp án là từ cần điền; TL để trống Đáp án; "
+                    "Đoạn văn chỉ điền khi câu thuộc một đoạn, và các câu cùng đoạn phải ghi giống hệt nhau; "
+                    "không thêm cột, không gộp ô, không để dòng trống giữa các câu.")
     t = d.add_table(rows=1, cols=7)
     t.style = "Table Grid"
     for c, h in zip(t.rows[0].cells, ["Mã chương", "Nội dung", "Đáp án", "Loại", "Mức", "Đoạn văn", "Lời giải"]):
