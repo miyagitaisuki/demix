@@ -72,8 +72,8 @@ Lưu trong `data/qbank.db` (SQLite). Sao lưu bằng cách sao chép file này.
 
 ### 1. Logic chức năng
 **Nên làm sớm**
-- Lưu cấu hình đề thành "cấu trúc đề" có tên, dùng lại cho kỳ sau (chỉ cần chọn và xuất).
-- Gắn thông tin đề (tên HP, mã HP, số tín chỉ) vào học phần, tự điền khi xuất.
+- ✅ Lưu cấu trúc đề có tên, dùng lại cho kỳ sau (chỉ cần chọn và xuất). *Lưu trong tab Xuất đề; không lưu mã đề và thông tin đề.*
+- ✅ Gắn thông tin đề (tên HP, mã HP, số tín chỉ, khóa, học kỳ, năm học, thời gian) vào học phần: chọn học phần trong tab Xuất đề để tự điền, bấm "Lưu thông tin này cho học phần" để ghi lại.
 - Lưu lịch sử các lần xuất: mã đề, ngày, cấu hình, danh sách câu. Tải lại đề cũ hoặc in lại đáp án.
 - Xem trước đề trên web, cho phép đổi một câu cụ thể mà không chọn lại toàn bộ.
 - Đoạn văn là đối tượng riêng có mã, các câu gắn vào đoạn (thay cho việc so khớp chữ giống hệt). Ma trận đề chọn được theo số đoạn.
@@ -95,14 +95,14 @@ Lưu trong `data/qbank.db` (SQLite). Sao lưu bằng cách sao chép file này.
 
 ### 3. Trải nghiệm người dùng (UX)
 **Giảm thao tác**
-- Phím tắt: `Ctrl+S` lưu câu, `N` thêm câu mới, `/` vào ô tìm kiếm.
-- Nhớ lựa chọn gần nhất: học phần, giáo trình đang lọc, thông tin đề.
+- ✅ Phím tắt: `Ctrl+S` lưu câu (khi đang sửa), `N` thêm câu mới, `/` vào ô tìm kiếm.
+- ✅ Nhớ thông tin đề và mẫu xuất đề gần nhất (lưu trên trình duyệt). Còn lại: học phần, giáo trình đang lọc.
 - Nhập Word bằng kéo thả, xem trước các dòng sẽ nhập (dòng lỗi tô đỏ) trước khi xác nhận.
 
 **Giảm lỗi**
 - Thông báo dạng toast; lỗi nhập hiển thị thành bảng gồm số dòng, cột, lý do.
 - Hoàn tác sau khi xóa hoặc gộp câu (trong vài giây).
-- Kiểm tra trước khi xuất: thiếu câu, phần trống, chưa nhập mã HP hoặc năm học.
+- ✅ Kiểm tra trước khi xuất: chặn khi thiếu câu hoặc chưa chọn phần nào; hỏi xác nhận khi chưa nhập tên HP, mã HP hoặc năm học. *Phần trống: còn để làm.*
 - Tự sao lưu dữ liệu mỗi ngày vào `data/backup/`, giữ 7 bản gần nhất.
 
 **Dễ làm quen**
@@ -117,7 +117,7 @@ Lưu trong `data/qbank.db` (SQLite). Sao lưu bằng cách sao chép file này.
 ### Thứ tự đề xuất
 | Ưu tiên | Việc | Lý do |
 |---|---|---|
-| 1 | Lưu cấu trúc đề và thông tin học phần | Tiết kiệm thao tác nhất mỗi kỳ thi |
+| 1 | ✅ Lưu cấu trúc đề và thông tin học phần *(lịch sử xuất: còn để làm)* |
 | 2 | Xem trước và đổi từng câu | Giảm xuất sai, phải làm lại |
 | 3 | Đoạn văn là đối tượng riêng | Đề tiếng Nhật dùng đoạn văn nhiều |
 | 4 | Bố cục hai cột và form dạng panel | Thao tác hằng ngày nhanh hơn |
