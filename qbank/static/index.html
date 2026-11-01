@@ -35,6 +35,15 @@
   .tree > ul { padding-left:0; }
   .tree li { margin:3px 0; }
   .sub { color:var(--mut); font-size:12px; }
+  .twocol { display:flex; gap:16px; align-items:flex-start; }
+  .side { width:250px; flex:0 0 250px; border-right:1px solid var(--line); padding-right:12px; max-height:82vh; overflow:auto; position:sticky; top:8px; }
+  .main-col { flex:1; min-width:0; }
+  .tn { padding:4px 6px; border-radius:6px; cursor:pointer; margin:1px 0; }
+  .tn:hover { background:var(--bg); }
+  .tn.on { background:#e0e7ff; color:#3730a3; }
+  .tn.l2 { padding-left:18px; } .tn.l3 { padding-left:32px; }
+  .tn .cnt { color:var(--mut); font-size:12px; }
+  @media (max-width:800px) { .twocol { flex-direction:column; } .side { width:auto; flex:none; border-right:0; max-height:none; position:static; } }
   #toast { position:fixed; bottom:16px; right:16px; background:#0f172a; color:#fff; padding:10px 14px; border-radius:8px; display:none; max-width:420px; z-index:10; box-shadow:0 4px 12px rgba(0,0,0,.2); }
   #toast.err { background:#b91c1c; }
 </style>
@@ -53,6 +62,9 @@
 
 <!-- ============ NGÂN HÀNG ============ -->
 <section id="bank" class="on">
+<div class="twocol">
+<aside class="side" id="bankTree"></aside>
+<div class="main-col">
   <div class="row">
     <select id="fCourse" title="Học phần"></select>
     <select id="fTextbook" title="Giáo trình"></select>
@@ -89,6 +101,8 @@
     <thead><tr><th style="width:28px"></th><th>Mã câu</th><th>Học phần / Giáo trình / Chương</th><th>Bloom</th><th>Loại</th><th>Nội dung</th><th>Đáp án</th><th></th></tr></thead>
     <tbody id="qBody"></tbody>
   </table>
+</div>
+</div>
 </section>
 
 <!-- ============ CẤU TRÚC ============ -->
@@ -293,6 +307,7 @@ async function loadQuestions() {
   const list = await api("/api/questions?" + p);
   $("#bulkChap").innerHTML = `<option value="">Giữ chương</option>` + chapterOptions("");
   QMAP = Object.fromEntries(list.map(x => [x.id, x]));
+  renderBankTree();
   $("#qBody").innerHTML = list.map(q => `
     <tr>
       <td><input type="checkbox" class="qsel" value="${q.id}" ${SEL.has(q.id) ? "checked" : ""} onchange="toggleSel(${q.id}, this.checked)"></td>
@@ -305,6 +320,42 @@ async function loadQuestions() {
       <td style="white-space:nowrap"><button class="g" onclick="editQ(${q.id})">Sửa</button>
           <button class="d" onclick="delQ(${q.id})">Xóa</button></td>
     </tr>`).join("") || `<tr><td colspan="8" class="msg">Chưa có câu hỏi nào. Nhấn “+ Câu mới” hoặc nhập từ .docx.</td></tr>`;
+}
+
+// cây học phần / giáo trình / chương ở bên trái; bấm để lọc
+function renderBankTree() {
+  const cId = $("#fCourse").value, tId = $("#fTextbook").value, chId = $("#fChapter").value;
+  const total = (ids) => TREE.chapters.filter(c => ids(c)).reduce((a, c) => a + c.count, 0);
+  const row = (cls, label, cnt, action) =>
+    `<div class="tn ${cls}" onclick="${action}"><span>${label}</span> <span class="cnt">${cnt}</span></div>`;
+  let html = row(!cId ? "on" : "", "Tất cả học phần", total(() => true), "pickNav('all')");
+  for (const c of TREE.courses) {
+    html += row(`l1 ${c.id == cId && !tId && !chId ? "on" : ""}`, `<b>${esc(c.name)}</b>`,
+                total(ch => TREE.textbooks.some(t => t.id == ch.textbook_id && t.course_id == c.id)), `pickNav('course',${c.id})`);
+    for (const t of TREE.textbooks.filter(t => t.course_id == c.id)) {
+      html += row(`l2 ${t.id == tId && !chId ? "on" : ""}`, esc(t.name),
+                  total(ch => ch.textbook_id == t.id), `pickNav('textbook',${t.id})`);
+      for (const ch of TREE.chapters.filter(ch => ch.textbook_id == t.id)) {
+        html += row(`l3 ${ch.id == chId ? "on" : ""}`, `${esc(ch.code)}${ch.title ? " - " + esc(ch.title) : ""}`,
+                    ch.count, `pickNav('chapter',${ch.id})`);
+      }
+    }
+  }
+  $("#bankTree").innerHTML = html;
+}
+function pickNav(kind, id) {
+  if (kind === "all") { $("#fCourse").value = ""; fillTextbookFilter(); $("#fTextbook").value = ""; fillChapterFilter(); }
+  else if (kind === "course") { $("#fCourse").value = id; fillTextbookFilter(); $("#fTextbook").value = ""; fillChapterFilter(); }
+  else if (kind === "textbook") {
+    const t = TREE.textbooks.find(x => x.id == id);
+    $("#fCourse").value = t.course_id; fillTextbookFilter(); $("#fTextbook").value = id; fillChapterFilter();
+  } else {
+    const ch = TREE.chapters.find(x => x.id == id);
+    const t = TREE.textbooks.find(x => x.id == ch.textbook_id);
+    $("#fCourse").value = t.course_id; fillTextbookFilter(); $("#fTextbook").value = t.id; fillChapterFilter();
+    $("#fChapter").value = id;
+  }
+  loadQuestions();
 }
 
 function chapterOptions(selected) {
@@ -687,6 +738,7 @@ async function loadExport() {
   $("#keyTpl").innerHTML = tpls.map(t => `<option ${t === "dap_an_chuan.docx" ? "selected" : ""}>${esc(t)}</option>`).join("");
   $("#xCourse").innerHTML = `<option value="">Tất cả</option>` + TREE.courses.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join("");
   $("#metaCourse").innerHTML = `<option value="">— chọn học phần —</option>` + TREE.courses.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join("");
+  await loadPassages();
   restoreForm();  // sau khi đã có danh sách mẫu, để giữ lại lựa chọn của lần trước
   await loadConfigs();
   if (!$("#sections").children.length) DEFAULT_PARTS.forEach(([t, q]) => addSection(t, q));
@@ -761,6 +813,9 @@ function readSections() {
     shuffle: card.querySelector(".ss").checked,
     matrix: [...card.querySelectorAll(".cell")]
       .map(i => ({ chapter_id: +i.dataset.ch, bloom: +i.dataset.b, n: +i.value || 0 })).filter(x => x.n > 0),
+    passages: [...card.querySelectorAll(".prow")]
+      .map(r => ({ chapter_id: +r.querySelector(".pch").value, n: +r.querySelector(".pn").value || 0 }))
+      .filter(x => x.n > 0 && x.chapter_id),
   }));
 }
 async function saveConfig() {
@@ -793,6 +848,7 @@ function loadConfig() {
       const el = card.querySelector(`.cell[data-ch="${m.chapter_id}"][data-b="${m.bloom}"]`);
       if (el) el.value = m.n;
     }
+    for (const ps of s.passages || []) addPassRow(card, ps.chapter_id, ps.n);
   }
   if (cfg.template) $("#tpl").value = cfg.template;
   if (cfg.key_template) $("#keyTpl").value = cfg.key_template;
@@ -842,9 +898,28 @@ function addSection(title = "", qtype = "") {
           ${Object.keys(BLOOM).map(k =>
             `<td class="num"><input class="n cell" data-ch="${c.id}" data-b="${k}" data-have="${c.counts[k] || 0}" value="0" oninput="checkCell(this)"></td>`).join("")}
         </tr>`).join("") || `<tr><td class="msg">Chưa có chương nào.</td></tr>`}</tbody>
-    </table>`;
+    </table>
+    <div class="row pblock" style="margin-top:8px"><b>Theo đoạn văn:</b> <span class="sub">lấy đủ số đoạn của chương, mỗi đoạn lấy mọi câu phù hợp</span>
+      <button class="g" onclick="addPassRow(this.closest('.sec'))">+ Thêm dòng đoạn</button></div>
+    <div class="prows"></div>`;
   $("#sections").appendChild(div);
   filterExportRows();
+}
+
+// dòng "lấy n đoạn của chương" trong một phần
+function addPassRow(card, chapterId = "", n = 1) {
+  const chapIds = [...new Set(PASSAGES.map(p => p.chapter_id))];
+  const opts = TREE.chapters.filter(c => chapIds.includes(c.id)).map(c => {
+    const cnt = PASSAGES.filter(p => p.chapter_id == c.id).length;
+    const tb = TREE.textbooks.find(t => t.id == c.textbook_id);
+    return `<option value="${c.id}" ${c.id == chapterId ? "selected" : ""}>${esc(courseName(tb ? tb.course_id : 0))} / ${esc(tb ? tb.name : "")} / ${esc(c.code)} (${cnt} đoạn)</option>`;
+  }).join("");
+  const div = document.createElement("div");
+  div.className = "row prow";
+  div.innerHTML = `<select class="pch">${opts || `<option value="">Chưa có đoạn văn nào</option>`}</select>
+    <label>Số đoạn:</label><input class="n pn" value="${n}" oninput="this.dataset.touched=1">
+    <button class="d" onclick="this.closest('.prow').remove()">Bỏ</button>`;
+  card.querySelector(".prows").appendChild(div);
 }
 
 function filterExportRows() {
@@ -868,7 +943,7 @@ function checkCell(i) {
 let PREVIEW = null;  // {sig, sections:[{items}]}: sig = sections lúc xem trước, để phát hiện thay đổi
 async function previewExam() {
   const sections = readSections();
-  if (!sections.some(s => s.matrix.length)) { $("#exportMsg").innerHTML = `<span class="err">Chưa nhập số câu cho phần nào.</span>`; return; }
+  if (!sections.some(s => s.matrix.length || s.passages.length)) { $("#exportMsg").innerHTML = `<span class="err">Chưa nhập số câu hoặc số đoạn cho phần nào.</span>`; return; }
   try {
     const r = await postJson("/api/exam/preview", { sections });
     PREVIEW = { sig: JSON.stringify(sections), sections: r.sections };
@@ -911,7 +986,7 @@ async function doExport() {
   const sections = readSections();
   // Kiểm tra trước khi xuất
   const short = [...document.querySelectorAll(".cell")].filter(x => (+x.value || 0) > +x.dataset.have).length;
-  if (!sections.some(s => s.matrix.length)) { $("#exportMsg").innerHTML = `<span class="err">Chưa nhập số câu cho phần nào.</span>`; return; }
+  if (!sections.some(s => s.matrix.length || s.passages.length)) { $("#exportMsg").innerHTML = `<span class="err">Chưa nhập số câu hoặc số đoạn cho phần nào.</span>`; return; }
   if (short) { $("#exportMsg").innerHTML = `<span class="err">Không xuất: còn ${short} ô thiếu câu hỏi (tô đỏ).</span>`; return; }
   const missing = [["Tên học phần", "mon"], ["Mã HP", "maHp"], ["Năm học", "namHoc"]]
     .filter(([, id]) => !$("#" + id).value.trim()).map(([label]) => label);

@@ -613,18 +613,66 @@ def find_replacement(spec, exclude, usage):
     return it
 
 
+def pick_passages(entries, qtype, usage, taken):
+    """Ma trận theo đoạn: entries = [{chapter_id, n}] -> lấy n đoạn của chương (ưu tiên đoạn ít dùng),
+    mỗi đoạn lấy mọi câu chưa dùng (đúng dạng của phần nếu có). Đoạn không có câu phù hợp thì bỏ qua."""
+    out = []
+    for e in entries or []:
+        n = int(e.get("n", 0))
+        if n <= 0:
+            continue
+        cands = []
+        for p in q("SELECT id FROM passages WHERE chapter_id=?", (int(e["chapter_id"]),), fetch=True):
+            sql = "SELECT * FROM questions WHERE passage_id=?"
+            args = [p["id"]]
+            if qtype:
+                sql += " AND qtype=?"
+                args.append(qtype)
+            items = [row_to_api(r) for r in q(sql + " ORDER BY id", args, fetch=True) if r["id"] not in taken]
+            if items:
+                cands.append(items)
+        if len(cands) < n:
+            raise ValueError(f"Không đủ đoạn văn: {chapter_label(int(e['chapter_id']))} cần {n}, có {len(cands)}")
+        random.shuffle(cands)
+        # đoạn có câu được dùng gần nhất xếp sau (chưa dùng xếp trước)
+        cands.sort(key=lambda items: max((usage.get(it["id"]) or "") for it in items))
+        for items in cands[:n]:
+            for it in items:
+                it["last_used"] = usage.get(it["id"])
+                taken.add(it["id"])
+                out.append(it)
+    return out
+
+
+def section_has_content(s):
+    return any(int(c.get("n", 0)) > 0 for c in s.get("matrix", [])) or \
+           any(int(c.get("n", 0)) > 0 for c in s.get("passages", []) or [])
+
+
+def build_section(s, usage, taken, ids=None):
+    """Chọn câu cho một phần: theo ma trận chương × Bloom và theo đoạn văn. ids: danh sách đã xem trước."""
+    if ids is not None:
+        base = load_items(ids, usage)
+        taken.update(int(i) for i in ids)
+        return base
+    qtype = s.get("qtype") or None
+    base = []
+    if any(int(c.get("n", 0)) > 0 for c in s.get("matrix", [])):
+        base += pick_base_exam(s.get("matrix", []), qtype, usage, taken)
+    base += pick_passages(s.get("passages", []), qtype, usage, taken)
+    return base
+
+
 def preview_exam(sections):
     """Chọn câu cho mọi phần (không ghi lịch sử). Trả về danh sách song song với sections."""
     usage = usage_map()
     taken = set()
     out = []
     for s in sections:
-        matrix = s.get("matrix", [])
-        if not any(int(c.get("n", 0)) > 0 for c in matrix):
+        if not section_has_content(s):
             out.append({"items": []})
             continue
-        base = pick_base_exam(matrix, s.get("qtype") or None, usage, taken)
-        out.append({"items": base})
+        out.append({"items": build_section(s, usage, taken)})
     return out
 
 
@@ -1571,17 +1619,17 @@ class Handler(BaseHTTPRequestHandler):
         picked = body.get("picked")  # câu đã xem trước và đổi tay, aligned theo sections
         parts = []  # (tiêu đề, danh sách câu gốc, có xáo)
         for idx, s in enumerate(sections):
-            if not any(int(c.get("n", 0)) > 0 for c in s.get("matrix", [])):
+            if not section_has_content(s):
                 continue  # phần không có số câu thì bỏ qua
             ids = picked[idx] if picked and idx < len(picked) else None
             if ids:
-                want = sum(int(c.get("n", 0)) for c in s.get("matrix", []))
-                if len(ids) != want or len(set(ids)) != len(ids):
-                    raise ValueError("Bản xem trước không khớp số câu; hãy xem trước lại")
-                base = load_items(ids, usage)
-                taken.update(int(i) for i in ids)
-            else:
-                base = pick_base_exam(s.get("matrix", []), s.get("qtype") or None, usage, taken)
+                if len(set(ids)) != len(ids):
+                    raise ValueError("Bản xem trước có câu trùng; hãy xem trước lại")
+                if not any(s.get("passages") or []):  # ma trận chương: số câu phải khớp
+                    want = sum(int(c.get("n", 0)) for c in s.get("matrix", []))
+                    if len(ids) != want:
+                        raise ValueError("Bản xem trước không khớp số câu; hãy xem trước lại")
+            base = build_section(s, usage, taken, ids or None)
             parts.append((str(s.get("title", "")).strip(), base, bool(s.get("shuffle", True))))
         if not parts:
             raise ValueError("Chưa có phần nào có số câu")

@@ -86,7 +86,7 @@ Lưu trong `data/qbank.db` (SQLite). Sao lưu bằng cách sao chép file này.
 - ✅ Cân bằng đáp án khi xáo: trong mỗi mã đề, đáp án được rải đều A/B/C/D. Kiểm tra: 200 mã đề × 12 câu cho 600 lần mỗi chữ.
 
 ### 2. Giao diện (GUI)
-- Tab Ngân hàng hai cột: cây học phần → giáo trình → chương bên trái, danh sách câu bên phải.
+- ✅ Tab Ngân hàng hai cột: cây học phần → giáo trình → chương bên trái (có số câu), bấm để lọc; danh sách câu bên phải. Thu gọn xuống một cột trên màn hình hẹp.
 - Form sửa câu dạng panel bên phải hoặc cửa sổ nổi, có xem trước furigana khi gõ `{漢字|かな}`.
 - Hiển thị furigana thật trong danh sách (thẻ `<ruby>`), không hiện cú pháp thô.
 - Ma trận xuất đề gọn: chỉ hiện chương có câu đúng dạng của phần; ô hiện "đã chọn / có sẵn" (ví dụ `3/12`); có tổng số câu mỗi phần và cả đề.
@@ -120,6 +120,6 @@ Lưu trong `data/qbank.db` (SQLite). Sao lưu bằng cách sao chép file này.
 | 1 | ✅ Lưu cấu trúc đề và thông tin học phần, lịch sử xuất |
 | 2 | ✅ Xem trước và đổi từng câu | Giảm xuất sai, phải làm lại |
 | 3 | ✅ Đoạn văn là đối tượng riêng | Đề tiếng Nhật dùng đoạn văn nhiều |
-| 4 | Bố cục hai cột và form dạng panel | Thao tác hằng ngày nhanh hơn |
+| 4 | ✅ Bố cục hai cột (form dạng panel: còn để làm) | Thao tác hằng ngày nhanh hơn |
 | 5 | ✅ Xem trước khi nhập Word, toast, hoàn tác | Giảm lỗi khi nhập số lượng lớn |
 | 6 | Đóng gói Windows | Để giáo viên khác dùng được |
