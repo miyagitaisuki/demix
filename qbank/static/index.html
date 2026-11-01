@@ -943,7 +943,7 @@ function readSections() {
     title: card.querySelector(".st").value,
     qtype: card.querySelector(".sq").value,
     shuffle: card.querySelector(".ss").checked,
-    matrix: [...card.querySelectorAll(".cell")]
+    matrix: [...card.querySelectorAll(".cell:not(:disabled)")]  // ô bị khóa (không có câu dạng này) không tính
       .map(i => ({ chapter_id: +i.dataset.ch, bloom: +i.dataset.b, n: +i.value || 0 })).filter(x => x.n > 0),
     passages: [...card.querySelectorAll(".prow")]
       .map(r => ({ chapter_id: +r.querySelector(".pch").value, n: +r.querySelector(".pn").value || 0 }))
@@ -1017,7 +1017,7 @@ function addSection(title = "", qtype = "") {
   div.innerHTML = `
     <div class="row sh">
       <input class="st" style="width:260px" placeholder="Tiêu đề phần" value="${esc(title)}" oninput="this.closest('.sec').querySelector('.sec-title').textContent=this.value">
-      <select class="sq">${Object.entries(QT).map(([k, v]) => `<option value="${k}" ${k === qtype ? "selected" : ""}>${v}</option>`).join("")}</select>
+      <select class="sq" onchange="refreshSection(this.closest('.sec'))">${Object.entries(QT).map(([k, v]) => `<option value="${k}" ${k === qtype ? "selected" : ""}>${v}</option>`).join("")}</select>
       <label><input type="checkbox" class="ss" checked> Xáo câu & phương án</label>
       <span style="flex:1"></span>
       <button class="d" onclick="this.closest('.sec').remove()">Xóa phần</button>
@@ -1028,10 +1028,7 @@ function addSection(title = "", qtype = "") {
       <tbody>${(STATS ? STATS.chapters : []).map(c => `
         <tr class="crow" data-course="${c.course_id ?? ""}">
           <td>${esc(c.course)} / ${esc(c.textbook)} / ${esc(c.code)}${c.title ? " - " + esc(c.title) : ""}</td>
-          ${Object.keys(BLOOM).map(k => (c.counts[k] || 0) > 0
-            ? `<td class="num"><input class="n cell" data-ch="${c.id}" data-b="${k}" data-have="${c.counts[k]}" value="0" oninput="checkCell(this)"></td>`
-            // ô không có câu: khóa và làm mờ, để không nhập nhầm rồi bị chặn lúc xuất
-            : `<td class="num"><input class="n cell" data-ch="${c.id}" data-b="${k}" data-have="0" value="0" disabled title="Chương này chưa có câu mức ${BLOOM[k]}" style="opacity:.35"></td>`).join("")}
+          ${Object.keys(BLOOM).map(k => cellHtml(c, k, qtype)).join("")}
         </tr>`).join("") || `<tr><td class="msg">Chưa có chương nào.</td></tr>`}</tbody>
     </table>
     <div class="row pblock" style="margin-top:8px"><b>Theo đoạn văn:</b> <span class="sub">lấy đủ số đoạn của chương, mỗi đoạn lấy mọi câu phù hợp</span>
@@ -1039,6 +1036,38 @@ function addSection(title = "", qtype = "") {
     <div class="prows"></div></div>`;
   $("#sections").appendChild(div);
   filterExportRows();
+}
+
+// số câu sẵn có của một ô: chỉ đếm đúng dạng câu của phần ("" = mọi dạng)
+function haveOf(c, bloom, qtype) {
+  return qtype ? ((c.counts_by_qtype || {})[qtype] || {})[bloom] || 0 : (c.counts[bloom] || 0);
+}
+
+// ô nhập số câu; ô không có câu nào (theo dạng của phần) bị khóa và làm mờ để không nhập nhầm
+function cellHtml(c, k, qtype) {
+  const have = haveOf(c, k, qtype);
+  return have > 0
+    ? `<td class="num"><input class="n cell" data-ch="${c.id}" data-b="${k}" data-have="${have}" value="0" oninput="checkCell(this)"></td>`
+    : `<td class="num"><input class="n cell" data-ch="${c.id}" data-b="${k}" data-have="0" value="0" disabled title="Chưa có câu mức ${BLOOM[k]}${qtype ? " dạng " + QT[qtype] : ""}" style="opacity:.35"></td>`;
+}
+
+// đổi dạng câu của phần: cập nhật số câu sẵn có, khóa các ô không còn câu (xóa số đã nhập ở ô bị khóa)
+function refreshSection(card) {
+  const qtype = card.querySelector(".sq").value;
+  card.querySelectorAll(".crow").forEach(row => {
+    const chId = +row.querySelector(".cell").dataset.ch;
+    const c = STATS.chapters.find(x => x.id === chId);
+    if (!c) return;
+    row.querySelectorAll(".cell").forEach(i => {
+      const k = +i.dataset.b, have = haveOf(c, k, qtype);
+      i.dataset.have = have;
+      i.disabled = have === 0;
+      i.style.opacity = have === 0 ? ".35" : "";
+      i.title = have === 0 ? `Chưa có câu mức ${BLOOM[k]}${qtype ? " dạng " + QT[qtype] : ""}` : `Có ${have} câu`;
+      if (have === 0) i.value = 0;
+      checkCell(i);
+    });
+  });
 }
 
 // dòng "lấy n đoạn của chương" trong một phần

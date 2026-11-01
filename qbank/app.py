@@ -1246,10 +1246,12 @@ def delete_passage(pid):
 
 def stats():
     tree = get_tree()
-    counts = {}
+    counts = {}  # chương -> mức -> số câu (mọi dạng)
+    by_qt = {}   # chương -> dạng -> mức -> số câu (để ô ma trận của từng phần chỉ đếm đúng dạng)
     for r in q("SELECT chapter_id, bloom, qtype, COUNT(*) AS n FROM questions GROUP BY chapter_id, bloom, qtype", fetch=True):
         c = counts.setdefault(r["chapter_id"], {b: 0 for b in BLOOM})
         c[r["bloom"]] += r["n"]
+        by_qt.setdefault(r["chapter_id"], {}).setdefault(r["qtype"], {b: 0 for b in BLOOM})[r["bloom"]] += r["n"]
     by_type = {t: 0 for t in QTYPES}
     for r in q("SELECT qtype, COUNT(*) AS n FROM questions GROUP BY qtype", fetch=True):
         by_type[r["qtype"]] = r["n"]
@@ -1260,6 +1262,7 @@ def stats():
     chapters = []
     for r in rows:
         r["counts"] = counts.get(r["id"], {b: 0 for b in BLOOM})
+        r["counts_by_qtype"] = by_qt.get(r["id"], {})
         r["total"] = sum(r["counts"].values())
         chapters.append(r)
     return {"chapters": chapters, "blooms": BLOOM, "by_type": by_type,
