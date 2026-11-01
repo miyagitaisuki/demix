@@ -100,8 +100,8 @@ Lưu trong `data/qbank.db` (SQLite). Sao lưu bằng cách sao chép file này.
 - ✅ Nhập Word: xem trước từng dòng (sẽ nhập, cảnh báo, bỏ qua, lỗi) trước khi xác nhận. *Chưa có kéo thả.* các dòng sẽ nhập (dòng lỗi tô đỏ) trước khi xác nhận.
 
 **Giảm lỗi**
-- ✅ Thông báo dạng toast (xóa, xuất, sửa). *Lỗi nhập Word vẫn hiển thị dạng chữ, chưa là bảng theo dòng.*
-- ✅ Hoàn tác sau khi xóa câu (nút "Hoàn tác" trong vài giây, giữ lại mã câu). *Chưa có hoàn tác cho gộp trùng; lịch sử dùng của câu đã xóa không khôi phục.*
+- ✅ Thông báo dạng toast (xóa, xuất, sửa, nhập). *Lỗi nhập Word hiển thị trong bảng xem trước.*
+- ✅ Hoàn tác sau khi xóa câu hoặc gộp trùng từng nhóm (nút "Hoàn tác" trong vài giây, giữ lại mã câu). *Tự gộp hàng loạt chưa có hoàn tác; lịch sử dùng của câu đã xóa hoặc đã gộp không khôi phục.*
 - ✅ Kiểm tra trước khi xuất: chặn khi thiếu câu hoặc chưa chọn phần nào; hỏi xác nhận khi chưa nhập tên HP, mã HP hoặc năm học. *Phần trống: còn để làm.*
 - ✅ Tự sao lưu dữ liệu mỗi ngày vào `data/backup/`, giữ 7 bản gần nhất (kiểm tra mỗi giờ khi server chạy).
 
@@ -121,5 +121,5 @@ Lưu trong `data/qbank.db` (SQLite). Sao lưu bằng cách sao chép file này.
 | 2 | ✅ Xem trước và đổi từng câu | Giảm xuất sai, phải làm lại |
 | 3 | Đoạn văn là đối tượng riêng | Đề tiếng Nhật dùng đoạn văn nhiều |
 | 4 | Bố cục hai cột và form dạng panel | Thao tác hằng ngày nhanh hơn |
-| 5 | Xem trước khi nhập Word, toast, hoàn tác | Giảm lỗi khi nhập số lượng lớn |
+| 5 | ✅ Xem trước khi nhập Word, toast, hoàn tác | Giảm lỗi khi nhập số lượng lớn |
 | 6 | Đóng gói Windows | Để giáo viên khác dùng được |
