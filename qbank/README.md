@@ -80,10 +80,10 @@ Lưu trong `data/qbank.db` (SQLite). Sao lưu bằng cách sao chép file này.
 
 **Nên làm tiếp**
 - ✅ Sửa tên và mã học phần, giáo trình, chương (nút "Sửa" ở tab Cấu trúc).
-- Chuyển câu sang chương khác; sửa hàng loạt (mức Bloom, chương).
+- ✅ Chuyển câu sang chương khác và sửa mức Bloom hàng loạt: tick các câu ở tab Ngân hàng, chọn chương hoặc mức rồi áp dụng. Chỉ đổi khi không gây trùng trong chương đích.
 - Độ khó thực tế: nhập điểm từng câu sau kỳ thi, so với mức Bloom đã gán.
 - ✅ Cảnh báo câu gần giống (từ 90%): nút "Tìm câu gần giống" ở tab Ngân hàng, chỉ gợi ý, không tự xóa.
-- Cân bằng đáp án khi xáo, tránh chuỗi đáp án A liên tiếp hoặc phân bố lệch.
+- ✅ Cân bằng đáp án khi xáo: trong mỗi mã đề, đáp án được rải đều A/B/C/D. Kiểm tra: 200 mã đề × 12 câu cho 600 lần mỗi chữ.
 
 ### 2. Giao diện (GUI)
 - Tab Ngân hàng hai cột: cây học phần → giáo trình → chương bên trái, danh sách câu bên phải.
