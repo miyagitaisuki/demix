@@ -123,3 +123,16 @@ Lưu trong `data/qbank.db` (SQLite). Sao lưu bằng cách sao chép file này.
 | 4 | ✅ Bố cục hai cột; chia xuất đề thành bước | Thao tác hằng ngày nhanh hơn |
 | 5 | ✅ Xem trước khi nhập Word, toast, hoàn tác | Giảm lỗi khi nhập số lượng lớn |
 | 6 | Đóng gói Windows | Để giáo viên khác dùng được |
+
+## Đề xuất từ thử nghiệm người dùng
+Thử luồng từ CSDL trống đến khi tải file đề (học phần → chương → thêm câu → nhập Word → sửa hàng loạt → wizard xuất đề → lịch sử → thống kê). Các chỗ gây khó chịu, xếp theo mức độ:
+
+1. **Lưu câu không có phản hồi.** Bấm Lưu thì form đóng, không có thông báo. Nên hiện toast "Đã lưu câu N4-…".
+2. **Thông báo nhập Word dùng số nội bộ.** Ví dụ "trùng câu #1" trong khi giao diện chỉ hiện mã như `N4-MN1-B01-001`. Nên đổi sang mã câu.
+3. **Lịch sử xuất khó phân biệt.** Tên đề để trống nên mỗi dòng chỉ có ngày và mã đề. Nên đặt tên mặc định từ học phần và thời gian, hoặc nhắc khi xuất mà chưa đặt tên.
+4. **Ô số câu ở bước 1 hiện đủ mọi chương × Bloom.** Phần lớn ô trống, người dùng dễ nhập vào ô không có câu rồi bị chặn mà không hiểu vì sao. Nên làm mờ hoặc ẩn ô không có câu.
+5. **Đổi tên học phần, giáo trình, chương dùng `prompt()`.** Chương phải nhập qua hai hộp liên tiếp, hủy giữa chừng thì không rõ đã lưu gì. Nên dùng form nhỏ trong trang.
+6. **Đoạn văn dễ tạo trùng.** Sửa một ký tự trong ô đoạn đã chọn sẽ tạo đoạn mới mà không cảnh báo. Nên gợi ý đoạn gần giống (ví dụ trên 90%) trước khi tạo.
+7. **Tên file xuất luôn là `de_thi.zip`.** Xuất nhiều đề trong ngày sẽ trùng tên. Nên đặt tên theo học phần, mã đề và ngày.
+
+Chưa thử trong lần này: hoàn tác trên giao diện, bố cục trên màn hình hẹp, và cây hai cột với nhiều học phần.
