@@ -97,7 +97,7 @@ Lưu trong `data/qbank.db` (SQLite). Sao lưu bằng cách sao chép file này.
 **Giảm thao tác**
 - ✅ Phím tắt: `Ctrl+S` lưu câu (khi đang sửa), `N` thêm câu mới, `/` vào ô tìm kiếm.
 - ✅ Nhớ thông tin đề và mẫu xuất đề gần nhất (lưu trên trình duyệt). Còn lại: học phần, giáo trình đang lọc.
-- Nhập Word bằng kéo thả, xem trước các dòng sẽ nhập (dòng lỗi tô đỏ) trước khi xác nhận.
+- ✅ Nhập Word: xem trước từng dòng (sẽ nhập, cảnh báo, bỏ qua, lỗi) trước khi xác nhận. *Chưa có kéo thả.* các dòng sẽ nhập (dòng lỗi tô đỏ) trước khi xác nhận.
 
 **Giảm lỗi**
 - ✅ Thông báo dạng toast (xóa, xuất, sửa). *Lỗi nhập Word vẫn hiển thị dạng chữ, chưa là bảng theo dòng.*

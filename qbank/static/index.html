@@ -74,6 +74,7 @@
     <input type="file" accept=".json" onchange="restoreJson(this)">
   </div>
   <div id="importMsg" class="msg"></div>
+  <div id="importPreview" class="card" style="display:none"></div>
   <div id="dupBox" class="card" style="display:none"></div>
   <div id="editor" class="card" style="display:none"></div>
   <div class="row" id="bulkBar">
@@ -358,30 +359,35 @@ async function delQ(id) {
   try {
     await api(`/api/questions/${id}`, { method: "DELETE" });
     loadQuestions();
-    if (q) showUndo(q);
+    if (q) showUndo([toItem(q)], `Đã xóa câu ${q.code}.`);
     else toast("Đã xóa câu #" + id + ".");
   } catch (e) { toast(e.message, true); }
 }
 // hoàn tác: khôi phục câu từ dữ liệu đã có (lịch sử dùng và kết quả thi của câu đã xóa không khôi phục được)
 let undoTimer = null;
-function showUndo(q) {
-  const item = { code: q.code, course: q.course, textbook: q.textbook, chapter_code: q.chapter_code, chapter_title: q.chapter_title,
-                 bloom: q.bloom, qtype: q.qtype, content: q.content, options: q.options, answer: q.answer,
-                 solution: q.solution, passage: q.passage };
+const toItem = q => ({ code: q.code, course: q.course, textbook: q.textbook, chapter_code: q.chapter_code,
+                       chapter_title: q.chapter_title, bloom: q.bloom, qtype: q.qtype, content: q.content,
+                       options: q.options, answer: q.answer, solution: q.solution, passage: q.passage });
+// items: câu đã xóa/gộp; allowDup: cho phép khôi phục câu trùng (dùng khi hoàn tác gộp)
+function showUndo(items, msg, allowDup = false) {
   const t = document.getElementById("toast");
-  t.innerHTML = `Đã xóa câu ${esc(q.code)}. <button class="g" id="undoBtn" style="margin-left:8px">Hoàn tác</button>`;
+  t.innerHTML = `${esc(msg)} <button class="g" id="undoBtn" style="margin-left:8px">Hoàn tác</button>`;
   t.className = ""; t.style.display = "block";
   clearTimeout(toastTimer); clearTimeout(undoTimer);
   undoTimer = setTimeout(() => t.style.display = "none", 8000);
   document.getElementById("undoBtn").onclick = async () => {
     try {
       const r = await api("/api/restore", { method: "POST", headers: {"Content-Type":"application/json"},
-                                            body: JSON.stringify({ questions: [item] }) });
-      if (r.added) toast("Đã khôi phục câu."); else toast(r.errors.join("; ") || "Không khôi phục được.", true);
+                                            body: JSON.stringify({ questions: items, allow_dup: allowDup }) });
+      if (r.added) toast(`Đã khôi phục ${r.added} câu.`); else toast(r.errors.join("; ") || "Không khôi phục được.", true);
       loadQuestions();
     } catch (e) { toast(e.message, true); }
     t.style.display = "none";
   };
+}
+async function fetchItems(ids) {
+  const all = await api("/api/questions");
+  return all.filter(x => ids.includes(x.id)).map(toItem);
 }
 
 async function loadDifficulty() {
@@ -409,17 +415,50 @@ async function saveResults() {
   } catch (e) { $("#resMsg").innerHTML = `<span class="err">${esc(e.message)}</span>`; }
 }
 
+// nhập Word: kiểm tra trước (không ghi), người dùng xác nhận rồi mới nhập
+let PENDING_IMPORT = null;  // {buf, tid, name}
 async function importDocx(input) {
   const f = input.files[0]; if (!f) return;
   const tid = $("#fTextbook").value;
-  if (!tid) { $("#importMsg").innerHTML = `<span class="err">Chọn giáo trình ở bộ lọc trước khi nhập.</span>`; input.value = ""; return; }
-  $("#importMsg").textContent = "Đang nhập...";
+  input.value = "";
+  if (!tid) { $("#importMsg").innerHTML = `<span class="err">Chọn giáo trình ở bộ lọc trước khi nhập.</span>`; return; }
+  $("#importMsg").textContent = "Đang kiểm tra file...";
   try {
-    const r = await api(`/api/import?textbook_id=${tid}`, { method: "POST", body: await f.arrayBuffer() });
+    const buf = await f.arrayBuffer();
+    const r = await api(`/api/import?textbook_id=${tid}&dry_run=1`, { method: "POST", body: buf });
+    PENDING_IMPORT = { buf, tid, name: f.name };
+    renderImportPreview(r);
+    $("#importMsg").textContent = "";
+  } catch (e) { $("#importMsg").innerHTML = `<span class="err">${esc(e.message)}</span>`; }
+}
+function renderImportPreview(r) {
+  const box = $("#importPreview");
+  const badge = { ok: `<span class="tag">Sẽ nhập</span>`, warn: `<span class="tag" style="background:#fef3c7;color:#92400e">Nhập, có cảnh báo</span>`,
+                  skip: `<span class="tag" style="background:#e5e7eb">Bỏ qua</span>`, error: `<span class="tag" style="background:#fee2e2;color:#b91c1c">Lỗi</span>` };
+  const n = r.rows.filter(x => x.status === "ok" || x.status === "warn").length;
+  box.style.display = "block";
+  box.innerHTML = `<div class="row"><b>Xem trước: ${esc(PENDING_IMPORT.name)}</b>
+      <span class="sub">${n} câu sẽ được nhập, ${r.rows.length - n} dòng bị bỏ qua hoặc lỗi. Chưa có gì được ghi.</span></div>
+    <table><thead><tr><th>Vị trí</th><th>Mã chương</th><th>Loại</th><th>Nội dung</th><th>Trạng thái</th></tr></thead><tbody>` +
+    r.rows.map(x => `<tr style="${x.status === "error" ? "background:#fef2f2" : ""}">
+      <td>${esc(x.where)}</td><td>${esc(x.code)}</td><td>${esc(x.qtype)}</td><td>${esc(x.content)}</td>
+      <td>${badge[x.status]} <span class="sub">${esc(x.note)}</span></td></tr>`).join("") +
+    `</tbody></table>
+    <div class="row" style="margin-top:8px">
+      <button class="p" ${n ? "" : "disabled"} onclick="confirmImport()">Nhập ${n} câu</button>
+      <button class="g" onclick="cancelImport()">Hủy</button></div>`;
+}
+function cancelImport() { PENDING_IMPORT = null; $("#importPreview").style.display = "none"; }
+async function confirmImport() {
+  if (!PENDING_IMPORT) return;
+  const { buf, tid } = PENDING_IMPORT;
+  try {
+    const r = await api(`/api/import?textbook_id=${tid}`, { method: "POST", body: buf });
     $("#importMsg").innerHTML = importSummary("Đã nhập", r);
+    toast(`Đã nhập ${r.added} câu.`);
+    cancelImport();
     loadQuestions();
   } catch (e) { $("#importMsg").innerHTML = `<span class="err">${esc(e.message)}</span>`; }
-  input.value = "";
 }
 
 function importSummary(label, r) {
@@ -454,9 +493,12 @@ async function mergeGroup(gi, ids) {
   const keep = +document.querySelector(`input[name="keep${gi}"]:checked`).value;
   if (!confirm("Xóa các câu trùng còn lại? Lịch sử dùng sẽ chuyển sang câu được giữ.")) return;
   try {
-    const r = await postJson("/api/duplicates/merge", { keep, remove: ids.filter(x => x !== keep) });
+    const removeIds = ids.filter(x => x !== keep);
+    const removed = await fetchItems(removeIds);
+    const r = await postJson("/api/duplicates/merge", { keep, remove: removeIds });
     $("#importMsg").textContent = `Đã xóa ${r.removed} câu trùng.`;
     loadQuestions(); showDuplicates();
+    if (removed.length) showUndo(removed, `Đã gộp, xóa ${r.removed} câu trùng.`, true);
   } catch (e) { $("#importMsg").innerHTML = `<span class="err">${esc(e.message)}</span>`; }
 }
 

@@ -415,7 +415,7 @@ def map_import_header(cells):
     return (m, missing)
 
 
-def parse_import(data: bytes, textbook_id):
+def parse_import(data: bytes, textbook_id, dry_run=False):
     """Nhập câu hỏi từ bảng Word (xem /api/import-template để có mẫu).
     Dòng đầu là tiêu đề cột; cột nhận diện theo tên nên thứ tự cột tùy ý.
     Bắt buộc: Mã chương, Nội dung, Đáp án, Loại, Mức. Tùy chọn: Đoạn văn, Lời giải.
@@ -424,6 +424,7 @@ def parse_import(data: bytes, textbook_id):
         "SELECT id, code FROM chapters WHERE textbook_id=?", (textbook_id,), True)}
     doc = Document(io.BytesIO(data))
     added, errors, skipped, warnings = 0, [], [], []
+    rows_out = []  # xem trước: trạng thái từng dòng
     index = dup_index()
     for t_idx, table in enumerate(doc.tables, 1):
         if not table.rows:
@@ -474,17 +475,31 @@ def parse_import(data: bytes, textbook_id):
                     "passage": get("doan_van"),
                 })
                 same, other, key = check_duplicate(index, payload)
+                label = f"Bảng {t_idx}, dòng {r_idx}"
+                preview = {"where": label, "code": code, "qtype": qtype, "content": " ".join(stem)[:80]}
                 if same:
-                    skipped.append(f"Bảng {t_idx}, dòng {r_idx}: trùng câu #{same[0][0]} trong cùng chương")
+                    ref = same[0][0]
+                    ref_txt = f"câu #{ref}" if isinstance(ref, int) else ref.lower()  # ref là nhãn dòng khi xem trước
+                    skipped.append(f"{label}: trùng {ref_txt} trong cùng chương")
+                    rows_out.append(dict(preview, status="skip", note=f"trùng {ref_txt}"))
                     continue
-                new_id = insert_q(payload)
+                if dry_run:  # chưa ghi; dùng nhãn dòng để so trùng với các dòng sau trong cùng file
+                    new_id = f"{label}"
+                else:
+                    new_id = insert_q(payload)
                 index.setdefault(key, []).append((new_id, payload["chapter_id"], payload["content"]))
                 added += 1
+                note = ""
                 if other:
-                    warnings.append(f"Bảng {t_idx}, dòng {r_idx}: trùng nội dung với câu #{other[0][0]} ở chương khác")
+                    note = f"trùng nội dung với câu #{other[0][0]} ở chương khác"
+                    warnings.append(f"{label}: {note}")
+                rows_out.append(dict(preview, status="warn" if other else "ok", note=note))
             except Exception as e:
                 errors.append(f"Bảng {t_idx}, dòng {r_idx}: {e}")
-    return {"added": added, "skipped": skipped, "warnings": warnings, "errors": errors}
+                rows_out.append({"where": f"Bảng {t_idx}, dòng {r_idx}", "code": "", "qtype": "",
+                                 "content": "", "status": "error", "note": str(e)})
+    return {"added": added, "skipped": skipped, "warnings": warnings, "errors": errors,
+            "dry_run": dry_run, "rows": rows_out}
 
 
 def pick_base_exam(matrix, qtype=None, usage=None, taken=None):
@@ -1139,7 +1154,7 @@ def bulk_update(ids, chapter_id=None, bloom=None):
     return {"updated": len(ids)}
 
 
-def restore_item(item, index):
+def restore_item(item, index, allow_dup=False):
     """Khôi phục một câu từ file sao lưu; tự tạo học phần/giáo trình/chương nếu chưa có.
     Câu trùng trong cùng chương bị bỏ qua (báo lỗi để người dùng biết)."""
     chapter_id = ensure_chapter(str(item.get("course", DEFAULT_COURSE)).strip() or DEFAULT_COURSE,
@@ -1148,7 +1163,7 @@ def restore_item(item, index):
                                 str(item.get("chapter_title", "")))
     payload = clean_question(dict(item, chapter_id=chapter_id))
     same, _, key = check_duplicate(index, payload)
-    if same:
+    if same and not allow_dup:
         raise ValueError(f"trùng câu #{same[0][0]} trong cùng chương (bỏ qua)")
     new_id = insert_q(payload, keep_code=str(item.get("code") or "").strip() or None)
     index.setdefault(key, []).append((new_id, chapter_id, payload["content"]))
@@ -1295,7 +1310,8 @@ class Handler(BaseHTTPRequestHandler):
             textbook_id = int(parse_qs(u.query).get("textbook_id", [""])[0] or 0)
             if not textbook_id:
                 raise ValueError("Chọn giáo trình trước khi nhập")
-            return self._json(200, parse_import(self._raw(), textbook_id))
+            dry = parse_qs(u.query).get("dry_run", ["0"])[0] == "1"
+            return self._json(200, parse_import(self._raw(), textbook_id, dry_run=dry))
         if p == "/api/restore":
             data = json.loads(self._raw() or b"{}")
             items = data.get("questions") if isinstance(data, dict) else data
@@ -1303,9 +1319,10 @@ class Handler(BaseHTTPRequestHandler):
                 raise ValueError("File sao lưu không đúng định dạng")
             added, errors = 0, []
             index = dup_index()
+            allow_dup = bool(data.get("allow_dup")) if isinstance(data, dict) else False
             for n, item in enumerate(items, 1):
                 try:
-                    restore_item(item, index)
+                    restore_item(item, index, allow_dup=allow_dup)
                     added += 1
                 except Exception as e:
                     errors.append(f"Câu thứ {n}: {e}")
