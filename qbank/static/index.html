@@ -88,8 +88,9 @@
   </div>
   <div class="row">
     <button class="g" onclick="editQ(null)">+ Câu mới</button>
-    <label>Nhập từ .docx (giáo trình đang chọn ở bộ lọc):</label>
-    <input type="file" accept=".docx" onchange="importDocx(this)">
+    <label for="importFile">Nhập từ .docx vào:</label>
+    <span id="importTarget" class="sub"></span>
+    <input type="file" id="importFile" accept=".docx" onchange="importDocx(this)">
     <button class="g" onclick="showDuplicates()">Kiểm tra trùng</button>
     <button class="g" onclick="showSimilar()">Tìm câu gần giống</button>
     <a href="/api/import-template" download><button class="g">Tải mẫu nhập</button></a>
@@ -336,6 +337,15 @@ function fillTextbookFilter() {
   $("#fTextbook").innerHTML = `<option value="">Mọi giáo trình</option>` + tbs.map(t => `<option value="${t.id}">${esc(t.name)}</option>`).join("");
   $("#fTextbook").value = tbs.some(t => t.id == keep) ? keep : "";
   fillChapterFilter();
+  updateImportTarget();
+}
+// ô nhập file hiển thị giáo trình đích (đang chọn ở bộ lọc); chưa chọn thì khóa ô chọn file
+function updateImportTarget() {
+  const tid = $("#fTextbook").value;
+  const tb = TREE.textbooks.find(t => t.id == tid);
+  $("#importTarget").textContent = tb ? `«${tb.name}»` : "(chọn giáo trình ở bộ lọc trước)";
+  $("#importTarget").style.color = tb ? "" : "var(--err, #b91c1c)";
+  $("#importFile").disabled = !tb;
 }
 function fillChapterFilter() {
   const tid = $("#fTextbook").value;
@@ -345,7 +355,7 @@ function fillChapterFilter() {
   $("#fChapter").value = chs.some(c => c.id == keep) ? keep : "";
 }
 $("#fCourse").onchange = () => { fillTextbookFilter(); loadQuestions(); };
-$("#fTextbook").onchange = () => { fillChapterFilter(); loadQuestions(); };
+$("#fTextbook").onchange = () => { fillChapterFilter(); updateImportTarget(); loadQuestions(); };
 $("#fChapter").onchange = loadQuestions;
 
 // ---------- ngân hàng
@@ -629,8 +639,10 @@ function renderImportPreview(r) {
   const n = r.rows.filter(x => x.status === "ok" || x.status === "warn").length;
   box.style.display = "block";
   const tb = TREE.textbooks.find(t => t.id == PENDING_IMPORT.tid);
-  box.innerHTML = `<div class="sub" style="margin-bottom:6px">Bước 1 Chọn file ✓ → Bước 2 Kiểm tra ✓ → Bước 3 Xác nhận</div>
-      <div class="row"><b>Xem trước: ${esc(PENDING_IMPORT.name)}</b>
+  const tableErrors = (r.errors || []).length
+    ? `<div class="row" style="background:#fef2f2;color:#b91c1c;padding:8px;border-radius:6px;margin-bottom:8px">
+         <b>Lỗi cấp bảng, các bảng này bị bỏ qua:</b> ${esc(r.errors.join(" | "))}</div>` : "";
+  box.innerHTML = tableErrors + `<div class="row"><b>Xem trước: ${esc(PENDING_IMPORT.name)}</b>
       <span class="sub">${n} câu sẽ được nhập vào giáo trình «${esc(tb ? tb.name : "")}», ${r.rows.length - n} dòng bị bỏ qua hoặc lỗi. Chưa có gì được ghi.</span></div>
     <table><thead><tr><th>Vị trí</th><th>Mã chương</th><th>Loại</th><th>Nội dung</th><th>Trạng thái</th></tr></thead><tbody>` +
     r.rows.map(x => `<tr style="${x.status === "error" ? "background:#fef2f2" : ""}">
