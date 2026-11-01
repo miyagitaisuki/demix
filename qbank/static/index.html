@@ -271,7 +271,11 @@ let STATS = null;
 
 async function api(path, opts = {}) {
   const r = await fetch(path, opts);
-  if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.error || r.statusText); }
+  if (!r.ok) {
+    const e = await r.json().catch(() => ({}));
+    const err = new Error(e.error || r.statusText); err.confirm = !!e.confirm;  // confirm: cần người dùng xác nhận rồi gửi lại
+    throw err;
+  }
   return r.headers.get("Content-Type")?.includes("json") ? r.json() : r;
 }
 const postJson = (path, body, method = "POST") => api(path, { method, headers: {"Content-Type":"application/json"}, body: JSON.stringify(body) });
@@ -489,7 +493,8 @@ async function delPassage(id) {
   renderPassages();
 }
 
-async function saveQ() {
+// confirmPassage: người dùng đã xác nhận tạo đoạn mới dù gần giống đoạn có sẵn
+async function saveQ(confirmPassage = false) {
   const id = $("#eId").value;
   const body = {
     chapter_id: $("#eChap").value, bloom: $("#eBloom").value, qtype: $("#eType").value,
@@ -497,23 +502,31 @@ async function saveQ() {
     passage: $("#ePassage").value,
     options: $("#eOpts").value.split("\n").map(s => s.trim()).filter(Boolean).map(s => s.replace(/^[A-Ha-h][\.\)]\s*/, "")),
   };
+  if (confirmPassage) body.confirm_passage = true;
   try {
     const r = await postJson(id ? `/api/questions/${id}` : "/api/questions", body, id ? "PUT" : "POST");
     $("#editor").style.display = "none";
     loadQuestions();
-    if (r && r.warnings && r.warnings.length) $("#importMsg").innerHTML = `Đã lưu. <span class="err">${esc(r.warnings.join(" | "))}</span>`;
-  } catch (e) { $("#eMsg").textContent = e.message; }
+    const warnings = (r && r.warnings) || [];
+    toast(`${id ? "Đã lưu" : "Đã thêm"} câu ${r.code}.` + (warnings.length ? " " + warnings.join(" | ") : ""), warnings.length > 0);
+  } catch (e) {
+    if (e.confirm) {  // đoạn văn gần giống đoạn có sẵn: hỏi trước khi tạo đoạn mới
+      if (confirm(e.message + "\n\nBấm OK để vẫn tạo đoạn mới, Hủy để quay lại sửa.")) saveQ(true);
+      return;
+    }
+    $("#eMsg").textContent = e.message;
+  }
 }
 
 let QMAP = {};  // câu đang hiển thị, để hoàn tác khi xóa
 async function delQ(id) {
-  if (!confirm("Xóa câu hỏi #" + id + "?")) return;
   const q = QMAP[id];
+  if (!confirm(`Xóa câu ${q ? q.code : "này"}?`)) return;
   try {
     await api(`/api/questions/${id}`, { method: "DELETE" });
     loadQuestions();
     if (q) showUndo([toItem(q)], `Đã xóa câu ${q.code}.`);
-    else toast("Đã xóa câu #" + id + ".");
+    else toast("Đã xóa câu.");
   } catch (e) { toast(e.message, true); }
 }
 // hoàn tác: khôi phục câu từ dữ liệu đã có (lịch sử dùng và kết quả thi của câu đã xóa không khôi phục được)
@@ -694,13 +707,16 @@ async function renderStruct() {
   renderPassages();
   const byTb = id => TREE.chapters.filter(c => c.textbook_id == id);
   const byCourse = id => TREE.textbooks.filter(t => t.course_id == id);
+  // mục đang sửa tại chỗ thì thay dòng hiển thị bằng form; các mục khác giữ nguyên nút Sửa/Xóa
+  const actions = (kind, id) => EDIT_NODE && EDIT_NODE.kind === kind && EDIT_NODE.id === id ? "" :
+    ` <button class="g" onclick="renameNode('${kind}',${id})">Sửa</button> <button class="d" onclick="delNode('${kind}',${id})">Xóa</button>`;
+  const label = (kind, id, html) => EDIT_NODE && EDIT_NODE.kind === kind && EDIT_NODE.id === id ? nodeEditForm(kind, id) : html + actions(kind, id);
   $("#treeBox").innerHTML = TREE.courses.length ? `<ul>` + TREE.courses.map(c => `
-    <li><b>${esc(c.name)}</b>${c.code ? ` <span class="sub">${esc(c.code)}</span>` : ""} <button class="g" onclick="renameNode('courses',${c.id})">Sửa</button> <button class="d" onclick="delNode('courses',${c.id})">Xóa</button>
+    <li>${label("courses", c.id, `<b>${esc(c.name)}</b>${c.code ? ` <span class="sub">${esc(c.code)}</span>` : ""}`)}
       <ul>${byCourse(c.id).map(t => `
-        <li>${esc(t.name)}${t.code ? ` <span class="sub">${esc(t.code)}</span>` : ""} <button class="g" onclick="renameNode('textbooks',${t.id})">Sửa</button> <button class="d" onclick="delNode('textbooks',${t.id})">Xóa</button>
+        <li>${label("textbooks", t.id, `${esc(t.name)}${t.code ? ` <span class="sub">${esc(t.code)}</span>` : ""}`)}
           <ul>${byTb(t.id).map(ch => `
-            <li>${esc(ch.code)}${ch.title ? " - " + esc(ch.title) : ""} <span class="sub">(${ch.count} câu)</span>
-              <button class="g" onclick="renameNode('chapters',${ch.id})">Sửa</button> <button class="d" onclick="delNode('chapters',${ch.id})">Xóa</button></li>`).join("")}</ul>
+            <li>${label("chapters", ch.id, `${esc(ch.code)}${ch.title ? " - " + esc(ch.title) : ""} <span class="sub">(${ch.count} câu)</span>`)}</li>`).join("")}</ul>
         </li>`).join("")}</ul>
     </li>`).join("") + `</ul>` : `<span class="msg">Chưa có học phần nào.</span>`;
   $("#newTbCourse").innerHTML = TREE.courses.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join("");
@@ -737,25 +753,38 @@ const addChapter = () => structAction(async () => {
   await postJson("/api/chapters", { textbook_id: $("#newChTb").value, code: $("#newChCode").value, title: $("#newChTitle").value });
   $("#newChCode").value = ""; $("#newChTitle").value = "";
 });
-async function renameNode(kind, id) {
-  const cur = kind === "courses" ? TREE.courses.find(x => x.id == id)
-            : kind === "textbooks" ? TREE.textbooks.find(x => x.id == id)
-            : TREE.chapters.find(x => x.id == id);
-  let body;
-  if (kind === "chapters") {
-    const code = prompt("Mã chương:", cur.code); if (code === null) return;
-    const title = prompt("Tên chương:", cur.title || ""); if (title === null) return;
-    body = { code, title };
-  } else {
-    const name = prompt("Tên mới:", cur.name); if (name === null) return;
-    const code = prompt("Mã:", cur.code || ""); if (code === null) return;
-    body = { name, code };
-  }
+// sửa tên/mã học phần, giáo trình, chương ngay trong cây (không dùng prompt)
+let EDIT_NODE = null;  // {kind, id} của mục đang sửa
+const findNode = (kind, id) => (kind === "courses" ? TREE.courses : kind === "textbooks" ? TREE.textbooks : TREE.chapters)
+  .find(x => x.id == id);
+function nodeEditForm(kind, id) {
+  const cur = findNode(kind, id) || {};
+  const key = `onkeydown="if(event.key==='Enter')saveNode('${kind}',${id});if(event.key==='Escape')cancelNode()"`;
+  const fields = kind === "chapters"
+    ? `<input id="nCode" value="${esc(cur.code)}" placeholder="Mã chương" style="width:110px" ${key}>
+       <input id="nTitle" value="${esc(cur.title || "")}" placeholder="Tên chương" style="width:240px" ${key}>`
+    : `<input id="nName" value="${esc(cur.name)}" placeholder="Tên" style="width:240px" ${key}>
+       <input id="nCode" value="${esc(cur.code || "")}" placeholder="Mã" style="width:110px" ${key}>`;
+  return `<span class="row" style="display:inline-flex;gap:6px;flex-wrap:wrap;vertical-align:middle">${fields}
+    <button class="p" onclick="saveNode('${kind}',${id})">Lưu</button>
+    <button class="g" onclick="cancelNode()">Hủy</button>
+    <span id="nMsg" class="err"></span></span>`;
+}
+function renameNode(kind, id) {
+  EDIT_NODE = { kind, id };
+  renderStruct().then(() => { const f = document.getElementById(kind === "chapters" ? "nTitle" : "nName"); if (f) f.focus(); });
+}
+function cancelNode() { EDIT_NODE = null; renderStruct(); }
+async function saveNode(kind, id) {
+  const body = kind === "chapters"
+    ? { code: $("#nCode").value.trim(), title: $("#nTitle").value.trim() }
+    : { name: $("#nName").value.trim(), code: $("#nCode").value.trim() };
   try {
     await postJson(`/api/${kind}/${id}`, body, "PUT");
+    EDIT_NODE = null;
     toast("Đã lưu thay đổi.");
     renderStruct();
-  } catch (e) { toast(e.message, true); }
+  } catch (e) { const m = $("#nMsg"); if (m) m.textContent = e.message; else toast(e.message, true); }
 }
 const delNode = (kind, id) => structAction(async () => {
   if (!confirm("Xóa mục này? Chỉ xóa được khi không còn dữ liệu bên trong.")) return;
@@ -941,8 +970,10 @@ function addSection(title = "", qtype = "") {
       <tbody>${(STATS ? STATS.chapters : []).map(c => `
         <tr class="crow" data-course="${c.course_id ?? ""}">
           <td>${esc(c.course)} / ${esc(c.textbook)} / ${esc(c.code)}${c.title ? " - " + esc(c.title) : ""}</td>
-          ${Object.keys(BLOOM).map(k =>
-            `<td class="num"><input class="n cell" data-ch="${c.id}" data-b="${k}" data-have="${c.counts[k] || 0}" value="0" oninput="checkCell(this)"></td>`).join("")}
+          ${Object.keys(BLOOM).map(k => (c.counts[k] || 0) > 0
+            ? `<td class="num"><input class="n cell" data-ch="${c.id}" data-b="${k}" data-have="${c.counts[k]}" value="0" oninput="checkCell(this)"></td>`
+            // ô không có câu: khóa và làm mờ, để không nhập nhầm rồi bị chặn lúc xuất
+            : `<td class="num"><input class="n cell" data-ch="${c.id}" data-b="${k}" data-have="0" value="0" disabled title="Chương này chưa có câu mức ${BLOOM[k]}" style="opacity:.35"></td>`).join("")}
         </tr>`).join("") || `<tr><td class="msg">Chưa có chương nào.</td></tr>`}</tbody>
     </table>
     <div class="row pblock" style="margin-top:8px"><b>Theo đoạn văn:</b> <span class="sub">lấy đủ số đoạn của chương, mỗi đoạn lấy mọi câu phù hợp</span>
@@ -1140,7 +1171,10 @@ async function doExport() {
   try {
     const r = await postJson("/api/export", body);
     const url = URL.createObjectURL(await r.blob());
-    const a = Object.assign(document.createElement("a"), { href: url, download: "de_thi.zip" });
+    // tên file do server đặt (học phần, mã đề, ngày) qua Content-Disposition
+    const cd = r.headers.get("Content-Disposition") || "";
+    const fm = /filename\*=UTF-8''([^;]+)/i.exec(cd);
+    const a = Object.assign(document.createElement("a"), { href: url, download: fm ? decodeURIComponent(fm[1]) : "de_thi.zip" });
     a.click(); URL.revokeObjectURL(url);
     const reused = +r.headers.get("X-Reused") || 0;
     toast("Đã tải xuống file đề.");
