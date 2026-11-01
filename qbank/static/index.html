@@ -35,6 +35,8 @@
   .tree > ul { padding-left:0; }
   .tree li { margin:3px 0; }
   .sub { color:var(--mut); font-size:12px; }
+  #toast { position:fixed; bottom:16px; right:16px; background:#0f172a; color:#fff; padding:10px 14px; border-radius:8px; display:none; max-width:420px; z-index:10; box-shadow:0 4px 12px rgba(0,0,0,.2); }
+  #toast.err { background:#b91c1c; }
 </style>
 </head>
 <body>
@@ -140,6 +142,7 @@
       <label><input type="checkbox" id="answerKey"> Kèm đáp án cuối đề</label>
       <label><input type="checkbox" id="keySeparate" checked> Đáp án ra file riêng (DapAn_xxx.docx)</label>
       <label><input type="checkbox" id="recordUsage" checked> Ghi lịch sử dùng câu</label>
+      <label><input type="checkbox" id="saveHistory" checked> Lưu vào lịch sử xuất</label>
     </div>
   </div>
   <div class="card">
@@ -161,11 +164,24 @@
   <div class="row"><button class="g" onclick="addSection()">+ Thêm phần</button></div>
   <div id="previewBox"></div>
   <div class="row"><button class="g" onclick="previewExam()">Xem trước đề</button><button class="p" onclick="doExport()">Xuất .zip các file .docx</button><span id="exportMsg" class="msg"></span><span id="shortMsg" class="err"></span></div>
+  <div class="card">
+    <div class="row"><b>Lịch sử xuất</b> <span class="sub">(tải lại file .zip gồm đề và đáp án)</span><button class="g" onclick="loadHistory()">Làm mới</button></div>
+    <div id="histBox"></div>
+  </div>
 </section>
+<div id="toast"></div>
 
 </main>
 <script>
 const $ = s => document.querySelector(s);
+let toastTimer = null;
+function toast(msg, isErr = false) {
+  const t = document.getElementById("toast");
+  t.textContent = msg; t.className = isErr ? "err" : "";
+  t.style.display = "block";
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.style.display = "none", isErr ? 5000 : 2800);
+}
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const BLOOM = {1:"Biết",2:"Hiểu",3:"Vận dụng",4:"Phân tích",5:"Đánh giá"};
 const QT = {"": "Mọi dạng", TN: "Trắc nghiệm", DS: "Đúng/sai", DT: "Điền từ", TL: "Tự luận"};
@@ -295,7 +311,8 @@ async function saveQ() {
 
 async function delQ(id) {
   if (!confirm("Xóa câu hỏi #" + id + "?")) return;
-  await api(`/api/questions/${id}`, { method: "DELETE" });
+  try { await api(`/api/questions/${id}`, { method: "DELETE" }); toast("Đã xóa câu #" + id + "."); }
+  catch (e) { toast(e.message, true); }
   loadQuestions();
 }
 
@@ -374,16 +391,32 @@ async function renderStruct() {
   const byTb = id => TREE.chapters.filter(c => c.textbook_id == id);
   const byCourse = id => TREE.textbooks.filter(t => t.course_id == id);
   $("#treeBox").innerHTML = TREE.courses.length ? `<ul>` + TREE.courses.map(c => `
-    <li><b>${esc(c.name)}</b> <button class="d" onclick="delNode('courses',${c.id})">Xóa</button>
+    <li><b>${esc(c.name)}</b>${c.code ? ` <span class="sub">${esc(c.code)}</span>` : ""} <button class="g" onclick="renameNode('courses',${c.id})">Sửa</button> <button class="d" onclick="delNode('courses',${c.id})">Xóa</button>
       <ul>${byCourse(c.id).map(t => `
-        <li>${esc(t.name)} <button class="d" onclick="delNode('textbooks',${t.id})">Xóa</button>
+        <li>${esc(t.name)}${t.code ? ` <span class="sub">${esc(t.code)}</span>` : ""} <button class="g" onclick="renameNode('textbooks',${t.id})">Sửa</button> <button class="d" onclick="delNode('textbooks',${t.id})">Xóa</button>
           <ul>${byTb(t.id).map(ch => `
             <li>${esc(ch.code)}${ch.title ? " - " + esc(ch.title) : ""} <span class="sub">(${ch.count} câu)</span>
-              <button class="d" onclick="delNode('chapters',${ch.id})">Xóa</button></li>`).join("")}</ul>
+              <button class="g" onclick="renameNode('chapters',${ch.id})">Sửa</button> <button class="d" onclick="delNode('chapters',${ch.id})">Xóa</button></li>`).join("")}</ul>
         </li>`).join("")}</ul>
     </li>`).join("") + `</ul>` : `<span class="msg">Chưa có học phần nào.</span>`;
   $("#newTbCourse").innerHTML = TREE.courses.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join("");
   $("#newChTb").innerHTML = TREE.textbooks.map(t => `<option value="${t.id}">${esc(courseName(t.course_id))} / ${esc(t.name)}</option>`).join("");
+}
+
+async function loadHistory() {
+  const rows = await api("/api/exports");
+  $("#histBox").innerHTML = rows.length ? `<table><thead><tr><th>Thời gian</th><th>Tên đề</th><th>Mã đề</th><th class="num">Kích thước</th><th></th></tr></thead><tbody>` +
+    rows.map(r => `<tr><td>${esc(r.created_at.replace("T", " "))}</td><td>${esc(r.name)}</td><td>${esc(r.codes)}</td>
+      <td class="num">${Math.max(1, Math.round(r.size / 1024))} KB</td>
+      <td style="white-space:nowrap"><a href="/api/exports/${r.id}/file" download><button class="g">Tải lại</button></a>
+      <button class="d" onclick="delExport(${r.id})">Xóa</button></td></tr>`).join("") + `</tbody></table>`
+    : `<span class="msg">Chưa có bản xuất nào.</span>`;
+}
+async function delExport(id) {
+  if (!confirm("Xóa bản xuất này khỏi lịch sử?")) return;
+  try { await api(`/api/exports/${id}`, { method: "DELETE" }); toast("Đã xóa khỏi lịch sử."); }
+  catch (e) { toast(e.message, true); }
+  loadHistory();
 }
 
 async function structAction(fn) {
@@ -400,6 +433,26 @@ const addChapter = () => structAction(async () => {
   await postJson("/api/chapters", { textbook_id: $("#newChTb").value, code: $("#newChCode").value, title: $("#newChTitle").value });
   $("#newChCode").value = ""; $("#newChTitle").value = "";
 });
+async function renameNode(kind, id) {
+  const cur = kind === "courses" ? TREE.courses.find(x => x.id == id)
+            : kind === "textbooks" ? TREE.textbooks.find(x => x.id == id)
+            : TREE.chapters.find(x => x.id == id);
+  let body;
+  if (kind === "chapters") {
+    const code = prompt("Mã chương:", cur.code); if (code === null) return;
+    const title = prompt("Tên chương:", cur.title || ""); if (title === null) return;
+    body = { code, title };
+  } else {
+    const name = prompt("Tên mới:", cur.name); if (name === null) return;
+    const code = prompt("Mã:", cur.code || ""); if (code === null) return;
+    body = { name, code };
+  }
+  try {
+    await postJson(`/api/${kind}/${id}`, body, "PUT");
+    toast("Đã lưu thay đổi.");
+    renderStruct();
+  } catch (e) { toast(e.message, true); }
+}
 const delNode = (kind, id) => structAction(async () => {
   if (!confirm("Xóa mục này? Chỉ xóa được khi không còn dữ liệu bên trong.")) return;
   await api(`/api/${kind}/${id}`, { method: "DELETE" });
@@ -431,12 +484,13 @@ async function loadExport() {
   if (!$("#sections").children.length) DEFAULT_PARTS.forEach(([t, q]) => addSection(t, q));
   filterExportRows();
   refreshAllCells();
+  loadHistory();
 }
 
 // ---------- ghi nhớ biểu mẫu xuất đề (lưu trên trình duyệt)
 const REMEMBER = {mon:"v", maHp:"v", soTc:"v", khoaHoc:"v", hocKy:"v", namHoc:"v", thoiGian:"v", tenDe:"v",
                   tpl:"v", keyTpl:"v", furigana:"v", variants:"v", prefix:"v", start:"v",
-                  answerKey:"c", keySeparate:"c", recordUsage:"c"};
+                  answerKey:"c", keySeparate:"c", recordUsage:"c", saveHistory:"c"};
 function saveForm() {
   const data = {};
   for (const [id, kind] of Object.entries(REMEMBER)) {
@@ -667,7 +721,7 @@ async function doExport() {
     template: $("#tpl").value, key_template: $("#keyTpl").value, furigana: $("#furigana").value,
     variants: +$("#variants").value || 1, start: +$("#start").value || 1, prefix: $("#prefix").value,
     answer_key: $("#answerKey").checked, key_separate: $("#keySeparate").checked,
-    record_usage: $("#recordUsage").checked,
+    record_usage: $("#recordUsage").checked, save_history: $("#saveHistory").checked,
   };
   $("#exportMsg").textContent = "Đang tạo...";
   try {
@@ -676,6 +730,8 @@ async function doExport() {
     const a = Object.assign(document.createElement("a"), { href: url, download: "de_thi.zip" });
     a.click(); URL.revokeObjectURL(url);
     const reused = +r.headers.get("X-Reused") || 0;
+    toast("Đã tải xuống file đề.");
+    loadHistory();
     $("#exportMsg").textContent = "Đã tải xuống. " + (reused
       ? `Ưu tiên câu chưa dùng, còn ${reused} câu đã dùng trước đó phải chọn lại (ngân hàng thiếu câu mới).`
       : "Tất cả câu được chọn đều chưa dùng trong các đề trước.");

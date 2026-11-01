@@ -88,6 +88,13 @@ def init_storage():
             name TEXT NOT NULL UNIQUE,
             config TEXT NOT NULL DEFAULT '{}',
             updated_at TEXT NOT NULL DEFAULT '')""")
+    q("""CREATE TABLE IF NOT EXISTS exam_exports(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at TEXT NOT NULL,
+            name TEXT NOT NULL DEFAULT '',
+            codes TEXT NOT NULL DEFAULT '',
+            config TEXT NOT NULL DEFAULT '{}',
+            data BLOB NOT NULL)""")
     ensure_column("courses", "code", "TEXT NOT NULL DEFAULT ''")
     ensure_column("courses", "exam_meta", "TEXT NOT NULL DEFAULT '{}'")
     ensure_column("textbooks", "code", "TEXT NOT NULL DEFAULT ''")
@@ -188,7 +195,7 @@ def get_tree():
             c["exam_meta"] = json.loads(c["exam_meta"] or "{}")
         except ValueError:
             c["exam_meta"] = {}
-    textbooks = q("SELECT id, course_id, name FROM textbooks ORDER BY name", fetch=True)
+    textbooks = q("SELECT id, course_id, name, code FROM textbooks ORDER BY name", fetch=True)
     chapters = q("""SELECT ch.id, ch.textbook_id, ch.code, ch.title,
                     (SELECT COUNT(*) FROM questions qs WHERE qs.chapter_id = ch.id) AS count
                     FROM chapters ch ORDER BY ch.code""", fetch=True)
@@ -1081,6 +1088,17 @@ class Handler(BaseHTTPRequestHandler):
         if p == "/api/templates":
             names = sorted(f for f in os.listdir(TPL_DIR) if f.lower().endswith(".docx"))
             return self._json(200, names)
+        if p == "/api/exports":  # lịch sử các lần xuất (không kèm nội dung file)
+            return self._json(200, q("""SELECT id, created_at, name, codes, length(data) AS size
+                                        FROM exam_exports ORDER BY id DESC LIMIT 200""", fetch=True))
+        fm = re.fullmatch(r"/api/exports/(\d+)/file", p)
+        if fm:
+            rows = q("SELECT codes, data FROM exam_exports WHERE id=?", (int(fm.group(1)),), fetch=True)
+            if not rows:
+                return self._json(404, {"error": "không tìm thấy bản xuất"})
+            fname = "de_thi_" + re.sub(r"[^\w.-]+", "_", rows[0]["codes"].split(",")[0].strip() or "x") + ".zip"
+            return self._send(200, rows[0]["data"], "application/zip",
+                              {"Content-Disposition": f'attachment; filename="{fname}"'})
         if p == "/api/configs":  # cấu trúc đề đã lưu
             rows = q("SELECT id, name, config, updated_at FROM exam_configs ORDER BY name", fetch=True)
             for r in rows:
@@ -1176,6 +1194,27 @@ class Handler(BaseHTTPRequestHandler):
 
     # --- PUT
     def _put(self):
+        path = urlparse(self.path).path
+        rn = re.fullmatch(r"/api/(courses|textbooks|chapters)/(\d+)", path)
+        if rn:  # sửa tên/mã học phần, giáo trình, chương
+            b = self._json_body()
+            kind, rid = rn.group(1), int(rn.group(2))
+            if kind == "courses":
+                name = str(b.get("name", "")).strip()
+                if not name:
+                    raise ValueError("Thiếu tên học phần")
+                q("UPDATE courses SET name=?, code=? WHERE id=?", (name, str(b.get("code", "")).strip(), rid))
+            elif kind == "textbooks":
+                name = str(b.get("name", "")).strip()
+                if not name:
+                    raise ValueError("Thiếu tên giáo trình")
+                q("UPDATE textbooks SET name=?, code=? WHERE id=?", (name, str(b.get("code", "")).strip(), rid))
+            else:
+                code = str(b.get("code", "")).strip()
+                if not code:
+                    raise ValueError("Thiếu mã chương")
+                q("UPDATE chapters SET code=?, title=? WHERE id=?", (code, str(b.get("title", "")).strip(), rid))
+            return self._json(200, {"ok": True})
         cm = re.fullmatch(r"/api/courses/(\d+)/exam-meta", urlparse(self.path).path)
         if cm:  # thông tin đề thi gắn với học phần, tự điền khi xuất đề
             body = self._json_body()
@@ -1198,6 +1237,10 @@ class Handler(BaseHTTPRequestHandler):
         cfg = re.fullmatch(r"/api/configs/(\d+)", path)
         if cfg:
             q("DELETE FROM exam_configs WHERE id=?", (int(cfg.group(1)),))
+            return self._json(200, {"ok": True})
+        ex = re.fullmatch(r"/api/exports/(\d+)", path)
+        if ex:
+            q("DELETE FROM exam_exports WHERE id=?", (int(ex.group(1)),))
             return self._json(200, {"ok": True})
         m = re.fullmatch(r"/api/(questions|courses|textbooks|chapters)/(\d+)", path)
         if not m:
@@ -1254,9 +1297,11 @@ class Handler(BaseHTTPRequestHandler):
         rng = random.Random()
         out = io.BytesIO()
         usage_rows = []
+        codes = []
         with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
             for i in range(variants):
                 code = f"{prefix}{start + i:03d}"
+                codes.append(code)
                 exam = [(t, make_variant(b, sh, rng)) for t, b, sh in parts]
                 data = render_docx(tpl_path, body.get("meta", {}), exam, code,
                                    answer_key and not key_separate, furigana)
@@ -1269,7 +1314,13 @@ class Handler(BaseHTTPRequestHandler):
                 if body.get("record_usage", True):
                     usage_rows += [(it["id"], code, exam_name, now) for _, _, it in flatten(exam)]
         record_usage(usage_rows)
-        self._send(200, out.getvalue(), "application/zip",
+        data = out.getvalue()
+        if body.get("save_history", True):  # lưu bản xuất để tải lại hoặc in lại đáp án
+            q("INSERT INTO exam_exports(created_at, name, codes, config, data) VALUES(?,?,?,?,?)",
+              (now, exam_name, ", ".join(codes),
+               json.dumps({"meta": body.get("meta", {}), "variants": variants, "start": start,
+                           "prefix": prefix, "template": tpl}, ensure_ascii=False), data))
+        self._send(200, data, "application/zip",
                    {"X-Reused": str(reused), "X-Variants": str(variants)})
 
 
