@@ -83,7 +83,13 @@ def init_storage():
             exam_code TEXT NOT NULL,
             exam_name TEXT NOT NULL DEFAULT '',
             used_at TEXT NOT NULL)""")
+    q("""CREATE TABLE IF NOT EXISTS exam_configs(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE,
+            config TEXT NOT NULL DEFAULT '{}',
+            updated_at TEXT NOT NULL DEFAULT '')""")
     ensure_column("courses", "code", "TEXT NOT NULL DEFAULT ''")
+    ensure_column("courses", "exam_meta", "TEXT NOT NULL DEFAULT '{}'")
     ensure_column("textbooks", "code", "TEXT NOT NULL DEFAULT ''")
     ensure_column("questions", "code", "TEXT")
     ensure_column("questions", "passage", "TEXT NOT NULL DEFAULT ''")
@@ -172,8 +178,16 @@ def chapter_label(chapter_id):
     return rows[0]["label"] if rows else f"chương #{chapter_id}"
 
 
+EXAM_META_KEYS = ("ten_hp", "ma_hp", "so_tc", "khoa_hoc", "nam_hoc", "hoc_ky", "thoi_gian")
+
+
 def get_tree():
-    courses = q("SELECT id, name FROM courses ORDER BY name", fetch=True)
+    courses = q("SELECT id, name, code, exam_meta FROM courses ORDER BY name", fetch=True)
+    for c in courses:
+        try:
+            c["exam_meta"] = json.loads(c["exam_meta"] or "{}")
+        except ValueError:
+            c["exam_meta"] = {}
     textbooks = q("SELECT id, course_id, name FROM textbooks ORDER BY name", fetch=True)
     chapters = q("""SELECT ch.id, ch.textbook_id, ch.code, ch.title,
                     (SELECT COUNT(*) FROM questions qs WHERE qs.chapter_id = ch.id) AS count
@@ -1019,6 +1033,11 @@ class Handler(BaseHTTPRequestHandler):
         if p == "/api/templates":
             names = sorted(f for f in os.listdir(TPL_DIR) if f.lower().endswith(".docx"))
             return self._json(200, names)
+        if p == "/api/configs":  # cấu trúc đề đã lưu
+            rows = q("SELECT id, name, config, updated_at FROM exam_configs ORDER BY name", fetch=True)
+            for r in rows:
+                r["config"] = json.loads(r["config"] or "{}")
+            return self._json(200, rows)
         self._json(404, {"error": "không tìm thấy"})
 
     # --- POST
@@ -1061,6 +1080,19 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(200, auto_merge_same_chapter())
         if p == "/api/export":
             return self._export(self._json_body())
+        if p == "/api/configs":  # lưu hoặc ghi đè cấu trúc đề theo tên
+            b = self._json_body()
+            name = str(b.get("name", "")).strip()
+            if not name:
+                raise ValueError("Thiếu tên cấu trúc đề")
+            config = b.get("config")
+            if not isinstance(config, dict) or not config.get("sections"):
+                raise ValueError("Cấu trúc đề không hợp lệ")
+            now = datetime.now().isoformat(timespec="seconds")
+            q("""INSERT INTO exam_configs(name, config, updated_at) VALUES(?, ?, ?)
+                 ON CONFLICT(name) DO UPDATE SET config=excluded.config, updated_at=excluded.updated_at""",
+              (name, json.dumps(config, ensure_ascii=False), now))
+            return self._json(201, {"ok": True})
         if p == "/api/courses":
             body = self._json_body()
             name = str(body.get("name", "")).strip()
@@ -1088,6 +1120,13 @@ class Handler(BaseHTTPRequestHandler):
 
     # --- PUT
     def _put(self):
+        cm = re.fullmatch(r"/api/courses/(\d+)/exam-meta", urlparse(self.path).path)
+        if cm:  # thông tin đề thi gắn với học phần, tự điền khi xuất đề
+            body = self._json_body()
+            meta = {k: str(body.get(k, "")).strip() for k in EXAM_META_KEYS}
+            q("UPDATE courses SET exam_meta=? WHERE id=?",
+              (json.dumps(meta, ensure_ascii=False), int(cm.group(1))))
+            return self._json(200, {"ok": True})
         m = re.fullmatch(r"/api/questions/(\d+)", urlparse(self.path).path)
         if not m:
             return self._json(404, {"error": "không tìm thấy"})
@@ -1100,6 +1139,10 @@ class Handler(BaseHTTPRequestHandler):
     # --- DELETE: chỉ xóa khi không còn dữ liệu bên trong (khóa ngoài RESTRICT)
     def _delete(self):
         path = urlparse(self.path).path
+        cfg = re.fullmatch(r"/api/configs/(\d+)", path)
+        if cfg:
+            q("DELETE FROM exam_configs WHERE id=?", (int(cfg.group(1)),))
+            return self._json(200, {"ok": True})
         m = re.fullmatch(r"/api/(questions|courses|textbooks|chapters)/(\d+)", path)
         if not m:
             return self._json(404, {"error": "không tìm thấy"})

@@ -112,6 +112,10 @@
   <div class="card">
     <div class="row"><b>Thông tin đề thi</b> <span class="sub">(tên trường, khoa và bố cục lấy từ mẫu đề)</span></div>
     <div class="row">
+      <label>Lấy từ học phần:</label><select id="metaCourse" onchange="applyCourseMeta()" style="min-width:200px"></select>
+      <button class="g" onclick="saveCourseMeta()">Lưu thông tin này cho học phần</button><span id="metaMsg" class="msg"></span>
+    </div>
+    <div class="row">
       <label>Tên học phần:</label><input id="mon" style="width:200px" placeholder="Tiếng Nhật 4">
       <label>Mã HP:</label><input id="maHp" style="width:100px" placeholder="1090411">
       <label>Số tín chỉ:</label><input id="soTc" class="n" value="4">
@@ -136,6 +140,17 @@
       <label><input type="checkbox" id="answerKey"> Kèm đáp án cuối đề</label>
       <label><input type="checkbox" id="keySeparate" checked> Đáp án ra file riêng (DapAn_xxx.docx)</label>
       <label><input type="checkbox" id="recordUsage" checked> Ghi lịch sử dùng câu</label>
+    </div>
+  </div>
+  <div class="card">
+    <div class="row"><b>Cấu trúc đề đã lưu</b> <span class="sub">(lưu các phần, số câu, mẫu, furigana; không lưu mã đề, số mã đề, thông tin đề)</span></div>
+    <div class="row">
+      <select id="cfgSelect" style="min-width:220px"></select>
+      <button class="g" onclick="loadConfig()">Tải</button>
+      <button class="d" onclick="deleteConfig()">Xóa</button>
+      <input id="cfgName" placeholder="Tên cấu trúc (để trống = ghi đè cấu trúc đang chọn)" style="width:300px">
+      <button class="g" onclick="saveConfig()">Lưu cấu trúc</button>
+      <span id="cfgMsg" class="msg"></span>
     </div>
   </div>
   <div class="row">
@@ -409,10 +424,141 @@ async function loadExport() {
   $("#tpl").innerHTML = tpls.map(t => `<option ${t === "de_thi_chuan.docx" ? "selected" : ""}>${esc(t)}</option>`).join("");
   $("#keyTpl").innerHTML = tpls.map(t => `<option ${t === "dap_an_chuan.docx" ? "selected" : ""}>${esc(t)}</option>`).join("");
   $("#xCourse").innerHTML = `<option value="">Tất cả</option>` + TREE.courses.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join("");
+  $("#metaCourse").innerHTML = `<option value="">— chọn học phần —</option>` + TREE.courses.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join("");
+  restoreForm();  // sau khi đã có danh sách mẫu, để giữ lại lựa chọn của lần trước
+  await loadConfigs();
   if (!$("#sections").children.length) DEFAULT_PARTS.forEach(([t, q]) => addSection(t, q));
   filterExportRows();
   refreshAllCells();
 }
+
+// ---------- ghi nhớ biểu mẫu xuất đề (lưu trên trình duyệt)
+const REMEMBER = {mon:"v", maHp:"v", soTc:"v", khoaHoc:"v", hocKy:"v", namHoc:"v", thoiGian:"v", tenDe:"v",
+                  tpl:"v", keyTpl:"v", furigana:"v", variants:"v", prefix:"v", start:"v",
+                  answerKey:"c", keySeparate:"c", recordUsage:"c"};
+function saveForm() {
+  const data = {};
+  for (const [id, kind] of Object.entries(REMEMBER)) {
+    const el = document.getElementById(id);
+    if (el) data[id] = kind === "c" ? el.checked : el.value;
+  }
+  localStorage.setItem("qbank_form", JSON.stringify(data));
+}
+function restoreForm() {
+  let data = null;
+  try { data = JSON.parse(localStorage.getItem("qbank_form") || "null"); } catch (e) { return; }
+  if (!data) return;
+  for (const [id, kind] of Object.entries(REMEMBER)) {
+    const el = document.getElementById(id);
+    if (!el || !(id in data)) continue;
+    if (kind === "c") el.checked = !!data[id];
+    else if ([...el.options || []].some(o => o.value === String(data[id]))) el.value = data[id];
+    else if (!el.options) el.value = data[id];
+  }
+}
+document.getElementById("export").addEventListener("change", saveForm);
+
+// ---------- thông tin đề thi theo học phần
+const META_FIELDS = {ten_hp:"mon", ma_hp:"maHp", so_tc:"soTc", khoa_hoc:"khoaHoc", nam_hoc:"namHoc", hoc_ky:"hocKy", thoi_gian:"thoiGian"};
+function applyCourseMeta() {
+  const c = TREE.courses.find(x => x.id == $("#metaCourse").value);
+  if (!c) return;
+  const m = c.exam_meta || {};
+  for (const [k, elId] of Object.entries(META_FIELDS)) {
+    if (m[k] !== undefined && m[k] !== "") $("#" + elId).value = m[k];
+    else if (k === "ten_hp") $("#" + elId).value = c.name;
+  }
+  $("#metaMsg").textContent = Object.keys(m).length ? "Đã điền thông tin của học phần." : "Học phần chưa có thông tin đề; đã điền tên học phần.";
+  saveForm();
+}
+async function saveCourseMeta() {
+  const id = $("#metaCourse").value;
+  if (!id) { $("#metaMsg").innerHTML = `<span class="err">Chọn học phần trước.</span>`; return; }
+  const body = {};
+  for (const [k, elId] of Object.entries(META_FIELDS)) body[k] = $("#" + elId).value;
+  try {
+    await postJson(`/api/courses/${id}/exam-meta`, body, "PUT");
+    TREE = await api("/api/tree");
+    $("#metaMsg").textContent = "Đã lưu thông tin cho học phần.";
+  } catch (e) { $("#metaMsg").innerHTML = `<span class="err">${esc(e.message)}</span>`; }
+}
+
+// ---------- cấu trúc đề đã lưu
+let CONFIGS = [];
+async function loadConfigs() {
+  CONFIGS = await api("/api/configs");
+  const keep = $("#cfgSelect").value;
+  $("#cfgSelect").innerHTML = `<option value="">— chọn cấu trúc —</option>` + CONFIGS.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join("");
+  $("#cfgSelect").value = CONFIGS.some(c => String(c.id) === keep) ? keep : "";
+}
+function readSections() {
+  return [...document.querySelectorAll(".sec")].map(card => ({
+    title: card.querySelector(".st").value,
+    qtype: card.querySelector(".sq").value,
+    shuffle: card.querySelector(".ss").checked,
+    matrix: [...card.querySelectorAll(".cell")]
+      .map(i => ({ chapter_id: +i.dataset.ch, bloom: +i.dataset.b, n: +i.value || 0 })).filter(x => x.n > 0),
+  }));
+}
+async function saveConfig() {
+  const sel = CONFIGS.find(c => String(c.id) === $("#cfgSelect").value);
+  const name = $("#cfgName").value.trim() || (sel ? sel.name : "");
+  if (!name) { $("#cfgMsg").innerHTML = `<span class="err">Nhập tên cấu trúc.</span>`; return; }
+  const config = {
+    sections: readSections(),
+    template: $("#tpl").value, key_template: $("#keyTpl").value, furigana: $("#furigana").value,
+    answer_key: $("#answerKey").checked, key_separate: $("#keySeparate").checked,
+  };
+  try {
+    await postJson("/api/configs", { name, config });
+    await loadConfigs();
+    $("#cfgSelect").value = String(CONFIGS.find(c => c.name === name).id);
+    $("#cfgName").value = "";
+    $("#cfgMsg").textContent = `Đã lưu cấu trúc "${name}".`;
+  } catch (e) { $("#cfgMsg").innerHTML = `<span class="err">${esc(e.message)}</span>`; }
+}
+function loadConfig() {
+  const c = CONFIGS.find(x => String(x.id) === $("#cfgSelect").value);
+  if (!c) { $("#cfgMsg").innerHTML = `<span class="err">Chọn cấu trúc cần tải.</span>`; return; }
+  const cfg = c.config || {};
+  $("#sections").innerHTML = "";
+  for (const s of cfg.sections || []) {
+    addSection(s.title || "", s.qtype || "");
+    const card = $("#sections").lastElementChild;
+    card.querySelector(".ss").checked = s.shuffle !== false;
+    for (const m of s.matrix || []) {
+      const el = card.querySelector(`.cell[data-ch="${m.chapter_id}"][data-b="${m.bloom}"]`);
+      if (el) el.value = m.n;
+    }
+  }
+  if (cfg.template) $("#tpl").value = cfg.template;
+  if (cfg.key_template) $("#keyTpl").value = cfg.key_template;
+  if (cfg.furigana) $("#furigana").value = cfg.furigana;
+  if (cfg.answer_key !== undefined) $("#answerKey").checked = !!cfg.answer_key;
+  if (cfg.key_separate !== undefined) $("#keySeparate").checked = !!cfg.key_separate;
+  refreshAllCells(); filterExportRows(); saveForm();
+  $("#cfgName").value = c.name;
+  $("#cfgMsg").textContent = `Đã tải cấu trúc "${c.name}". Kiểm tra lại số câu trước khi xuất.`;
+}
+async function deleteConfig() {
+  const c = CONFIGS.find(x => String(x.id) === $("#cfgSelect").value);
+  if (!c) { $("#cfgMsg").innerHTML = `<span class="err">Chọn cấu trúc cần xóa.</span>`; return; }
+  if (!confirm(`Xóa cấu trúc "${c.name}"? Các phần và số câu đã lưu sẽ mất.`)) return;
+  await api(`/api/configs/${c.id}`, { method: "DELETE" });
+  await loadConfigs();
+  $("#cfgMsg").textContent = `Đã xóa cấu trúc "${c.name}".`;
+}
+
+// ---------- phím tắt: Ctrl+S lưu câu (khi đang sửa), N câu mới, / tìm kiếm
+document.addEventListener("keydown", e => {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s" && $("#editor").style.display === "block") {
+    e.preventDefault(); saveQ(); return;
+  }
+  if (/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName) || e.ctrlKey || e.metaKey || e.altKey) return;
+  if (!$("#bank").classList.contains("on")) return;
+  if (e.key === "n" || e.key === "N") { e.preventDefault(); editQ(null); }
+  else if (e.key === "/") { e.preventDefault(); $("#fSearch").focus(); }
+});
 
 function addSection(title = "", qtype = "") {
   const div = document.createElement("div");
@@ -456,13 +602,14 @@ function checkCell(i) {
 }
 
 async function doExport() {
-  const sections = [...document.querySelectorAll(".sec")].map(card => ({
-    title: card.querySelector(".st").value,
-    qtype: card.querySelector(".sq").value,
-    shuffle: card.querySelector(".ss").checked,
-    matrix: [...card.querySelectorAll(".cell")]
-      .map(i => ({ chapter_id: +i.dataset.ch, bloom: +i.dataset.b, n: +i.value || 0 })).filter(x => x.n > 0),
-  }));
+  const sections = readSections();
+  // Kiểm tra trước khi xuất
+  const short = [...document.querySelectorAll(".cell")].filter(x => (+x.value || 0) > +x.dataset.have).length;
+  if (!sections.some(s => s.matrix.length)) { $("#exportMsg").innerHTML = `<span class="err">Chưa nhập số câu cho phần nào.</span>`; return; }
+  if (short) { $("#exportMsg").innerHTML = `<span class="err">Không xuất: còn ${short} ô thiếu câu hỏi (tô đỏ).</span>`; return; }
+  const missing = [["Tên học phần", "mon"], ["Mã HP", "maHp"], ["Năm học", "namHoc"]]
+    .filter(([, id]) => !$("#" + id).value.trim()).map(([label]) => label);
+  if (missing.length && !confirm(`Chưa nhập: ${missing.join(", ")}. Vẫn xuất đề?`)) return;
   const body = {
     sections,
     meta: { ten_hp: $("#mon").value, ma_hp: $("#maHp").value, so_tc: $("#soTc").value,
