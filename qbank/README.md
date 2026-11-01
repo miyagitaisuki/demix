@@ -76,7 +76,7 @@ Lưu trong `data/qbank.db` (SQLite). Sao lưu bằng cách sao chép file này.
 - ✅ Gắn thông tin đề (tên HP, mã HP, số tín chỉ, khóa, học kỳ, năm học, thời gian) vào học phần: chọn học phần trong tab Xuất đề để tự điền, bấm "Lưu thông tin này cho học phần" để ghi lại.
 - ✅ Lưu lịch sử các lần xuất: mã đề, ngày, tên đề. Tải lại file .zip (đề và đáp án) hoặc xóa khỏi lịch sử. *Chưa lưu danh sách câu theo từng mã đề.*
 - ✅ Xem trước đề trên web, cho phép đổi một câu cụ thể mà không chọn lại toàn bộ. *Nút "Xem trước đề" ở tab Xuất đề; xuất dùng đúng các câu đã xem.*
-- ✅ Đoạn văn là đối tượng riêng: mỗi đoạn có mã (ví dụ `N4-MN1-B01-P001`), câu gắn vào đoạn qua form câu hỏi (chọn đoạn có sẵn hoặc nhập mới). Danh sách đoạn ở tab Cấu trúc: sửa nội dung, xóa khi không còn câu. *Chưa có ma trận đề chọn theo số đoạn.*
+- ✅ Đoạn văn là đối tượng riêng: mỗi đoạn có mã (ví dụ `N4-MN1-B01-P001`), câu gắn vào đoạn qua form câu hỏi (chọn đoạn có sẵn hoặc nhập mới). Danh sách đoạn ở tab Cấu trúc: sửa nội dung, xóa khi không còn câu. *Ma trận theo đoạn: trong từng phần, chọn số đoạn của một chương.*
 
 **Nên làm tiếp**
 - ✅ Sửa tên và mã học phần, giáo trình, chương (nút "Sửa" ở tab Cấu trúc).
