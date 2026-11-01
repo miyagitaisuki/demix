@@ -41,6 +41,10 @@
   .step.on { color:var(--b); border-color:var(--b); }
   .step.on span { background:var(--b); color:#fff; }
   .step.done span { background:#16a34a; color:#fff; }
+  #pane1 .sb { display:none; }  /* bước 1: chỉ tiêu đề, dạng, xáo */
+  #pane2 .sh { display:none; }  /* bước 2: chỉ bảng số câu */
+  .sec-title { display:none; }
+  #pane2 .sec-title { display:block; margin-bottom:6px; }
   .pane { display:none; } .pane.on { display:block; }
   .wiznav { margin-top:14px; padding-top:10px; border-top:1px solid var(--line); }
   .twocol { display:flex; gap:16px; align-items:flex-start; }
@@ -84,14 +88,19 @@
   </div>
   <div class="row">
     <button class="g" onclick="editQ(null)">+ Câu mới</button>
-    <label>Nhập từ .docx (giáo trình đang chọn ở bộ lọc):</label>
-    <input type="file" accept=".docx" onchange="importDocx(this)">
-    <button class="g" onclick="showDuplicates()">Kiểm tra trùng</button>
-    <button class="g" onclick="showSimilar()">Tìm câu gần giống</button>
+    <span class="sub">Nhập/xuất file:</span>
+    <label for="importFile">Nhập từ .docx vào:</label>
+    <span id="importTarget" class="sub"></span>
+    <input type="file" id="importFile" accept=".docx" onchange="importDocx(this)">
     <a href="/api/import-template" download><button class="g">Tải mẫu nhập</button></a>
     <a href="/api/backup" download><button class="g">Sao lưu</button></a>
-    <label>Khôi phục:</label>
-    <input type="file" accept=".json" onchange="restoreJson(this)">
+    <label for="restoreFile">Khôi phục từ .json:</label>
+    <input type="file" id="restoreFile" accept=".json" onchange="restoreJson(this)">
+  </div>
+  <div class="row">
+    <span class="sub">Rà soát dữ liệu:</span>
+    <button class="g" onclick="showDuplicates()">Kiểm tra trùng</button>
+    <button class="g" onclick="showSimilar()">Tìm câu gần giống</button>
   </div>
   <div id="importMsg" class="msg"></div>
   <div id="importPreview" class="card" style="display:none"></div>
@@ -157,13 +166,15 @@
 <!-- ============ XUẤT ĐỀ ============ -->
 <section id="export">
   <nav class="stepper" id="stepper">
-    <button class="step on" data-step="1" onclick="goStep(1)"><span>1</span> Cấu trúc đề</button>
-    <button class="step" data-step="2" onclick="goStep(2)"><span>2</span> Thông tin đề</button>
-    <button class="step" data-step="3" onclick="goStep(3)"><span>3</span> Xem trước</button>
-    <button class="step" data-step="4" onclick="goStep(4)"><span>4</span> Xác nhận và xuất</button>
+    <button class="step on" data-step="1" onclick="goStep(1)"><span>1</span> Phần và dạng câu</button>
+    <button class="step" data-step="2" onclick="goStep(2)"><span>2</span> Số câu và đoạn</button>
+    <button class="step" data-step="3" onclick="goStep(3)"><span>3</span> Thông tin đề</button>
+    <button class="step" data-step="4" onclick="goStep(4)"><span>4</span> Mẫu và mã đề</button>
+    <button class="step" data-step="5" onclick="goStep(5)"><span>5</span> Xem trước</button>
+    <button class="step" data-step="6" onclick="goStep(6)"><span>6</span> Xác nhận và xuất</button>
   </nav>
 
-  <!-- Bước 1: cấu trúc đề -->
+  <!-- Bước 1: phần và dạng câu (cấu trúc đã lưu, tiêu đề, dạng, xáo) -->
   <div class="pane on" id="pane1">
     <div class="card">
       <div class="row"><b>Cấu trúc đề đã lưu</b> <span class="sub">(lưu các phần, số câu, mẫu, furigana; không lưu mã đề, số mã đề, thông tin đề)</span></div>
@@ -176,16 +187,22 @@
         <span id="cfgMsg" class="msg"></span>
       </div>
     </div>
-    <div class="row">
-      <label>Chỉ hiện chương của học phần:</label><select id="xCourse" onchange="filterExportRows()"></select>
-    </div>
-    <p class="msg">Mỗi phần là một khối câu theo một dạng (TN, DS, DT, TL). Nhập số câu cho từng ô chương × Bloom, hoặc số đoạn văn ở dòng “Theo đoạn văn”. Bỏ tick “Xáo” để giữ thứ tự câu trong ngân hàng.</p>
-    <div id="sections"></div>
+    <p class="msg">Mỗi phần là một khối câu theo một dạng (TN, DS, DT, TL). Đặt tên phần, chọn dạng và bật/tắt xáo ở đây; số câu nhập ở bước 2.</p>
+    <div class="secslot"><div id="sections"></div></div>
     <div class="row"><button class="g" onclick="addSection()">+ Thêm phần</button></div>
   </div>
 
-  <!-- Bước 2: thông tin đề -->
+  <!-- Bước 2: số câu và đoạn theo chương × Bloom -->
   <div class="pane" id="pane2">
+    <div class="row">
+      <label>Chỉ hiện chương của học phần:</label><select id="xCourse" onchange="filterExportRows()"></select>
+    </div>
+    <p class="msg">Nhập số câu cho từng ô chương × Bloom, hoặc số đoạn văn ở dòng “Theo đoạn văn”. Ô tô đỏ là chưa đủ câu; ô mờ là chương chưa có câu mức đó.</p>
+    <div class="secslot"></div>
+  </div>
+
+  <!-- Bước 3: thông tin đề -->
+  <div class="pane" id="pane3">
     <div class="card">
       <div class="row"><b>Thông tin đề thi</b> <span class="sub">(tên trường, khoa và bố cục lấy từ mẫu đề)</span></div>
       <div class="row">
@@ -204,33 +221,46 @@
         <label>Thời gian (phút):</label><input id="thoiGian" class="n" value="90">
         <label>Tên đề (ghi chú, không in):</label><input id="tenDe" style="width:160px">
       </div>
-      <div class="row"><b>Mã đề và file</b></div>
+    </div>
+  </div>
+
+  <!-- Bước 4: mẫu và mã đề -->
+  <div class="pane" id="pane4">
+    <div class="card">
+      <div class="row"><b>Mẫu file</b> <span class="sub">(mẫu nằm trong thư mục templates/)</span></div>
       <div class="row">
         <label>Mẫu đề:</label><select id="tpl"></select>
         <label>Mẫu đáp án:</label><select id="keyTpl"></select>
+        <label>Furigana:</label><select id="furigana"><option value="ruby">Chữ đọc phía trên (Word)</option><option value="paren">Chữ(cách đọc) cùng dòng</option></select>
+      </div>
+    </div>
+    <div class="card">
+      <div class="row"><b>Mã đề và đáp án</b></div>
+      <div class="row">
         <label>Số mã đề:</label><input id="variants" class="n" value="1">
         <label>Tiền tố:</label><input id="prefix" style="width:70px" placeholder="">
         <label>Bắt đầu từ:</label><input id="start" class="n" value="1">
       </div>
       <div class="row">
-        <label>Furigana:</label><select id="furigana"><option value="ruby">Chữ đọc phía trên (Word)</option><option value="paren">Chữ(cách đọc) cùng dòng</option></select>
         <label><input type="checkbox" id="answerKey"> Kèm đáp án cuối đề</label>
         <label><input type="checkbox" id="keySeparate" checked> Đáp án ra file riêng (DapAn_xxx.docx)</label>
+      </div>
+      <div class="row">
         <label><input type="checkbox" id="recordUsage" checked> Ghi lịch sử dùng câu</label>
         <label><input type="checkbox" id="saveHistory" checked> Lưu vào lịch sử xuất</label>
       </div>
     </div>
   </div>
 
-  <!-- Bước 3: xem trước -->
-  <div class="pane" id="pane3">
+  <!-- Bước 5: xem trước -->
+  <div class="pane" id="pane5">
     <p class="msg">Xem trước chọn câu cụ thể cho từng phần; bấm “Đổi câu” để thay câu khác. Có thể bỏ qua bước này: khi đó đề chọn câu ngẫu nhiên lúc xuất.</p>
     <div class="row"><button class="g" onclick="previewExam()">Xem trước đề</button><span id="previewStatus" class="msg"></span></div>
     <div id="previewBox"></div>
   </div>
 
-  <!-- Bước 4: xác nhận và xuất -->
-  <div class="pane" id="pane4">
+  <!-- Bước 6: xác nhận và xuất -->
+  <div class="pane" id="pane6">
     <div class="card">
       <div class="row"><b>Tóm tắt trước khi xuất</b></div>
       <div id="sumBox"></div>
@@ -271,13 +301,17 @@ let STATS = null;
 
 async function api(path, opts = {}) {
   const r = await fetch(path, opts);
-  if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.error || r.statusText); }
+  if (!r.ok) {
+    const e = await r.json().catch(() => ({}));
+    const err = new Error(e.error || r.statusText); err.confirm = !!e.confirm;  // confirm: cần người dùng xác nhận rồi gửi lại
+    throw err;
+  }
   return r.headers.get("Content-Type")?.includes("json") ? r.json() : r;
 }
 const postJson = (path, body, method = "POST") => api(path, { method, headers: {"Content-Type":"application/json"}, body: JSON.stringify(body) });
 
-document.querySelectorAll("nav button").forEach(b => b.onclick = () => {
-  document.querySelectorAll("nav button").forEach(x => x.classList.toggle("on", x === b));
+document.querySelectorAll("nav:not(.stepper) button").forEach(b => b.onclick = () => {
+  document.querySelectorAll("nav:not(.stepper) button").forEach(x => x.classList.toggle("on", x === b));
   document.querySelectorAll("section").forEach(s => s.classList.toggle("on", s.id === b.dataset.tab));
   if (b.dataset.tab === "struct") renderStruct();
   if (b.dataset.tab === "stats") { loadStats(); loadDifficulty(); }
@@ -307,6 +341,15 @@ function fillTextbookFilter() {
   $("#fTextbook").innerHTML = `<option value="">Mọi giáo trình</option>` + tbs.map(t => `<option value="${t.id}">${esc(t.name)}</option>`).join("");
   $("#fTextbook").value = tbs.some(t => t.id == keep) ? keep : "";
   fillChapterFilter();
+  updateImportTarget();
+}
+// ô nhập file hiển thị giáo trình đích (đang chọn ở bộ lọc); chưa chọn thì khóa ô chọn file
+function updateImportTarget() {
+  const tid = $("#fTextbook").value;
+  const tb = TREE.textbooks.find(t => t.id == tid);
+  $("#importTarget").textContent = tb ? `«${tb.name}»` : "(chọn giáo trình ở bộ lọc trước)";
+  $("#importTarget").style.color = tb ? "" : "var(--err, #b91c1c)";
+  $("#importFile").disabled = !tb;
 }
 function fillChapterFilter() {
   const tid = $("#fTextbook").value;
@@ -316,7 +359,7 @@ function fillChapterFilter() {
   $("#fChapter").value = chs.some(c => c.id == keep) ? keep : "";
 }
 $("#fCourse").onchange = () => { fillTextbookFilter(); loadQuestions(); };
-$("#fTextbook").onchange = () => { fillChapterFilter(); loadQuestions(); };
+$("#fTextbook").onchange = () => { fillChapterFilter(); updateImportTarget(); loadQuestions(); };
 $("#fChapter").onchange = loadQuestions;
 
 // ---------- ngân hàng
@@ -489,7 +532,8 @@ async function delPassage(id) {
   renderPassages();
 }
 
-async function saveQ() {
+// confirmPassage: người dùng đã xác nhận tạo đoạn mới dù gần giống đoạn có sẵn
+async function saveQ(confirmPassage = false) {
   const id = $("#eId").value;
   const body = {
     chapter_id: $("#eChap").value, bloom: $("#eBloom").value, qtype: $("#eType").value,
@@ -497,23 +541,31 @@ async function saveQ() {
     passage: $("#ePassage").value,
     options: $("#eOpts").value.split("\n").map(s => s.trim()).filter(Boolean).map(s => s.replace(/^[A-Ha-h][\.\)]\s*/, "")),
   };
+  if (confirmPassage) body.confirm_passage = true;
   try {
     const r = await postJson(id ? `/api/questions/${id}` : "/api/questions", body, id ? "PUT" : "POST");
     $("#editor").style.display = "none";
     loadQuestions();
-    if (r && r.warnings && r.warnings.length) $("#importMsg").innerHTML = `Đã lưu. <span class="err">${esc(r.warnings.join(" | "))}</span>`;
-  } catch (e) { $("#eMsg").textContent = e.message; }
+    const warnings = (r && r.warnings) || [];
+    toast(`${id ? "Đã lưu" : "Đã thêm"} câu ${r.code}.` + (warnings.length ? " " + warnings.join(" | ") : ""), warnings.length > 0);
+  } catch (e) {
+    if (e.confirm) {  // đoạn văn gần giống đoạn có sẵn: hỏi trước khi tạo đoạn mới
+      if (confirm(e.message + "\n\nBấm OK để vẫn tạo đoạn mới, Hủy để quay lại sửa.")) saveQ(true);
+      return;
+    }
+    $("#eMsg").textContent = e.message;
+  }
 }
 
 let QMAP = {};  // câu đang hiển thị, để hoàn tác khi xóa
 async function delQ(id) {
-  if (!confirm("Xóa câu hỏi #" + id + "?")) return;
   const q = QMAP[id];
+  if (!confirm(`Xóa câu ${q ? q.code : "này"}?`)) return;
   try {
     await api(`/api/questions/${id}`, { method: "DELETE" });
     loadQuestions();
     if (q) showUndo([toItem(q)], `Đã xóa câu ${q.code}.`);
-    else toast("Đã xóa câu #" + id + ".");
+    else toast("Đã xóa câu.");
   } catch (e) { toast(e.message, true); }
 }
 // hoàn tác: khôi phục câu từ dữ liệu đã có (lịch sử dùng và kết quả thi của câu đã xóa không khôi phục được)
@@ -584,24 +636,42 @@ async function importDocx(input) {
     $("#importMsg").textContent = "";
   } catch (e) { $("#importMsg").innerHTML = `<span class="err">${esc(e.message)}</span>`; }
 }
+let IMPORT_ROWS = [];  // dòng xem trước của lần kiểm tra gần nhất, để lọc mà không gọi lại server
 function renderImportPreview(r) {
   const box = $("#importPreview");
-  const badge = { ok: `<span class="tag">Sẽ nhập</span>`, warn: `<span class="tag" style="background:#fef3c7;color:#92400e">Nhập, có cảnh báo</span>`,
-                  skip: `<span class="tag" style="background:#e5e7eb">Bỏ qua</span>`, error: `<span class="tag" style="background:#fee2e2;color:#b91c1c">Lỗi</span>` };
-  const n = r.rows.filter(x => x.status === "ok" || x.status === "warn").length;
   box.style.display = "block";
+  IMPORT_ROWS = r.rows;
+  const count = st => r.rows.filter(x => x.status === st).length;
+  const n = count("ok") + count("warn");
   const tb = TREE.textbooks.find(t => t.id == PENDING_IMPORT.tid);
-  box.innerHTML = `<div class="sub" style="margin-bottom:6px">Bước 1 Chọn file ✓ → Bước 2 Kiểm tra ✓ → Bước 3 Xác nhận</div>
-      <div class="row"><b>Xem trước: ${esc(PENDING_IMPORT.name)}</b>
-      <span class="sub">${n} câu sẽ được nhập vào giáo trình «${esc(tb ? tb.name : "")}», ${r.rows.length - n} dòng bị bỏ qua hoặc lỗi. Chưa có gì được ghi.</span></div>
-    <table><thead><tr><th>Vị trí</th><th>Mã chương</th><th>Loại</th><th>Nội dung</th><th>Trạng thái</th></tr></thead><tbody>` +
-    r.rows.map(x => `<tr style="${x.status === "error" ? "background:#fef2f2" : ""}">
-      <td>${esc(x.where)}</td><td>${esc(x.code)}</td><td>${esc(x.qtype)}</td><td>${esc(x.content)}</td>
-      <td>${badge[x.status]} <span class="sub">${esc(x.note)}</span></td></tr>`).join("") +
-    `</tbody></table>
+  const tableErrors = (r.errors || []).length
+    ? `<div class="row" style="background:#fef2f2;color:#b91c1c;padding:8px;border-radius:6px;margin-bottom:8px">
+         <b>Lỗi cấp bảng, các bảng này bị bỏ qua:</b> ${esc(r.errors.join(" | "))}</div>` : "";
+  const chips = [["ok", "Sẽ nhập", "#dcfce7", "#166534"], ["warn", "Cảnh báo", "#fef3c7", "#92400e"],
+                 ["skip", "Bỏ qua (trùng)", "#e5e7eb", "#374151"], ["error", "Lỗi", "#fee2e2", "#b91c1c"]]
+    .map(([st, label, bg, fg]) => `<span class="tag" style="background:${bg};color:${fg}">${label}: ${count(st)}</span>`).join(" ");
+  box.innerHTML = tableErrors + `<div class="row"><b>Xem trước: ${esc(PENDING_IMPORT.name)}</b>
+      <span class="sub">Sẽ nhập ${n} câu vào giáo trình «${esc(tb ? tb.name : "")}». Chưa có gì được ghi.</span></div>
+    <div class="row">${chips}
+      <label style="margin-left:auto">Hiển thị: <select id="importFilter" onchange="renderImportRows()">
+        <option value="">Tất cả dòng</option><option value="ok">Sẽ nhập</option><option value="warn">Cảnh báo</option>
+        <option value="skip">Bỏ qua (trùng)</option><option value="error">Lỗi</option></select></label></div>
+    <table><thead><tr><th>Vị trí</th><th>Mã chương</th><th>Loại</th><th>Nội dung</th><th>Trạng thái</th></tr></thead><tbody id="importRows"></tbody></table>
     <div class="row" style="margin-top:8px">
       <button class="p" ${n ? "" : "disabled"} onclick="confirmImport()">Xác nhận: nhập ${n} câu</button>
       <button class="g" onclick="cancelImport()">Hủy</button></div>`;
+  renderImportRows();
+}
+function renderImportRows() {
+  const badge = { ok: `<span class="tag">Sẽ nhập</span>`, warn: `<span class="tag" style="background:#fef3c7;color:#92400e">Nhập, có cảnh báo</span>`,
+                  skip: `<span class="tag" style="background:#e5e7eb">Bỏ qua</span>`, error: `<span class="tag" style="background:#fee2e2;color:#b91c1c">Lỗi</span>` };
+  const f = $("#importFilter") ? $("#importFilter").value : "";
+  const rows = IMPORT_ROWS.filter(x => !f || x.status === f);
+  $("#importRows").innerHTML = rows.length
+    ? rows.map(x => `<tr style="${x.status === "error" ? "background:#fef2f2" : ""}">
+        <td>${esc(x.where)}</td><td>${esc(x.code)}</td><td>${esc(x.qtype)}</td><td>${esc(x.content)}</td>
+        <td>${badge[x.status]} <span class="sub">${esc(x.note)}</span></td></tr>`).join("")
+    : `<tr><td colspan="5" class="msg">Không có dòng nào ở trạng thái này.</td></tr>`;
 }
 function cancelImport() { PENDING_IMPORT = null; $("#importPreview").style.display = "none"; }
 async function confirmImport() {
@@ -694,13 +764,16 @@ async function renderStruct() {
   renderPassages();
   const byTb = id => TREE.chapters.filter(c => c.textbook_id == id);
   const byCourse = id => TREE.textbooks.filter(t => t.course_id == id);
+  // mục đang sửa tại chỗ thì thay dòng hiển thị bằng form; các mục khác giữ nguyên nút Sửa/Xóa
+  const actions = (kind, id) => EDIT_NODE && EDIT_NODE.kind === kind && EDIT_NODE.id === id ? "" :
+    ` <button class="g" onclick="renameNode('${kind}',${id})">Sửa</button> <button class="d" onclick="delNode('${kind}',${id})">Xóa</button>`;
+  const label = (kind, id, html) => EDIT_NODE && EDIT_NODE.kind === kind && EDIT_NODE.id === id ? nodeEditForm(kind, id) : html + actions(kind, id);
   $("#treeBox").innerHTML = TREE.courses.length ? `<ul>` + TREE.courses.map(c => `
-    <li><b>${esc(c.name)}</b>${c.code ? ` <span class="sub">${esc(c.code)}</span>` : ""} <button class="g" onclick="renameNode('courses',${c.id})">Sửa</button> <button class="d" onclick="delNode('courses',${c.id})">Xóa</button>
+    <li>${label("courses", c.id, `<b>${esc(c.name)}</b>${c.code ? ` <span class="sub">${esc(c.code)}</span>` : ""}`)}
       <ul>${byCourse(c.id).map(t => `
-        <li>${esc(t.name)}${t.code ? ` <span class="sub">${esc(t.code)}</span>` : ""} <button class="g" onclick="renameNode('textbooks',${t.id})">Sửa</button> <button class="d" onclick="delNode('textbooks',${t.id})">Xóa</button>
+        <li>${label("textbooks", t.id, `${esc(t.name)}${t.code ? ` <span class="sub">${esc(t.code)}</span>` : ""}`)}
           <ul>${byTb(t.id).map(ch => `
-            <li>${esc(ch.code)}${ch.title ? " - " + esc(ch.title) : ""} <span class="sub">(${ch.count} câu)</span>
-              <button class="g" onclick="renameNode('chapters',${ch.id})">Sửa</button> <button class="d" onclick="delNode('chapters',${ch.id})">Xóa</button></li>`).join("")}</ul>
+            <li>${label("chapters", ch.id, `${esc(ch.code)}${ch.title ? " - " + esc(ch.title) : ""} <span class="sub">(${ch.count} câu)</span>`)}</li>`).join("")}</ul>
         </li>`).join("")}</ul>
     </li>`).join("") + `</ul>` : `<span class="msg">Chưa có học phần nào.</span>`;
   $("#newTbCourse").innerHTML = TREE.courses.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join("");
@@ -737,25 +810,38 @@ const addChapter = () => structAction(async () => {
   await postJson("/api/chapters", { textbook_id: $("#newChTb").value, code: $("#newChCode").value, title: $("#newChTitle").value });
   $("#newChCode").value = ""; $("#newChTitle").value = "";
 });
-async function renameNode(kind, id) {
-  const cur = kind === "courses" ? TREE.courses.find(x => x.id == id)
-            : kind === "textbooks" ? TREE.textbooks.find(x => x.id == id)
-            : TREE.chapters.find(x => x.id == id);
-  let body;
-  if (kind === "chapters") {
-    const code = prompt("Mã chương:", cur.code); if (code === null) return;
-    const title = prompt("Tên chương:", cur.title || ""); if (title === null) return;
-    body = { code, title };
-  } else {
-    const name = prompt("Tên mới:", cur.name); if (name === null) return;
-    const code = prompt("Mã:", cur.code || ""); if (code === null) return;
-    body = { name, code };
-  }
+// sửa tên/mã học phần, giáo trình, chương ngay trong cây (không dùng prompt)
+let EDIT_NODE = null;  // {kind, id} của mục đang sửa
+const findNode = (kind, id) => (kind === "courses" ? TREE.courses : kind === "textbooks" ? TREE.textbooks : TREE.chapters)
+  .find(x => x.id == id);
+function nodeEditForm(kind, id) {
+  const cur = findNode(kind, id) || {};
+  const key = `onkeydown="if(event.key==='Enter')saveNode('${kind}',${id});if(event.key==='Escape')cancelNode()"`;
+  const fields = kind === "chapters"
+    ? `<input id="nCode" value="${esc(cur.code)}" placeholder="Mã chương" style="width:110px" ${key}>
+       <input id="nTitle" value="${esc(cur.title || "")}" placeholder="Tên chương" style="width:240px" ${key}>`
+    : `<input id="nName" value="${esc(cur.name)}" placeholder="Tên" style="width:240px" ${key}>
+       <input id="nCode" value="${esc(cur.code || "")}" placeholder="Mã" style="width:110px" ${key}>`;
+  return `<span class="row" style="display:inline-flex;gap:6px;flex-wrap:wrap;vertical-align:middle">${fields}
+    <button class="p" onclick="saveNode('${kind}',${id})">Lưu</button>
+    <button class="g" onclick="cancelNode()">Hủy</button>
+    <span id="nMsg" class="err"></span></span>`;
+}
+function renameNode(kind, id) {
+  EDIT_NODE = { kind, id };
+  renderStruct().then(() => { const f = document.getElementById(kind === "chapters" ? "nTitle" : "nName"); if (f) f.focus(); });
+}
+function cancelNode() { EDIT_NODE = null; renderStruct(); }
+async function saveNode(kind, id) {
+  const body = kind === "chapters"
+    ? { code: $("#nCode").value.trim(), title: $("#nTitle").value.trim() }
+    : { name: $("#nName").value.trim(), code: $("#nCode").value.trim() };
   try {
     await postJson(`/api/${kind}/${id}`, body, "PUT");
+    EDIT_NODE = null;
     toast("Đã lưu thay đổi.");
     renderStruct();
-  } catch (e) { toast(e.message, true); }
+  } catch (e) { const m = $("#nMsg"); if (m) m.textContent = e.message; else toast(e.message, true); }
 }
 const delNode = (kind, id) => structAction(async () => {
   if (!confirm("Xóa mục này? Chỉ xóa được khi không còn dữ liệu bên trong.")) return;
@@ -929,25 +1015,28 @@ function addSection(title = "", qtype = "") {
   const div = document.createElement("div");
   div.className = "card sec";
   div.innerHTML = `
-    <div class="row">
-      <input class="st" style="width:260px" placeholder="Tiêu đề phần" value="${esc(title)}">
+    <div class="row sh">
+      <input class="st" style="width:260px" placeholder="Tiêu đề phần" value="${esc(title)}" oninput="this.closest('.sec').querySelector('.sec-title').textContent=this.value">
       <select class="sq">${Object.entries(QT).map(([k, v]) => `<option value="${k}" ${k === qtype ? "selected" : ""}>${v}</option>`).join("")}</select>
       <label><input type="checkbox" class="ss" checked> Xáo câu & phương án</label>
       <span style="flex:1"></span>
       <button class="d" onclick="this.closest('.sec').remove()">Xóa phần</button>
     </div>
+    <div class="sb"><b class="sec-title">${esc(title)}</b>
     <table>
       <thead><tr><th>Chương</th>${Object.entries(BLOOM).map(([k, v]) => `<th class="num">${k}. ${v}</th>`).join("")}</tr></thead>
       <tbody>${(STATS ? STATS.chapters : []).map(c => `
         <tr class="crow" data-course="${c.course_id ?? ""}">
           <td>${esc(c.course)} / ${esc(c.textbook)} / ${esc(c.code)}${c.title ? " - " + esc(c.title) : ""}</td>
-          ${Object.keys(BLOOM).map(k =>
-            `<td class="num"><input class="n cell" data-ch="${c.id}" data-b="${k}" data-have="${c.counts[k] || 0}" value="0" oninput="checkCell(this)"></td>`).join("")}
+          ${Object.keys(BLOOM).map(k => (c.counts[k] || 0) > 0
+            ? `<td class="num"><input class="n cell" data-ch="${c.id}" data-b="${k}" data-have="${c.counts[k]}" value="0" oninput="checkCell(this)"></td>`
+            // ô không có câu: khóa và làm mờ, để không nhập nhầm rồi bị chặn lúc xuất
+            : `<td class="num"><input class="n cell" data-ch="${c.id}" data-b="${k}" data-have="0" value="0" disabled title="Chương này chưa có câu mức ${BLOOM[k]}" style="opacity:.35"></td>`).join("")}
         </tr>`).join("") || `<tr><td class="msg">Chưa có chương nào.</td></tr>`}</tbody>
     </table>
     <div class="row pblock" style="margin-top:8px"><b>Theo đoạn văn:</b> <span class="sub">lấy đủ số đoạn của chương, mỗi đoạn lấy mọi câu phù hợp</span>
       <button class="g" onclick="addPassRow(this.closest('.sec'))">+ Thêm dòng đoạn</button></div>
-    <div class="prows"></div>`;
+    <div class="prows"></div></div>`;
   $("#sections").appendChild(div);
   filterExportRows();
 }
@@ -1030,10 +1119,12 @@ async function swapItem(si, ii) {
 }
 
 
-// ---------- wizard xuất đề: 4 bước, mỗi bước xác nhận trước khi sang bước sau
+// ---------- wizard xuất đề: 6 bước, mỗi bước xác nhận trước khi sang bước sau
 let STEP = 1;
-const STEP_HINT = {1: "Chọn phần và số câu/đoạn.", 2: "Kiểm tra thông tin đề in trên tài liệu.",
-                   3: "Xem và đổi câu (tùy chọn).", 4: "Kiểm tra tóm tắt rồi xuất."};
+const STEPS = 6;
+const STEP_HINT = {1: "Đặt tên phần, chọn dạng câu và xáo.", 2: "Nhập số câu và số đoạn cho từng chương.",
+                   3: "Kiểm tra thông tin in trên đề.", 4: "Chọn mẫu, số mã đề và đáp án.",
+                   5: "Xem và đổi câu (tùy chọn).", 6: "Kiểm tra tóm tắt rồi xuất."};
 function setPreviewStatus() {
   if (!PREVIEW) { $("#previewStatus").textContent = "Chưa xem trước: câu sẽ chọn ngẫu nhiên khi xuất."; return; }
   const n = PREVIEW.sections.reduce((a, s) => a + s.items.length, 0);
@@ -1041,7 +1132,11 @@ function setPreviewStatus() {
 }
 // kiểm tra bước hiện tại; trả về true nếu được đi tiếp
 function validateStep(n) {
-  if (n === 1) {
+  if (n === 1) {  // phần và dạng: phải có ít nhất một phần
+    if (!$("#sections").children.length) { toast("Thêm ít nhất một phần.", true); return false; }
+    return true;
+  }
+  if (n === 2) {  // số câu và đoạn
     const sections = readSections();
     if (!sections.some(s => s.matrix.length || s.passages.length)) {
       toast("Chọn số câu hoặc số đoạn cho ít nhất một phần.", true); return false;
@@ -1050,14 +1145,17 @@ function validateStep(n) {
     if (short) { toast(`Còn ${short} ô thiếu câu hỏi (tô đỏ).`, true); return false; }
     return true;
   }
-  if (n === 2) {
-    if (!$("#tpl").value) { toast("Chọn mẫu đề.", true); return false; }
+  if (n === 3) {  // thông tin đề: chỉ hỏi khi thiếu, người dùng có thể đi tiếp
     const missing = [["Tên học phần", "mon"], ["Mã HP", "maHp"], ["Năm học", "namHoc"]]
       .filter(([, id]) => !$("#" + id).value.trim()).map(([label]) => label);
     if (missing.length && !confirm(`Chưa nhập: ${missing.join(", ")}. Vẫn tiếp tục?`)) return false;
     return true;
   }
-  if (n === 3) {
+  if (n === 4) {
+    if (!$("#tpl").value) { toast("Chọn mẫu đề.", true); return false; }
+    return true;
+  }
+  if (n === 5) {
     if (PREVIEW && PREVIEW.sig !== JSON.stringify(readSections())) {
       PREVIEW = null; renderPreview();
       toast("Cấu trúc đã đổi sau khi xem trước; hãy xem trước lại hoặc bỏ qua bước này.", true);
@@ -1068,12 +1166,13 @@ function validateStep(n) {
   return true;
 }
 function goStep(n) {
-  n = Math.max(1, Math.min(4, n));
+  n = Math.max(1, Math.min(STEPS, n));
   if (n > STEP) for (let k = STEP; k < n; k++) if (!validateStep(k)) return;
-  if (n === 3 || n === 4) validateStep(3);
+  if (n === 5 || n === 6) validateStep(5);
   STEP = n;
   applyStep();
 }
+// bảng phần (#sections) nằm ở bước 1 (tiêu đề, dạng) hoặc bước 2 (bảng số câu): chuyển chỗ khi đổi bước, giữ nguyên giá trị đã nhập
 function applyStep() {
   document.querySelectorAll(".pane").forEach(p => p.classList.toggle("on", p.id === "pane" + STEP));
   document.querySelectorAll(".step").forEach(b => {
@@ -1081,11 +1180,13 @@ function applyStep() {
     b.classList.toggle("on", k === STEP);
     b.classList.toggle("done", k < STEP);
   });
+  const slot = STEP === 1 ? $("#pane1 .secslot") : STEP === 2 ? $("#pane2 .secslot") : null;
+  if (slot && $("#sections").parentNode !== slot) slot.appendChild($("#sections"));
   $("#btnBack").disabled = STEP === 1;
-  $("#btnNext").style.display = STEP === 4 ? "none" : "";
-  $("#stepHint").textContent = `Bước ${STEP}/4: ${STEP_HINT[STEP]}`;
-  if (STEP === 4) buildSummary();
-  if (STEP === 3) setPreviewStatus();
+  $("#btnNext").style.display = STEP === STEPS ? "none" : "";
+  $("#stepHint").textContent = `Bước ${STEP}/${STEPS}: ${STEP_HINT[STEP]}`;
+  if (STEP === STEPS) buildSummary();
+  if (STEP === 5) setPreviewStatus();
 }
 function buildSummary() {
   const sections = readSections();
@@ -1100,13 +1201,13 @@ function buildSummary() {
       <td>${s.shuffle ? "Có" : "Không"}</td></tr>`).join("");
   $("#sumBox").innerHTML = `
     <table style="margin-bottom:10px">
-      <tr><td style="width:180px">Học phần</td><td>${esc(v("mon"))} <span class="sub">(${esc(v("maHp"))})</span> <button class="g" onclick="goStep(2)">Sửa</button></td></tr>
+      <tr><td style="width:180px">Học phần</td><td>${esc(v("mon"))} <span class="sub">(${esc(v("maHp"))})</span> <button class="g" onclick="goStep(3)">Sửa</button></td></tr>
       <tr><td>Số tín chỉ / Khóa</td><td>${esc(v("soTc"))} / ${esc(v("khoaHoc"))}</td></tr>
       <tr><td>Học kỳ / Năm học</td><td>${esc(v("hocKy"))} / ${esc(v("namHoc"))}, thời gian ${esc(v("thoiGian"))} phút</td></tr>
       <tr><td>Mẫu đề / đáp án</td><td>${esc(v("tpl"))} / ${esc(v("keyTpl"))}</td></tr>
       <tr><td>Số mã đề</td><td>${esc(v("variants"))} mã, bắt đầu từ ${esc(v("prefix"))}${esc(v("start"))}; đáp án ${$("#keySeparate").checked ? "ra file riêng" : "cuối đề"}</td></tr>
       <tr><td>Chọn câu</td><td>${cur ? `Đã xem trước: ${PREVIEW.sections.reduce((a, s) => a + s.items.length, 0)} câu (đúng các câu đã xem)` : "Chưa xem trước: chọn ngẫu nhiên khi xuất"}
-          <button class="g" onclick="goStep(3)">Xem / sửa</button></td></tr>
+          <button class="g" onclick="goStep(5)">Xem / sửa</button></td></tr>
     </table>
     <table><thead><tr><th>Phần</th><th>Dạng</th><th class="num">Số câu (ma trận)</th><th class="num">Số đoạn</th><th>Xáo</th></tr></thead>
       <tbody>${rows || `<tr><td colspan="5" class="msg">Chưa có phần nào.</td></tr>`}</tbody></table>
@@ -1120,7 +1221,7 @@ async function doExport() {
   const short = [...document.querySelectorAll(".cell")].filter(x => (+x.value || 0) > +x.dataset.have).length;
   if (!sections.some(s => s.matrix.length || s.passages.length)) { $("#exportMsg").innerHTML = `<span class="err">Chưa nhập số câu hoặc số đoạn cho phần nào.</span>`; return; }
   if (short) { $("#exportMsg").innerHTML = `<span class="err">Không xuất: còn ${short} ô thiếu câu hỏi (tô đỏ).</span>`; return; }
-  if (!$("#confirmChk").checked) { $("#exportMsg").innerHTML = `<span class="err">Hãy tích xác nhận ở bước 4 trước khi xuất.</span>`; return; }
+  if (!$("#confirmChk").checked) { $("#exportMsg").innerHTML = `<span class="err">Hãy tích xác nhận ở bước 6 trước khi xuất.</span>`; return; }
   if (PREVIEW && PREVIEW.sig !== JSON.stringify(sections)) {
     $("#exportMsg").innerHTML = `<span class="err">Số câu hoặc phần đã đổi sau khi xem trước. Bấm “Xem trước đề” lại.</span>`;
     PREVIEW = null; renderPreview(); return;
@@ -1140,7 +1241,10 @@ async function doExport() {
   try {
     const r = await postJson("/api/export", body);
     const url = URL.createObjectURL(await r.blob());
-    const a = Object.assign(document.createElement("a"), { href: url, download: "de_thi.zip" });
+    // tên file do server đặt (học phần, mã đề, ngày) qua Content-Disposition
+    const cd = r.headers.get("Content-Disposition") || "";
+    const fm = /filename\*=UTF-8''([^;]+)/i.exec(cd);
+    const a = Object.assign(document.createElement("a"), { href: url, download: fm ? decodeURIComponent(fm[1]) : "de_thi.zip" });
     a.click(); URL.revokeObjectURL(url);
     const reused = +r.headers.get("X-Reused") || 0;
     toast("Đã tải xuống file đề.");

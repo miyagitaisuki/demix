@@ -14,11 +14,13 @@ import random
 import re
 import sqlite3
 import sys
+import unicodedata
 import zipfile
 from contextlib import closing
 from datetime import datetime
+from difflib import SequenceMatcher
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import urlparse, parse_qs, quote
 
 from docx import Document
 from docx.shared import Pt
@@ -144,6 +146,27 @@ def passage_code(chapter_id):
         if not q("SELECT 1 FROM passages WHERE code=?", (code,), True):
             return code
         n += 1
+
+
+def default_exam_name(meta, codes):
+    """Tên mặc định của bản xuất khi người dùng không đặt tên: học phần, mã đề, thời gian."""
+    base = str(meta.get("ten_hp", "")).strip() or "Đề thi"
+    mid = f"mã {codes[0]}" if len(codes) == 1 else f"mã {codes[0]}–{codes[-1]}"
+    return " · ".join(x for x in [base, mid, str(meta.get("thoi_gian", "")).strip()] if x)
+
+
+def export_filename(ma_hp, codes, created_at):
+    """Tên file tải về: <mã HP>_<mã đề đầu-cuối>_<yyyymmdd>.zip, ví dụ N4_M001-M012_20261101.zip."""
+    hp = (ma_hp or "").strip() or "De"
+    rng = codes[0] if len(codes) <= 1 else f"{codes[0]}-{codes[-1]}"
+    name = f"De_{hp}_{rng}_{created_at[:10].replace('-', '')}.zip" if codes else "De.zip"
+    return re.sub(r"[^\w.-]+", "_", name)
+
+
+def attachment_header(name):
+    """Content-Disposition an toàn với tên Unicode: bản ASCII cho trình duyệt cũ, bản UTF-8 (RFC 5987)."""
+    ascii_name = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode() or "de_thi.zip"
+    return f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{quote(name)}"
 
 
 def resolve_passage(chapter_id, text):
@@ -351,7 +374,7 @@ def merge_questions(keep, removes):
     key = dup_key(rows[keep]["content"], json.loads(rows[keep]["options"]))
     for rid in removes:
         if dup_key(rows[rid]["content"], json.loads(rows[rid]["options"])) != key:
-            raise ValueError(f"Câu #{rid} không trùng nội dung với câu #{keep}, không thể gộp")
+            raise ValueError(f"Câu {code_of(rid)} không trùng nội dung với câu {code_of(keep)}, không thể gộp")
     with closing(sqlite3.connect(DB_PATH)) as conn:
         conn.execute("PRAGMA foreign_keys = ON")
         ph = ",".join("?" * len(removes))
@@ -390,6 +413,14 @@ def insert_q(payload, keep_code=None):
 
 
 # ---------------------------------------------------------------- trùng lặp
+def code_of(qid):
+    """Mã câu để hiển thị cho người dùng, thay cho số id nội bộ. Giá trị không phải id (nhãn dòng khi xem trước) được giữ nguyên."""
+    if not isinstance(qid, int):
+        return str(qid)
+    rows = q("SELECT code FROM questions WHERE id=?", (qid,), True)
+    return rows[0]["code"] if rows else "(đã xóa)"
+
+
 def dup_key(content, options):
     """Khóa so trùng: bỏ hoa/thường, khoảng trắng, dấu câu. Giữ chữ Nhật, chữ Hán."""
     return re.sub(r"[\W_]+", "", (content + "".join(options)).lower())
@@ -526,7 +557,7 @@ def parse_import(data: bytes, textbook_id, dry_run=False):
                 preview = {"where": label, "code": code, "qtype": qtype, "content": " ".join(stem)[:80]}
                 if same:
                     ref = same[0][0]
-                    ref_txt = f"câu #{ref}" if isinstance(ref, int) else ref.lower()  # ref là nhãn dòng khi xem trước
+                    ref_txt = f"câu {code_of(ref)}" if isinstance(ref, int) else ref.lower()  # ref là nhãn dòng khi xem trước
                     skipped.append(f"{label}: trùng {ref_txt} trong cùng chương")
                     rows_out.append(dict(preview, status="skip", note=f"trùng {ref_txt}"))
                     continue
@@ -538,7 +569,7 @@ def parse_import(data: bytes, textbook_id, dry_run=False):
                 added += 1
                 note = ""
                 if other:
-                    note = f"trùng nội dung với câu #{other[0][0]} ở chương khác"
+                    note = f"trùng nội dung với câu {code_of(other[0][0])} ở chương khác"
                     warnings.append(f"{label}: {note}")
                 rows_out.append(dict(preview, status="warn" if other else "ok", note=note))
             except Exception as e:
@@ -589,7 +620,7 @@ def load_items(ids, usage):
     out = []
     for i in ids:
         if int(i) not in rows:
-            raise ValueError(f"Câu #{i} không còn trong ngân hàng, hãy xem trước lại")
+            raise ValueError("Có câu đã chọn không còn trong ngân hàng, hãy xem trước lại")
         it = row_to_api(rows[int(i)])
         it["last_used"] = usage.get(it["id"])
         out.append(it)
@@ -1270,7 +1301,7 @@ def bulk_update(ids, chapter_id=None, bloom=None):
             key = dup_key(r["content"], json.loads(r["options"]))
             clash = [h for h in index.get(key, []) if h[1] == int(chapter_id) and h[0] not in moving]
             if clash:
-                raise ValueError(f"Câu #{r['id']} sẽ trùng với câu #{clash[0][0]} trong chương đích; không đổi câu nào")
+                raise ValueError(f"Câu {code_of(r['id'])} sẽ trùng với câu {code_of(clash[0][0])} trong chương đích; không đổi câu nào")
     new_pids = {}
     if chapter_id is not None:  # đoạn văn thuộc chương: chuyển câu thì lấy đoạn của chương đích
         for r in rows:
@@ -1296,12 +1327,46 @@ def restore_item(item, index, allow_dup=False):
     payload = clean_question(dict(item, chapter_id=chapter_id))
     same, _, key = check_duplicate(index, payload)
     if same and not allow_dup:
-        raise ValueError(f"trùng câu #{same[0][0]} trong cùng chương (bỏ qua)")
+        raise ValueError(f"trùng câu {code_of(same[0][0])} trong cùng chương (bỏ qua)")
     new_id = insert_q(payload, keep_code=str(item.get("code") or "").strip() or None)
     index.setdefault(key, []).append((new_id, chapter_id, payload["content"]))
 
 
 # ---------------------------------------------------------------- HTTP
+class NeedConfirm(ValueError):
+    """Thao tác cần người dùng xác nhận (trả về HTTP 409 kèm confirm=true); gửi lại với confirm_passage=true để tiếp tục."""
+
+
+def similar_passage(chapter_id, text, threshold=SIMILAR_THRESHOLD):
+    """Đoạn văn khác trong chương có nội dung gần giống nhất (>= threshold). Trả về (mã đoạn, tỷ lệ) hoặc None."""
+    ka = dup_key(text, [])
+    best = None
+    for r in q("SELECT code, content FROM passages WHERE chapter_id=?", (int(chapter_id),), True):
+        kb = dup_key(r["content"], [])
+        if not ka or not kb:
+            continue
+        sm = SequenceMatcher(None, ka, kb, autojunk=False)
+        if sm.real_quick_ratio() < threshold or sm.quick_ratio() < threshold:
+            continue
+        ratio = sm.ratio()
+        if ratio >= threshold and (best is None or ratio > best[1]):
+            best = (r["code"], ratio)
+    return best
+
+
+def check_passage(chapter_id, text, confirmed=False):
+    """Đoạn văn mới gần giống đoạn có sẵn trong chương: hỏi xác nhận trước khi tạo, tránh đoạn trùng do sửa vài chữ."""
+    text = (text or "").strip()
+    if not text or confirmed:
+        return
+    if q("SELECT 1 FROM passages WHERE chapter_id=? AND content=?", (int(chapter_id), text), True):
+        return  # trùng đúng từng chữ: dùng chung đoạn đó, không cần hỏi
+    sim = similar_passage(chapter_id, text)
+    if sim:
+        raise NeedConfirm(f"Đoạn văn này gần giống đoạn {sim[0]} ({round(sim[1] * 100)}%) trong cùng chương. "
+                          f"Nếu là cùng một đoạn, hãy chọn đoạn đó ở danh sách; nếu vẫn muốn tạo đoạn mới, xác nhận lại.")
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "QBank/2.0"
 
@@ -1330,6 +1395,8 @@ class Handler(BaseHTTPRequestHandler):
     def _guard(self, fn):
         try:
             fn()
+        except NeedConfirm as e:
+            self._json(409, {"error": str(e), "confirm": True})
         except ValueError as e:
             self._json(400, {"error": str(e)})
         except sqlite3.IntegrityError as e:
@@ -1415,12 +1482,15 @@ class Handler(BaseHTTPRequestHandler):
                                         FROM exam_exports ORDER BY id DESC LIMIT 200""", fetch=True))
         fm = re.fullmatch(r"/api/exports/(\d+)/file", p)
         if fm:
-            rows = q("SELECT codes, data FROM exam_exports WHERE id=?", (int(fm.group(1)),), fetch=True)
+            rows = q("SELECT codes, data, config, created_at FROM exam_exports WHERE id=?", (int(fm.group(1)),), fetch=True)
             if not rows:
                 return self._json(404, {"error": "không tìm thấy bản xuất"})
-            fname = "de_thi_" + re.sub(r"[^\w.-]+", "_", rows[0]["codes"].split(",")[0].strip() or "x") + ".zip"
-            return self._send(200, rows[0]["data"], "application/zip",
-                              {"Content-Disposition": f'attachment; filename="{fname}"'})
+            row = rows[0]
+            meta = (json.loads(row["config"] or "{}").get("meta") or {})
+            codes = [c.strip() for c in (row["codes"] or "").split(",") if c.strip()]
+            fname = export_filename(meta.get("ma_hp"), codes, row["created_at"])
+            return self._send(200, row["data"], "application/zip",
+                              {"Content-Disposition": attachment_header(fname)})
         if p == "/api/configs":  # cấu trúc đề đã lưu
             rows = q("SELECT id, name, config, updated_at FROM exam_configs ORDER BY name", fetch=True)
             for r in rows:
@@ -1433,13 +1503,15 @@ class Handler(BaseHTTPRequestHandler):
         u = urlparse(self.path)
         p = u.path
         if p == "/api/questions":
-            payload = clean_question(self._json_body())
+            body = self._json_body()
+            payload = clean_question(body)
+            check_passage(payload["chapter_id"], payload.get("passage"), bool(body.get("confirm_passage")))
             same, other, _ = check_duplicate(dup_index(), payload)
             if same:  # đã có câu y hệt trong cùng chương: không lưu, báo người dùng
-                raise ValueError(f"Câu này đã có trong cùng chương (#{same[0][0]}). Hãy sửa nội dung nếu muốn lưu thêm.")
+                raise ValueError(f"Câu này đã có trong cùng chương ({code_of(same[0][0])}). Hãy sửa nội dung nếu muốn lưu thêm.")
             new_id = insert_q(payload)
-            warnings = [f"Trùng nội dung với câu #{h[0]} ở chương khác" for h in other[:3]]
-            return self._json(201, {"ok": True, "id": new_id, "warnings": warnings})
+            warnings = [f"Trùng nội dung với câu {code_of(h[0])} ở chương khác" for h in other[:3]]
+            return self._json(201, {"ok": True, "id": new_id, "code": code_of(new_id), "warnings": warnings})
         if p == "/api/import":
             textbook_id = int(parse_qs(u.query).get("textbook_id", [""])[0] or 0)
             if not textbook_id:
@@ -1560,13 +1632,15 @@ class Handler(BaseHTTPRequestHandler):
         m = re.fullmatch(r"/api/questions/(\d+)", urlparse(self.path).path)
         if not m:
             return self._json(404, {"error": "không tìm thấy"})
-        payload = clean_question(self._json_body())
+        body = self._json_body()
+        payload = clean_question(body)
+        check_passage(payload["chapter_id"], payload["passage"], bool(body.get("confirm_passage")))
         payload["id"] = int(m.group(1))
         payload["passage_id"] = resolve_passage(payload["chapter_id"], payload["passage"])
         q("""UPDATE questions SET chapter_id=:chapter_id, bloom=:bloom, qtype=:qtype, content=:content,
              options=:options, answer=:answer, solution=:solution, passage=:passage, passage_id=:passage_id
              WHERE id=:id""", payload)
-        self._json(200, {"ok": True})
+        self._json(200, {"ok": True, "code": code_of(payload["id"])})
 
     # --- DELETE: chỉ xóa khi không còn dữ liệu bên trong (khóa ngoài RESTRICT)
     def _delete(self):
@@ -1634,7 +1708,9 @@ class Handler(BaseHTTPRequestHandler):
         if not parts:
             raise ValueError("Chưa có phần nào có số câu")
         reused = sum(1 for _, base, _ in parts for it in base if it.get("last_used"))
-        exam_name = str(body.get("meta", {}).get("ten_de", ""))
+        meta = body.get("meta", {})
+        codes_all = [f"{prefix}{start + i:03d}" for i in range(variants)]
+        exam_name = str(meta.get("ten_de", "")).strip() or default_exam_name(meta, codes_all)
         now = datetime.now().isoformat(timespec="seconds")
         rng = random.Random()
         out = io.BytesIO()
@@ -1662,8 +1738,10 @@ class Handler(BaseHTTPRequestHandler):
               (now, exam_name, ", ".join(codes),
                json.dumps({"meta": body.get("meta", {}), "variants": variants, "start": start,
                            "prefix": prefix, "template": tpl}, ensure_ascii=False), data))
+        fname = export_filename(meta.get("ma_hp"), codes_all, now)
         self._send(200, data, "application/zip",
-                   {"X-Reused": str(reused), "X-Variants": str(variants)})
+                   {"X-Reused": str(reused), "X-Variants": str(variants),
+                    "Content-Disposition": attachment_header(fname)})
 
 
 def main():
