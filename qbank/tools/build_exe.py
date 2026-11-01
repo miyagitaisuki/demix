@@ -17,6 +17,7 @@ cmd = [
     "--name", "QBank",
     "--add-data", f"static{SEP}static",
     "--add-data", f"templates{SEP}templates",
+    "--collect-data", "pykakasi",  # từ điển chữ Hán (.db) để tự thêm furigana
     "app.py",
 ]
 subprocess.run(cmd, cwd=BASE, check=True)
