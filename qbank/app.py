@@ -502,6 +502,54 @@ def pick_base_exam(matrix, qtype=None, usage=None, taken=None):
     return base
 
 
+def load_items(ids, usage):
+    """Lấy đúng các câu theo danh sách id (đã xem trước), giữ thứ tự id."""
+    if not ids:
+        return []
+    rows = {r["id"]: r for r in q(f"SELECT * FROM questions WHERE id IN ({','.join('?' * len(ids))})",
+                                  [int(i) for i in ids], fetch=True)}
+    out = []
+    for i in ids:
+        if int(i) not in rows:
+            raise ValueError(f"Câu #{i} không còn trong ngân hàng, hãy xem trước lại")
+        it = row_to_api(rows[int(i)])
+        it["last_used"] = usage.get(it["id"])
+        out.append(it)
+    return out
+
+
+def find_replacement(spec, exclude, usage):
+    """Tìm câu thay thế cùng chương, cùng mức Bloom và cùng dạng, chưa có trong đề.
+    Ưu tiên câu chưa dùng, rồi câu dùng lâu nhất."""
+    if spec.get("passage"):
+        raise ValueError("Câu thuộc đoạn văn không đổi riêng lẻ; hãy chọn lại cả phần")
+    sql = "SELECT * FROM questions WHERE chapter_id=? AND bloom=? AND qtype=? AND passage=''"
+    args = [int(spec["chapter_id"]), int(spec["bloom"]), str(spec["qtype"])]
+    pool = [row_to_api(p) for p in q(sql, args, fetch=True) if p["id"] not in exclude]
+    if not pool:
+        raise ValueError("Không còn câu thay thế cùng chương, mức Bloom và dạng")
+    random.shuffle(pool)
+    pool.sort(key=lambda it: usage.get(it["id"]) or "")
+    it = pool[0]
+    it["last_used"] = usage.get(it["id"])
+    return it
+
+
+def preview_exam(sections):
+    """Chọn câu cho mọi phần (không ghi lịch sử). Trả về danh sách song song với sections."""
+    usage = usage_map()
+    taken = set()
+    out = []
+    for s in sections:
+        matrix = s.get("matrix", [])
+        if not any(int(c.get("n", 0)) > 0 for c in matrix):
+            out.append({"items": []})
+            continue
+        base = pick_base_exam(matrix, s.get("qtype") or None, usage, taken)
+        out.append({"items": base})
+    return out
+
+
 def shuffle_question(item, rng):
     """Xáo phương án TN; phương án có dấu # giữ nguyên vị trí. Trả về (item, thứ tự mới)."""
     if item["qtype"] != "TN":
@@ -1080,6 +1128,14 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(200, auto_merge_same_chapter())
         if p == "/api/export":
             return self._export(self._json_body())
+        if p == "/api/exam/preview":  # chọn câu để xem trước (chưa ghi lịch sử)
+            sections = self._json_body().get("sections") or []
+            return self._json(200, {"sections": preview_exam(sections)})
+        if p == "/api/exam/swap":  # đổi một câu trong bản xem trước
+            b = self._json_body()
+            usage = usage_map()
+            exclude = {int(i) for i in b.get("exclude", [])}
+            return self._json(200, find_replacement(b, exclude, usage))
         if p == "/api/configs":  # lưu hoặc ghi đè cấu trúc đề theo tên
             b = self._json_body()
             name = str(b.get("name", "")).strip()
@@ -1175,11 +1231,20 @@ class Handler(BaseHTTPRequestHandler):
         key_tpl_path = os.path.join(TPL_DIR, key_name)
         usage = usage_map()
         taken = set()
+        picked = body.get("picked")  # câu đã xem trước và đổi tay, aligned theo sections
         parts = []  # (tiêu đề, danh sách câu gốc, có xáo)
-        for s in sections:
+        for idx, s in enumerate(sections):
             if not any(int(c.get("n", 0)) > 0 for c in s.get("matrix", [])):
                 continue  # phần không có số câu thì bỏ qua
-            base = pick_base_exam(s.get("matrix", []), s.get("qtype") or None, usage, taken)
+            ids = picked[idx] if picked and idx < len(picked) else None
+            if ids:
+                want = sum(int(c.get("n", 0)) for c in s.get("matrix", []))
+                if len(ids) != want or len(set(ids)) != len(ids):
+                    raise ValueError("Bản xem trước không khớp số câu; hãy xem trước lại")
+                base = load_items(ids, usage)
+                taken.update(int(i) for i in ids)
+            else:
+                base = pick_base_exam(s.get("matrix", []), s.get("qtype") or None, usage, taken)
             parts.append((str(s.get("title", "")).strip(), base, bool(s.get("shuffle", True))))
         if not parts:
             raise ValueError("Chưa có phần nào có số câu")

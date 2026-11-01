@@ -159,7 +159,8 @@
   <p class="msg">Mỗi phần là một khối câu theo một dạng (TN, DS, DT, TL). Bỏ tick “Xáo” để giữ thứ tự câu trong ngân hàng. Nhập số câu cho từng ô chương × Bloom; đề gốc chọn ngẫu nhiên một lần, mỗi mã đề là một hoán vị của đề gốc.</p>
   <div id="sections"></div>
   <div class="row"><button class="g" onclick="addSection()">+ Thêm phần</button></div>
-  <div class="row"><button class="p" onclick="doExport()">Xuất .zip các file .docx</button><span id="exportMsg" class="msg"></span><span id="shortMsg" class="err"></span></div>
+  <div id="previewBox"></div>
+  <div class="row"><button class="g" onclick="previewExam()">Xem trước đề</button><button class="p" onclick="doExport()">Xuất .zip các file .docx</button><span id="exportMsg" class="msg"></span><span id="shortMsg" class="err"></span></div>
 </section>
 
 </main>
@@ -601,6 +602,49 @@ function checkCell(i) {
   $("#shortMsg").textContent = bad ? `${bad} ô đang thiếu câu hỏi.` : "";
 }
 
+// ---------- xem trước đề và đổi từng câu
+let PREVIEW = null;  // {sig, sections:[{items}]}: sig = sections lúc xem trước, để phát hiện thay đổi
+async function previewExam() {
+  const sections = readSections();
+  if (!sections.some(s => s.matrix.length)) { $("#exportMsg").innerHTML = `<span class="err">Chưa nhập số câu cho phần nào.</span>`; return; }
+  try {
+    const r = await postJson("/api/exam/preview", { sections });
+    PREVIEW = { sig: JSON.stringify(sections), sections: r.sections };
+    renderPreview();
+    $("#exportMsg").textContent = "Đang xem trước. Có thể đổi từng câu; xuất sẽ dùng đúng các câu này.";
+  } catch (e) { $("#exportMsg").innerHTML = `<span class="err">${esc(e.message)}</span>`; }
+}
+function renderPreview() {
+  if (!PREVIEW) { $("#previewBox").innerHTML = ""; return; }
+  const sections = JSON.parse(PREVIEW.sig);
+  let n = 0;
+  const body = sections.map((s, si) => {
+    const items = PREVIEW.sections[si].items;
+    if (!items.length) return "";
+    return `<div class="card"><b>${esc(s.title || "Phần " + (si + 1))}</b> <span class="sub">${QT[s.qtype] || ""}</span>` +
+      items.map((it, ii) => { n++; return `
+        <div class="row" style="align-items:flex-start;border-bottom:1px solid var(--line);padding-bottom:6px">
+          <div style="width:32px">${n}.</div>
+          <div style="flex:1">${esc(it.content)}
+            <div class="opts">${esc(it.options.map((o, k) => (it.qtype === "DS" ? "abcdefgh"[k] + ") " : "ABCDEFGH"[k] + ". ") + o).join("\n"))}</div>
+            <div class="sub">${esc(it.code)} · Bloom ${it.bloom} · ĐA: ${esc(it.answer)} · ${it.last_used ? "đã dùng" : "chưa dùng"}</div></div>
+          <button class="g" ${it.passage ? `disabled title="Câu thuộc đoạn văn: không đổi riêng lẻ"` : ""} onclick="swapItem(${si},${ii})">Đổi câu</button>
+        </div>`; }).join("") + `</div>`;
+  }).join("");
+  $("#previewBox").innerHTML = `<div class="row"><b>Xem trước đề</b>
+      <button class="g" onclick="PREVIEW=null;renderPreview();$('#exportMsg').textContent=''">Bỏ xem trước</button></div>` + body;
+}
+async function swapItem(si, ii) {
+  const cur = PREVIEW.sections[si].items[ii];
+  const exclude = PREVIEW.sections.flatMap(s => s.items.map(i => i.id));
+  try {
+    const rep = await postJson("/api/exam/swap", { chapter_id: cur.chapter_id, bloom: cur.bloom, qtype: cur.qtype,
+                                                  passage: cur.passage, exclude });
+    PREVIEW.sections[si].items[ii] = rep;
+    renderPreview();
+  } catch (e) { $("#exportMsg").innerHTML = `<span class="err">${esc(e.message)}</span>`; }
+}
+
 async function doExport() {
   const sections = readSections();
   // Kiểm tra trước khi xuất
@@ -610,8 +654,13 @@ async function doExport() {
   const missing = [["Tên học phần", "mon"], ["Mã HP", "maHp"], ["Năm học", "namHoc"]]
     .filter(([, id]) => !$("#" + id).value.trim()).map(([label]) => label);
   if (missing.length && !confirm(`Chưa nhập: ${missing.join(", ")}. Vẫn xuất đề?`)) return;
+  if (PREVIEW && PREVIEW.sig !== JSON.stringify(sections)) {
+    $("#exportMsg").innerHTML = `<span class="err">Số câu hoặc phần đã đổi sau khi xem trước. Bấm “Xem trước đề” lại.</span>`;
+    PREVIEW = null; renderPreview(); return;
+  }
   const body = {
     sections,
+    picked: PREVIEW ? PREVIEW.sections.map(s => s.items.map(i => i.id)) : undefined,
     meta: { ten_hp: $("#mon").value, ma_hp: $("#maHp").value, so_tc: $("#soTc").value,
             khoa_hoc: $("#khoaHoc").value, nam_hoc: $("#namHoc").value, hoc_ky: $("#hocKy").value,
             thoi_gian: $("#thoiGian").value, ten_de: $("#tenDe").value },
