@@ -88,15 +88,19 @@
   </div>
   <div class="row">
     <button class="g" onclick="editQ(null)">+ Câu mới</button>
+    <span class="sub">Nhập/xuất file:</span>
     <label for="importFile">Nhập từ .docx vào:</label>
     <span id="importTarget" class="sub"></span>
     <input type="file" id="importFile" accept=".docx" onchange="importDocx(this)">
-    <button class="g" onclick="showDuplicates()">Kiểm tra trùng</button>
-    <button class="g" onclick="showSimilar()">Tìm câu gần giống</button>
     <a href="/api/import-template" download><button class="g">Tải mẫu nhập</button></a>
     <a href="/api/backup" download><button class="g">Sao lưu</button></a>
-    <label>Khôi phục:</label>
-    <input type="file" accept=".json" onchange="restoreJson(this)">
+    <label for="restoreFile">Khôi phục từ .json:</label>
+    <input type="file" id="restoreFile" accept=".json" onchange="restoreJson(this)">
+  </div>
+  <div class="row">
+    <span class="sub">Rà soát dữ liệu:</span>
+    <button class="g" onclick="showDuplicates()">Kiểm tra trùng</button>
+    <button class="g" onclick="showSimilar()">Tìm câu gần giống</button>
   </div>
   <div id="importMsg" class="msg"></div>
   <div id="importPreview" class="card" style="display:none"></div>
@@ -632,26 +636,42 @@ async function importDocx(input) {
     $("#importMsg").textContent = "";
   } catch (e) { $("#importMsg").innerHTML = `<span class="err">${esc(e.message)}</span>`; }
 }
+let IMPORT_ROWS = [];  // dòng xem trước của lần kiểm tra gần nhất, để lọc mà không gọi lại server
 function renderImportPreview(r) {
   const box = $("#importPreview");
-  const badge = { ok: `<span class="tag">Sẽ nhập</span>`, warn: `<span class="tag" style="background:#fef3c7;color:#92400e">Nhập, có cảnh báo</span>`,
-                  skip: `<span class="tag" style="background:#e5e7eb">Bỏ qua</span>`, error: `<span class="tag" style="background:#fee2e2;color:#b91c1c">Lỗi</span>` };
-  const n = r.rows.filter(x => x.status === "ok" || x.status === "warn").length;
   box.style.display = "block";
+  IMPORT_ROWS = r.rows;
+  const count = st => r.rows.filter(x => x.status === st).length;
+  const n = count("ok") + count("warn");
   const tb = TREE.textbooks.find(t => t.id == PENDING_IMPORT.tid);
   const tableErrors = (r.errors || []).length
     ? `<div class="row" style="background:#fef2f2;color:#b91c1c;padding:8px;border-radius:6px;margin-bottom:8px">
          <b>Lỗi cấp bảng, các bảng này bị bỏ qua:</b> ${esc(r.errors.join(" | "))}</div>` : "";
+  const chips = [["ok", "Sẽ nhập", "#dcfce7", "#166534"], ["warn", "Cảnh báo", "#fef3c7", "#92400e"],
+                 ["skip", "Bỏ qua (trùng)", "#e5e7eb", "#374151"], ["error", "Lỗi", "#fee2e2", "#b91c1c"]]
+    .map(([st, label, bg, fg]) => `<span class="tag" style="background:${bg};color:${fg}">${label}: ${count(st)}</span>`).join(" ");
   box.innerHTML = tableErrors + `<div class="row"><b>Xem trước: ${esc(PENDING_IMPORT.name)}</b>
-      <span class="sub">${n} câu sẽ được nhập vào giáo trình «${esc(tb ? tb.name : "")}», ${r.rows.length - n} dòng bị bỏ qua hoặc lỗi. Chưa có gì được ghi.</span></div>
-    <table><thead><tr><th>Vị trí</th><th>Mã chương</th><th>Loại</th><th>Nội dung</th><th>Trạng thái</th></tr></thead><tbody>` +
-    r.rows.map(x => `<tr style="${x.status === "error" ? "background:#fef2f2" : ""}">
-      <td>${esc(x.where)}</td><td>${esc(x.code)}</td><td>${esc(x.qtype)}</td><td>${esc(x.content)}</td>
-      <td>${badge[x.status]} <span class="sub">${esc(x.note)}</span></td></tr>`).join("") +
-    `</tbody></table>
+      <span class="sub">Sẽ nhập ${n} câu vào giáo trình «${esc(tb ? tb.name : "")}». Chưa có gì được ghi.</span></div>
+    <div class="row">${chips}
+      <label style="margin-left:auto">Hiển thị: <select id="importFilter" onchange="renderImportRows()">
+        <option value="">Tất cả dòng</option><option value="ok">Sẽ nhập</option><option value="warn">Cảnh báo</option>
+        <option value="skip">Bỏ qua (trùng)</option><option value="error">Lỗi</option></select></label></div>
+    <table><thead><tr><th>Vị trí</th><th>Mã chương</th><th>Loại</th><th>Nội dung</th><th>Trạng thái</th></tr></thead><tbody id="importRows"></tbody></table>
     <div class="row" style="margin-top:8px">
       <button class="p" ${n ? "" : "disabled"} onclick="confirmImport()">Xác nhận: nhập ${n} câu</button>
       <button class="g" onclick="cancelImport()">Hủy</button></div>`;
+  renderImportRows();
+}
+function renderImportRows() {
+  const badge = { ok: `<span class="tag">Sẽ nhập</span>`, warn: `<span class="tag" style="background:#fef3c7;color:#92400e">Nhập, có cảnh báo</span>`,
+                  skip: `<span class="tag" style="background:#e5e7eb">Bỏ qua</span>`, error: `<span class="tag" style="background:#fee2e2;color:#b91c1c">Lỗi</span>` };
+  const f = $("#importFilter") ? $("#importFilter").value : "";
+  const rows = IMPORT_ROWS.filter(x => !f || x.status === f);
+  $("#importRows").innerHTML = rows.length
+    ? rows.map(x => `<tr style="${x.status === "error" ? "background:#fef2f2" : ""}">
+        <td>${esc(x.where)}</td><td>${esc(x.code)}</td><td>${esc(x.qtype)}</td><td>${esc(x.content)}</td>
+        <td>${badge[x.status]} <span class="sub">${esc(x.note)}</span></td></tr>`).join("")
+    : `<tr><td colspan="5" class="msg">Không có dòng nào ở trạng thái này.</td></tr>`;
 }
 function cancelImport() { PENDING_IMPORT = null; $("#importPreview").style.display = "none"; }
 async function confirmImport() {
