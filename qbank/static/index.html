@@ -76,8 +76,16 @@
   <div id="importMsg" class="msg"></div>
   <div id="dupBox" class="card" style="display:none"></div>
   <div id="editor" class="card" style="display:none"></div>
+  <div class="row" id="bulkBar">
+    <span class="sub">Đã chọn <span id="selCount">0</span> câu.</span>
+    <select id="bulkChap"></select>
+    <select id="bulkBloom"><option value="">Giữ mức Bloom</option><option value="1">1. Biết</option><option value="2">2. Hiểu</option><option value="3">3. Vận dụng</option><option value="4">4. Phân tích</option><option value="5">5. Đánh giá</option></select>
+    <button class="g" onclick="bulkApply()">Áp dụng cho câu đã chọn</button>
+    <button class="g" onclick="selectShown()">Chọn các câu đang hiện</button>
+    <button class="g" onclick="clearSel()">Bỏ chọn</button>
+  </div>
   <table>
-    <thead><tr><th>Mã câu</th><th>Học phần / Giáo trình / Chương</th><th>Bloom</th><th>Loại</th><th>Nội dung</th><th>Đáp án</th><th></th></tr></thead>
+    <thead><tr><th style="width:28px"></th><th>Mã câu</th><th>Học phần / Giáo trình / Chương</th><th>Bloom</th><th>Loại</th><th>Nội dung</th><th>Đáp án</th><th></th></tr></thead>
     <tbody id="qBody"></tbody>
   </table>
 </section>
@@ -241,6 +249,27 @@ $("#fTextbook").onchange = () => { fillChapterFilter(); loadQuestions(); };
 $("#fChapter").onchange = loadQuestions;
 
 // ---------- ngân hàng
+// ---------- chọn nhiều câu để sửa hàng loạt
+const SEL = new Set();
+function updateSelBar() {
+  $("#selCount").textContent = SEL.size;
+}
+function toggleSel(id, on) { on ? SEL.add(id) : SEL.delete(id); updateSelBar(); }
+function selectShown() { document.querySelectorAll(".qsel").forEach(c => { c.checked = true; SEL.add(+c.value); }); updateSelBar(); }
+function clearSel() { SEL.clear(); document.querySelectorAll(".qsel").forEach(c => c.checked = false); updateSelBar(); }
+async function bulkApply() {
+  const chap = $("#bulkChap").value, bloom = $("#bulkBloom").value;
+  if (!SEL.size) return;
+  if (!chap && !bloom) { toast("Chọn chương hoặc mức Bloom cần đổi.", true); return; }
+  if (!confirm(`Đổi ${SEL.size} câu đã chọn?`)) return;
+  try {
+    const r = await postJson("/api/questions/bulk", { ids: [...SEL], chapter_id: chap || null, bloom: bloom || null });
+    toast(`Đã cập nhật ${r.updated} câu.`);
+    clearSel();
+    loadQuestions();
+  } catch (e) { toast(e.message, true); }
+}
+
 async function loadQuestions() {
   await loadTree();
   const p = new URLSearchParams();
@@ -248,8 +277,10 @@ async function loadQuestions() {
   for (const [k, sel] of Object.entries(pairs)) if ($(sel).value) p.set(k, $(sel).value);
   if ($("#fSearch").value.trim()) p.set("q", $("#fSearch").value.trim());
   const list = await api("/api/questions?" + p);
+  $("#bulkChap").innerHTML = `<option value="">Giữ chương</option>` + chapterOptions("");
   $("#qBody").innerHTML = list.map(q => `
     <tr>
+      <td><input type="checkbox" class="qsel" value="${q.id}" ${SEL.has(q.id) ? "checked" : ""} onchange="toggleSel(${q.id}, this.checked)"></td>
       <td>${esc(q.code)}</td>
       <td>${esc(q.course)} / ${esc(q.textbook)}<div class="sub">${esc(q.chapter_code)}${q.chapter_title ? " - " + esc(q.chapter_title) : ""}</div></td>
       <td><span class="tag">${q.bloom}. ${BLOOM[q.bloom]}</span></td>
@@ -258,7 +289,7 @@ async function loadQuestions() {
       <td>${esc(q.answer)}<div class="sub">${q.used_count ? "đã dùng " + q.used_count + " lần" : "chưa dùng"}</div></td>
       <td style="white-space:nowrap"><button class="g" onclick="editQ(${q.id})">Sửa</button>
           <button class="d" onclick="delQ(${q.id})">Xóa</button></td>
-    </tr>`).join("") || `<tr><td colspan="7" class="msg">Chưa có câu hỏi nào. Nhấn “+ Câu mới” hoặc nhập từ .docx.</td></tr>`;
+    </tr>`).join("") || `<tr><td colspan="8" class="msg">Chưa có câu hỏi nào. Nhấn “+ Câu mới” hoặc nhập từ .docx.</td></tr>`;
 }
 
 function chapterOptions(selected) {

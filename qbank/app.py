@@ -557,22 +557,33 @@ def preview_exam(sections):
     return out
 
 
-def shuffle_question(item, rng):
-    """Xáo phương án TN; phương án có dấu # giữ nguyên vị trí. Trả về (item, thứ tự mới)."""
+def shuffle_question(item, rng, letter_counts=None, tries=20):
+    """Xáo phương án TN; phương án có dấu # giữ nguyên vị trí. Trả về (item, thứ tự mới).
+    letter_counts: số lần mỗi chữ cái đã làm đáp án trong mã đề này. Nếu có, thử nhiều hoán vị
+    và chọn hoán vị mà đáp án rơi vào chữ đang được dùng ít nhất, để tránh lệch A/B/C/D."""
     if item["qtype"] != "TN":
         return item, None
     opts = item["options"]
     correct = LETTERS.index(item["answer"])
     movable = [i for i, o in enumerate(opts) if not o.startswith("#")]
-    shuffled = movable[:]
-    rng.shuffle(shuffled)
-    order = list(range(len(opts)))
-    for pos, src in zip(movable, shuffled):
-        order[pos] = src
+    best = None
+    for _ in range(tries if letter_counts is not None else 1):
+        shuffled = movable[:]
+        rng.shuffle(shuffled)
+        order = list(range(len(opts)))
+        for pos, src in zip(movable, shuffled):
+            order[pos] = src
+        new_answer = LETTERS[order.index(correct)]
+        load = letter_counts.get(new_answer, 0) if letter_counts is not None else 0
+        if best is None or load < best[0]:
+            best = (load, order, new_answer)
+        if load == 0 or (letter_counts is not None and load == min(letter_counts.get(c, 0) for c in LETTERS[:len(opts)])):
+            break
+    _, order, new_answer = best
+    if letter_counts is not None:
+        letter_counts[new_answer] = letter_counts.get(new_answer, 0) + 1
     new_opts = [opts[i].lstrip("#").strip() for i in order]
-    new_answer = LETTERS[order.index(correct)]
     return dict(item, options=new_opts, answer=new_answer), order
-
 
 
 def make_variant(base, shuffle, rng):
@@ -586,7 +597,8 @@ def make_variant(base, shuffle, rng):
     units.sort(key=lambda g: g[0]["id"])
     if shuffle:
         rng.shuffle(units)
-        return [shuffle_question(it, rng)[0] for g in units for it in g]
+        counts = {}  # cân bằng đáp án trong cùng một mã đề
+        return [shuffle_question(it, rng, counts)[0] for g in units for it in g]
     return [it for g in units for it in g]
 
 
@@ -1041,6 +1053,35 @@ def similar_pairs(threshold=SIMILAR_THRESHOLD):
                         "content": b["content"][:160]}]} for r, a, b in pairs]
 
 
+def bulk_update(ids, chapter_id=None, bloom=None):
+    """Đổi chương và/hoặc mức Bloom cho nhiều câu. Kiểm tra trùng trước khi đổi; lỗi thì không đổi câu nào."""
+    ids = [int(i) for i in ids]
+    if not ids:
+        raise ValueError("Chưa chọn câu nào")
+    if bloom is not None and int(bloom) not in BLOOM:
+        raise ValueError("Mức Bloom không hợp lệ")
+    if chapter_id is not None and not q("SELECT id FROM chapters WHERE id=?", (int(chapter_id),), fetch=True):
+        raise ValueError("Chương đích không tồn tại")
+    rows = q(f"SELECT id, content, options FROM questions WHERE id IN ({','.join('?' * len(ids))})", ids, fetch=True)
+    if len(rows) != len(set(ids)):
+        raise ValueError("Có câu không còn trong ngân hàng, hãy tải lại trang")
+    if chapter_id is not None:
+        index, moving = dup_index(), set(ids)
+        for r in rows:
+            key = dup_key(r["content"], json.loads(r["options"]))
+            clash = [h for h in index.get(key, []) if h[1] == int(chapter_id) and h[0] not in moving]
+            if clash:
+                raise ValueError(f"Câu #{r['id']} sẽ trùng với câu #{clash[0][0]} trong chương đích; không đổi câu nào")
+    with closing(sqlite3.connect(DB_PATH)) as conn:
+        for i in ids:
+            if chapter_id is not None:
+                conn.execute("UPDATE questions SET chapter_id=? WHERE id=?", (int(chapter_id), i))
+            if bloom is not None:
+                conn.execute("UPDATE questions SET bloom=? WHERE id=?", (int(bloom), i))
+        conn.commit()
+    return {"updated": len(ids)}
+
+
 def restore_item(item, index):
     """Khôi phục một câu từ file sao lưu; tự tạo học phần/giáo trình/chương nếu chưa có.
     Câu trùng trong cùng chương bị bỏ qua (báo lỗi để người dùng biết)."""
@@ -1210,6 +1251,9 @@ class Handler(BaseHTTPRequestHandler):
                 except Exception as e:
                     errors.append(f"Câu thứ {n}: {e}")
             return self._json(200, {"added": added, "errors": errors})
+        if p == "/api/questions/bulk":  # đổi chương/mức Bloom cho nhiều câu
+            b = self._json_body()
+            return self._json(200, bulk_update(b.get("ids", []), b.get("chapter_id") or None, b.get("bloom") or None))
         if p == "/api/duplicates/merge":  # giữ một câu, xóa các câu trùng đã chọn (lịch sử chuyển sang câu giữ)
             b = self._json_body()
             keep = int(b.get("keep", 0))
