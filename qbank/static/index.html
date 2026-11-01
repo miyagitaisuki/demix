@@ -67,6 +67,7 @@
     <label>Nhập từ .docx (giáo trình đang chọn ở bộ lọc):</label>
     <input type="file" accept=".docx" onchange="importDocx(this)">
     <button class="g" onclick="showDuplicates()">Kiểm tra trùng</button>
+    <button class="g" onclick="showSimilar()">Tìm câu gần giống</button>
     <a href="/api/import-template" download><button class="g">Tải mẫu nhập</button></a>
     <a href="/api/backup" download><button class="g">Sao lưu</button></a>
     <label>Khôi phục:</label>
@@ -365,6 +366,19 @@ async function mergeGroup(gi, ids) {
     $("#importMsg").textContent = `Đã xóa ${r.removed} câu trùng.`;
     loadQuestions(); showDuplicates();
   } catch (e) { $("#importMsg").innerHTML = `<span class="err">${esc(e.message)}</span>`; }
+}
+
+async function showSimilar() {
+  const pairs = await api("/api/similar");
+  const box = $("#dupBox");
+  box.style.display = "block";
+  if (!pairs.length) { box.innerHTML = `Không có cặp câu nào giống nhau từ 90% trở lên. <button class="g" onclick="$('#dupBox').style.display='none'">Đóng</button>`; return; }
+  box.innerHTML = `<div class="row"><b>${pairs.length} cặp câu gần giống (từ 90%).</b>
+      <span class="sub">Đây chỉ là gợi ý để rà soát; không tự xóa câu nào.</span>
+      <button class="g" onclick="$('#dupBox').style.display='none'">Đóng</button></div>` +
+    pairs.map(p => `<div class="card"><div class="row"><span class="tag">${Math.round(p.ratio * 100)}%</span></div>
+      <table>${p.items.map(it => `<tr><td style="width:150px">${esc(it.code)}</td><td>${esc(it.chapter)}</td><td>${esc(it.content)}</td>
+        <td><button class="g" onclick="editQ(${it.id})">Mở câu</button></td></tr>`).join("")}</table></div>`).join("");
 }
 
 async function autoMerge() {

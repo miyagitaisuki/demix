@@ -970,6 +970,77 @@ def backup_payload():
     return {"app": "QBank", "version": 2, "questions": items}
 
 
+BACKUP_DIR = os.path.join(BASE, "data", "backup")
+BACKUP_KEEP = 7
+
+
+def auto_backup():
+    """Ghi bản sao lưu JSON của hôm nay (nếu chưa có) và chỉ giữ BACKUP_KEEP bản gần nhất."""
+    os.makedirs(BACKUP_DIR, exist_ok=True)
+    today = datetime.now().strftime("%Y-%m-%d")
+    path = os.path.join(BACKUP_DIR, f"qbank_{today}.json")
+    if not os.path.exists(path):
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(backup_payload(), f, ensure_ascii=False, indent=1)
+        os.replace(tmp, path)
+    files = sorted(f for f in os.listdir(BACKUP_DIR) if re.fullmatch(r"qbank_\d{4}-\d{2}-\d{2}\.json", f))
+    for old in files[:-BACKUP_KEEP]:
+        os.remove(os.path.join(BACKUP_DIR, old))
+    return path
+
+
+def backup_loop():
+    """Kiểm tra mỗi giờ; sang ngày mới thì sao lưu. Lỗi chỉ in ra, không làm dừng server."""
+    import threading
+    def run():
+        while True:
+            try:
+                auto_backup()
+            except Exception as e:
+                print("Sao lưu tự động lỗi:", e)
+            threading.Event().wait(3600)
+    threading.Thread(target=run, daemon=True).start()
+
+
+# ---------------------------------------------------------------- câu gần giống
+SIMILAR_THRESHOLD = 0.9
+
+
+def similar_pairs(threshold=SIMILAR_THRESHOLD):
+    """Các cặp câu cùng dạng có nội dung gần giống (không tính cặp trùng y hệt đã có mục riêng).
+    Lọc nhanh bằng độ dài và quick_ratio trước khi tính ratio đầy đủ."""
+    from difflib import SequenceMatcher
+    rows = q(QUESTION_SQL + " ORDER BY qs.id", fetch=True)
+    keys = {}
+    for r in rows:
+        k = dup_key(r["content"], json.loads(r["options"]))
+        keys[r["id"]] = k
+    by_type = {}
+    for r in rows:
+        by_type.setdefault(r["qtype"], []).append(r)
+    pairs = []
+    for items in by_type.values():
+        for i, a in enumerate(items):
+            ka = keys[a["id"]]
+            for b in items[i + 1:]:
+                kb = keys[b["id"]]
+                if ka == kb or not ka or not kb:
+                    continue
+                sm = SequenceMatcher(None, ka, kb, autojunk=False)
+                if sm.real_quick_ratio() < threshold or sm.quick_ratio() < threshold:
+                    continue
+                ratio = sm.ratio()
+                if ratio >= threshold:
+                    pairs.append((ratio, a, b))
+    pairs.sort(key=lambda t: -t[0])
+    return [{"ratio": round(r, 3),
+             "items": [{"id": a["id"], "code": a["code"], "chapter": a["chapter_label"],
+                        "content": a["content"][:160]},
+                       {"id": b["id"], "code": b["code"], "chapter": b["chapter_label"],
+                        "content": b["content"][:160]}]} for r, a, b in pairs]
+
+
 def restore_item(item, index):
     """Khôi phục một câu từ file sao lưu; tự tạo học phần/giáo trình/chương nếu chưa có.
     Câu trùng trong cùng chương bị bỏ qua (báo lỗi để người dùng biết)."""
@@ -1064,6 +1135,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(200, [row_to_api(r) for r in q(sql, args, fetch=True)])
         if p == "/api/tree":
             return self._json(200, get_tree())
+        if p == "/api/similar":  # cặp câu gần giống (>= 90%), để rà soát
+            return self._json(200, similar_pairs())
         if p == "/api/duplicates":  # các nhóm câu có nội dung giống nhau (để rà soát)
             groups = []
             for v in dup_index().values():
@@ -1326,6 +1399,7 @@ class Handler(BaseHTTPRequestHandler):
 
 def main():
     init_storage()
+    backup_loop()
     srv = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
     print(f"QBank đang chạy tại http://127.0.0.1:{PORT}  (Ctrl+C để dừng)")
     try:

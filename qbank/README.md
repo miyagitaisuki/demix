@@ -82,7 +82,7 @@ Lưu trong `data/qbank.db` (SQLite). Sao lưu bằng cách sao chép file này.
 - ✅ Sửa tên và mã học phần, giáo trình, chương (nút "Sửa" ở tab Cấu trúc).
 - Chuyển câu sang chương khác; sửa hàng loạt (mức Bloom, chương).
 - Độ khó thực tế: nhập điểm từng câu sau kỳ thi, so với mức Bloom đã gán.
-- Cảnh báo câu gần giống (trên 90%), không chỉ trùng y hệt.
+- ✅ Cảnh báo câu gần giống (từ 90%): nút "Tìm câu gần giống" ở tab Ngân hàng, chỉ gợi ý, không tự xóa.
 - Cân bằng đáp án khi xáo, tránh chuỗi đáp án A liên tiếp hoặc phân bố lệch.
 
 ### 2. Giao diện (GUI)
@@ -103,7 +103,7 @@ Lưu trong `data/qbank.db` (SQLite). Sao lưu bằng cách sao chép file này.
 - ✅ Thông báo dạng toast (xóa, xuất, sửa). *Lỗi nhập Word vẫn hiển thị dạng chữ, chưa là bảng theo dòng.*
 - Hoàn tác sau khi xóa hoặc gộp câu (trong vài giây).
 - ✅ Kiểm tra trước khi xuất: chặn khi thiếu câu hoặc chưa chọn phần nào; hỏi xác nhận khi chưa nhập tên HP, mã HP hoặc năm học. *Phần trống: còn để làm.*
-- Tự sao lưu dữ liệu mỗi ngày vào `data/backup/`, giữ 7 bản gần nhất.
+- ✅ Tự sao lưu dữ liệu mỗi ngày vào `data/backup/`, giữ 7 bản gần nhất (kiểm tra mỗi giờ khi server chạy).
 
 **Dễ làm quen**
 - Màn hình bắt đầu khi ngân hàng trống: hướng dẫn 3 bước (tạo học phần → nhập câu → xuất đề), kèm nút tải mẫu nhập.
