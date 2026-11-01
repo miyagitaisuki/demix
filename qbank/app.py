@@ -95,6 +95,12 @@ def init_storage():
             codes TEXT NOT NULL DEFAULT '',
             config TEXT NOT NULL DEFAULT '{}',
             data BLOB NOT NULL)""")
+    q("""CREATE TABLE IF NOT EXISTS question_results(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            question_id INTEGER NOT NULL,
+            exam_code TEXT NOT NULL DEFAULT '',
+            correct_pct REAL NOT NULL,
+            recorded_at TEXT NOT NULL)""")
     ensure_column("courses", "code", "TEXT NOT NULL DEFAULT ''")
     ensure_column("courses", "exam_meta", "TEXT NOT NULL DEFAULT '{}'")
     ensure_column("textbooks", "code", "TEXT NOT NULL DEFAULT ''")
@@ -323,9 +329,12 @@ def auto_merge_same_chapter():
     return {"removed": removed}
 
 
-def insert_q(payload):
-    """Thêm câu hỏi (có gán mã), trả về id mới."""
-    payload = dict(payload, code=make_code(None, payload["chapter_id"]))
+def insert_q(payload, keep_code=None):
+    """Thêm câu hỏi (có gán mã), trả về id mới. keep_code: giữ mã cũ nếu chưa có câu nào dùng mã đó (hoàn tác xóa)."""
+    code = None
+    if keep_code and not q("SELECT id FROM questions WHERE code=?", (keep_code,), fetch=True):
+        code = keep_code
+    payload = dict(payload, code=code or make_code(None, payload["chapter_id"]))
     with closing(sqlite3.connect(DB_PATH)) as conn:
         conn.execute("PRAGMA foreign_keys = ON")
         cur = conn.execute(INSERT_Q, payload)
@@ -948,6 +957,54 @@ def make_sample_templates():
 
 
 # ---------------------------------------------------------------- stats & backup
+def record_results(exam_code, rows):
+    """rows: [(mã câu, tỷ lệ đúng %)]. Trả về số dòng đã ghi và danh sách lỗi theo dòng."""
+    exam_code = str(exam_code).strip()
+    if not exam_code:
+        raise ValueError("Thiếu mã đề")
+    now = datetime.now().isoformat(timespec="seconds")
+    added, errors, to_insert = 0, [], []
+    for n, (code, pct) in enumerate(rows, 1):
+        code = str(code).strip()
+        try:
+            pct = float(str(pct).replace(",", ".").replace("%", "").strip())
+        except ValueError:
+            errors.append(f"Dòng {n}: tỷ lệ '{pct}' không phải số")
+            continue
+        if not 0 <= pct <= 100:
+            errors.append(f"Dòng {n}: tỷ lệ phải từ 0 đến 100")
+            continue
+        hit = q("SELECT id FROM questions WHERE code=?", (code,), fetch=True)
+        if not hit:
+            errors.append(f"Dòng {n}: không có câu mã '{code}'")
+            continue
+        to_insert.append((hit[0]["id"], exam_code, pct, now))
+        added += 1
+    with closing(sqlite3.connect(DB_PATH)) as conn:
+        conn.executemany("INSERT INTO question_results(question_id, exam_code, correct_pct, recorded_at) VALUES(?,?,?,?)", to_insert)
+        conn.commit()
+    return {"added": added, "errors": errors}
+
+
+def difficulty():
+    """Tỷ lệ đúng thực tế: trung bình theo mức Bloom và các câu dễ/khó bất thường.
+    Mỗi câu lấy trung bình các lần thi đã nhập; mức 'bất thường' là ≤20% hoặc ≥95%."""
+    rows = q("""SELECT qs.id, qs.code, qs.bloom, qs.content, AVG(r.correct_pct) AS mean, COUNT(r.id) AS n
+                FROM question_results r JOIN questions qs ON qs.id = r.question_id
+                GROUP BY qs.id ORDER BY qs.code""", fetch=True)
+    by_bloom = {b: [] for b in BLOOM}
+    flags = []
+    for r in rows:
+        by_bloom[r["bloom"]].append(r["mean"])
+        if r["mean"] <= 20:
+            flags.append({"code": r["code"], "mean": round(r["mean"], 1), "n": r["n"], "flag": "khó bất thường", "content": r["content"][:120]})
+        elif r["mean"] >= 95:
+            flags.append({"code": r["code"], "mean": round(r["mean"], 1), "n": r["n"], "flag": "dễ bất thường", "content": r["content"][:120]})
+    blooms = [{"bloom": b, "label": BLOOM[b], "questions": len(v),
+               "mean": round(sum(v) / len(v), 1) if v else None} for b, v in by_bloom.items()]
+    return {"blooms": blooms, "flags": flags, "total_questions": len(rows)}
+
+
 def stats():
     tree = get_tree()
     counts = {}
@@ -1093,7 +1150,7 @@ def restore_item(item, index):
     same, _, key = check_duplicate(index, payload)
     if same:
         raise ValueError(f"trùng câu #{same[0][0]} trong cùng chương (bỏ qua)")
-    new_id = insert_q(payload)
+    new_id = insert_q(payload, keep_code=str(item.get("code") or "").strip() or None)
     index.setdefault(key, []).append((new_id, chapter_id, payload["content"]))
 
 
@@ -1189,6 +1246,8 @@ class Handler(BaseHTTPRequestHandler):
                                "items": [{"id": r["id"], "code": r["code"], "chapter": r["chapter_label"],
                                           "used_count": r["used_count"]} for r in items]})
             return self._json(200, groups)
+        if p == "/api/difficulty":
+            return self._json(200, difficulty())
         if p == "/api/stats":
             return self._json(200, stats())
         if p == "/api/backup":
@@ -1251,6 +1310,10 @@ class Handler(BaseHTTPRequestHandler):
                 except Exception as e:
                     errors.append(f"Câu thứ {n}: {e}")
             return self._json(200, {"added": added, "errors": errors})
+        if p == "/api/results":  # nhập tỷ lệ đúng của câu sau kỳ thi
+            b = self._json_body()
+            rows = [(line.get("code", ""), line.get("pct", "")) for line in b.get("rows", [])]
+            return self._json(200, record_results(b.get("exam_code", ""), rows))
         if p == "/api/questions/bulk":  # đổi chương/mức Bloom cho nhiều câu
             b = self._json_body()
             return self._json(200, bulk_update(b.get("ids", []), b.get("chapter_id") or None, b.get("bloom") or None))
@@ -1367,6 +1430,7 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if table == "questions":
                 q("DELETE FROM exam_usage WHERE question_id=?", (int(m.group(2)),))
+                q("DELETE FROM question_results WHERE question_id=?", (int(m.group(2)),))
             q(f"DELETE FROM {table} WHERE id=?", (int(m.group(2)),))
         except sqlite3.IntegrityError:
             raise ValueError("Còn dữ liệu bên trong (câu hỏi, giáo trình hoặc chương), không thể xóa")

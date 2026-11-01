@@ -81,7 +81,7 @@ Lưu trong `data/qbank.db` (SQLite). Sao lưu bằng cách sao chép file này.
 **Nên làm tiếp**
 - ✅ Sửa tên và mã học phần, giáo trình, chương (nút "Sửa" ở tab Cấu trúc).
 - ✅ Chuyển câu sang chương khác và sửa mức Bloom hàng loạt: tick các câu ở tab Ngân hàng, chọn chương hoặc mức rồi áp dụng. Chỉ đổi khi không gây trùng trong chương đích.
-- Độ khó thực tế: nhập điểm từng câu sau kỳ thi, so với mức Bloom đã gán.
+- ✅ Độ khó thực tế: nhập tỷ lệ đúng từng câu sau kỳ thi ở tab Thống kê; xem tỷ lệ TB theo mức Bloom và câu bất thường (≤20% hoặc ≥95%). *Ngưỡng bất thường là cố định, chưa chỉnh được.*
 - ✅ Cảnh báo câu gần giống (từ 90%): nút "Tìm câu gần giống" ở tab Ngân hàng, chỉ gợi ý, không tự xóa.
 - ✅ Cân bằng đáp án khi xáo: trong mỗi mã đề, đáp án được rải đều A/B/C/D. Kiểm tra: 200 mã đề × 12 câu cho 600 lần mỗi chữ.
 
@@ -101,7 +101,7 @@ Lưu trong `data/qbank.db` (SQLite). Sao lưu bằng cách sao chép file này.
 
 **Giảm lỗi**
 - ✅ Thông báo dạng toast (xóa, xuất, sửa). *Lỗi nhập Word vẫn hiển thị dạng chữ, chưa là bảng theo dòng.*
-- Hoàn tác sau khi xóa hoặc gộp câu (trong vài giây).
+- ✅ Hoàn tác sau khi xóa câu (nút "Hoàn tác" trong vài giây, giữ lại mã câu). *Chưa có hoàn tác cho gộp trùng; lịch sử dùng của câu đã xóa không khôi phục.*
 - ✅ Kiểm tra trước khi xuất: chặn khi thiếu câu hoặc chưa chọn phần nào; hỏi xác nhận khi chưa nhập tên HP, mã HP hoặc năm học. *Phần trống: còn để làm.*
 - ✅ Tự sao lưu dữ liệu mỗi ngày vào `data/backup/`, giữ 7 bản gần nhất (kiểm tra mỗi giờ khi server chạy).
 
