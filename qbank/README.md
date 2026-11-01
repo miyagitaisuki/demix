@@ -75,7 +75,7 @@ Lưu trong `data/qbank.db` (SQLite). Sao lưu bằng cách sao chép file này.
 - ✅ Lưu cấu trúc đề có tên, dùng lại cho kỳ sau (chỉ cần chọn và xuất). *Lưu trong tab Xuất đề; không lưu mã đề và thông tin đề.*
 - ✅ Gắn thông tin đề (tên HP, mã HP, số tín chỉ, khóa, học kỳ, năm học, thời gian) vào học phần: chọn học phần trong tab Xuất đề để tự điền, bấm "Lưu thông tin này cho học phần" để ghi lại.
 - Lưu lịch sử các lần xuất: mã đề, ngày, cấu hình, danh sách câu. Tải lại đề cũ hoặc in lại đáp án.
-- Xem trước đề trên web, cho phép đổi một câu cụ thể mà không chọn lại toàn bộ.
+- ✅ Xem trước đề trên web, cho phép đổi một câu cụ thể mà không chọn lại toàn bộ. *Nút "Xem trước đề" ở tab Xuất đề; xuất dùng đúng các câu đã xem.*
 - Đoạn văn là đối tượng riêng có mã, các câu gắn vào đoạn (thay cho việc so khớp chữ giống hệt). Ma trận đề chọn được theo số đoạn.
 
 **Nên làm tiếp**
@@ -118,7 +118,7 @@ Lưu trong `data/qbank.db` (SQLite). Sao lưu bằng cách sao chép file này.
 | Ưu tiên | Việc | Lý do |
 |---|---|---|
 | 1 | ✅ Lưu cấu trúc đề và thông tin học phần *(lịch sử xuất: còn để làm)* |
-| 2 | Xem trước và đổi từng câu | Giảm xuất sai, phải làm lại |
+| 2 | ✅ Xem trước và đổi từng câu | Giảm xuất sai, phải làm lại |
 | 3 | Đoạn văn là đối tượng riêng | Đề tiếng Nhật dùng đoạn văn nhiều |
 | 4 | Bố cục hai cột và form dạng panel | Thao tác hằng ngày nhanh hơn |
 | 5 | Xem trước khi nhập Word, toast, hoàn tác | Giảm lỗi khi nhập số lượng lớn |
