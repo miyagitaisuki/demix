@@ -101,11 +101,18 @@ def init_storage():
             exam_code TEXT NOT NULL DEFAULT '',
             correct_pct REAL NOT NULL,
             recorded_at TEXT NOT NULL)""")
+    q("""CREATE TABLE IF NOT EXISTS passages(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            code TEXT NOT NULL UNIQUE,
+            chapter_id INTEGER NOT NULL REFERENCES chapters(id),
+            content TEXT NOT NULL)""")
     ensure_column("courses", "code", "TEXT NOT NULL DEFAULT ''")
+    ensure_column("questions", "passage_id", "INTEGER REFERENCES passages(id)")
     ensure_column("courses", "exam_meta", "TEXT NOT NULL DEFAULT '{}'")
     ensure_column("textbooks", "code", "TEXT NOT NULL DEFAULT ''")
     ensure_column("questions", "code", "TEXT")
     ensure_column("questions", "passage", "TEXT NOT NULL DEFAULT ''")
+    migrate_passages()
     q("CREATE UNIQUE INDEX IF NOT EXISTS idx_questions_code ON questions(code)")
     for r in q("SELECT id FROM questions WHERE code IS NULL OR code=''", fetch=True):
         q("UPDATE questions SET code=? WHERE id=?", (make_code(r["id"]), r["id"]))
@@ -113,6 +120,45 @@ def init_storage():
         make_sample_templates()
     if not os.path.exists(os.path.join(TPL_DIR, "de_thi_chuan.docx")):
         make_official_templates()
+
+
+def migrate_passages():
+    """Đoạn văn cũ (chữ giống hệt trong cùng chương) thành đối tượng riêng có mã. Chạy lại an toàn."""
+    for r in q("SELECT DISTINCT chapter_id, passage FROM questions WHERE passage <> '' AND passage_id IS NULL", fetch=True):
+        pid = resolve_passage(r["chapter_id"], r["passage"])
+        q("UPDATE questions SET passage_id=? WHERE chapter_id=? AND passage=? AND passage_id IS NULL",
+          (pid, r["chapter_id"], r["passage"]))
+
+
+def passage_code(chapter_id):
+    """Mã đoạn văn dạng HọcPhần-GiáoTrình-Chương-Pnnn, ví dụ N4-MN1-B01-P001."""
+    r = q("""SELECT ch.code AS chcode, t.id AS tid, t.code AS tcode, co.id AS cid, co.code AS ccode
+             FROM chapters ch JOIN textbooks t ON t.id=ch.textbook_id JOIN courses co ON co.id=t.course_id
+             WHERE ch.id=?""", (chapter_id,), True)[0]
+    hp = r["ccode"] or f"HP{r['cid']}"
+    gt = r["tcode"] or f"GT{r['tid']}"
+    prefix = re.sub(r"\s+", "_", f"{hp}-{gt}-{r['chcode']}")
+    n = q("SELECT COUNT(*) AS n FROM passages WHERE chapter_id=?", (chapter_id,), True)[0]["n"] + 1
+    while True:
+        code = f"{prefix}-P{n:03d}"
+        if not q("SELECT 1 FROM passages WHERE code=?", (code,), True):
+            return code
+        n += 1
+
+
+def resolve_passage(chapter_id, text):
+    """Tìm đoạn văn cùng nội dung trong chương; chưa có thì tạo mới. Không có chữ thì trả None."""
+    text = (text or "").strip()
+    if not text:
+        return None
+    hit = q("SELECT id FROM passages WHERE chapter_id=? AND content=?", (int(chapter_id), text), True)
+    if hit:
+        return hit[0]["id"]
+    code = passage_code(int(chapter_id))
+    with closing(sqlite3.connect(DB_PATH)) as conn:
+        cur = conn.execute("INSERT INTO passages(code, chapter_id, content) VALUES(?,?,?)", (code, int(chapter_id), text))
+        conn.commit()
+        return cur.lastrowid
 
 
 def ensure_column(table, col, decl):
@@ -262,8 +308,8 @@ def clean_question(data):
                 passage=passage)
 
 
-INSERT_Q = """INSERT INTO questions(code,chapter_id,bloom,qtype,content,options,answer,solution,passage)
-              VALUES(:code,:chapter_id,:bloom,:qtype,:content,:options,:answer,:solution,:passage)"""
+INSERT_Q = """INSERT INTO questions(code,chapter_id,bloom,qtype,content,options,answer,solution,passage,passage_id)
+              VALUES(:code,:chapter_id,:bloom,:qtype,:content,:options,:answer,:solution,:passage,:passage_id)"""
 
 
 def row_to_api(r):
@@ -334,7 +380,8 @@ def insert_q(payload, keep_code=None):
     code = None
     if keep_code and not q("SELECT id FROM questions WHERE code=?", (keep_code,), fetch=True):
         code = keep_code
-    payload = dict(payload, code=code or make_code(None, payload["chapter_id"]))
+    payload = dict(payload, code=code or make_code(None, payload["chapter_id"]),
+                   passage_id=resolve_passage(payload["chapter_id"], payload.get("passage")))
     with closing(sqlite3.connect(DB_PATH)) as conn:
         conn.execute("PRAGMA foreign_keys = ON")
         cur = conn.execute(INSERT_Q, payload)
@@ -554,7 +601,7 @@ def find_replacement(spec, exclude, usage):
     Ưu tiên câu chưa dùng, rồi câu dùng lâu nhất."""
     if spec.get("passage"):
         raise ValueError("Câu thuộc đoạn văn không đổi riêng lẻ; hãy chọn lại cả phần")
-    sql = "SELECT * FROM questions WHERE chapter_id=? AND bloom=? AND qtype=? AND passage=''"
+    sql = "SELECT * FROM questions WHERE chapter_id=? AND bloom=? AND qtype=? AND passage_id IS NULL"
     args = [int(spec["chapter_id"]), int(spec["bloom"]), str(spec["qtype"])]
     pool = [row_to_api(p) for p in q(sql, args, fetch=True) if p["id"] not in exclude]
     if not pool:
@@ -616,7 +663,9 @@ def make_variant(base, shuffle, rng):
     shuffle=False: giữ thứ tự ngân hàng."""
     groups = {}
     for it in base:
-        groups.setdefault(it["passage"] or f"#{it['id']}", []).append(it)
+        key = (f"p{it['passage_id']}" if it.get("passage_id") else
+               f"t{it['passage']}" if it.get("passage") else f"#{it['id']}")
+        groups.setdefault(key, []).append(it)
     units = [sorted(g, key=lambda it: it["id"]) for g in groups.values()]
     units.sort(key=lambda g: g[0]["id"])
     if shuffle:
@@ -1020,6 +1069,36 @@ def difficulty():
     return {"blooms": blooms, "flags": flags, "total_questions": len(rows)}
 
 
+def list_passages():
+    return q("""SELECT p.id, p.code, p.content, p.chapter_id, ({CL}) AS chapter,
+                (SELECT COUNT(*) FROM questions qs WHERE qs.passage_id = p.id) AS count
+                FROM passages p JOIN chapters ch ON ch.id = p.chapter_id
+                JOIN textbooks t ON t.id = ch.textbook_id JOIN courses co ON co.id = t.course_id
+                ORDER BY p.code""".replace("{CL}", CHAPTER_LABEL), fetch=True)
+
+
+def update_passage(pid, content):
+    content = (content or "").strip()
+    if not content:
+        raise ValueError("Nội dung đoạn không được trống")
+    row = q("SELECT chapter_id FROM passages WHERE id=?", (pid,), True)
+    if not row:
+        raise ValueError("Đoạn văn không tồn tại")
+    if q("SELECT id FROM passages WHERE chapter_id=? AND content=? AND id<>?", (row[0]["chapter_id"], content, pid), True):
+        raise ValueError("Trong chương đã có đoạn có nội dung này")
+    with closing(sqlite3.connect(DB_PATH)) as conn:
+        conn.execute("UPDATE passages SET content=? WHERE id=?", (content, pid))
+        conn.execute("UPDATE questions SET passage=? WHERE passage_id=?", (content, pid))
+        conn.commit()
+
+
+def delete_passage(pid):
+    n = q("SELECT COUNT(*) AS n FROM questions WHERE passage_id=?", (pid,), True)[0]["n"]
+    if n:
+        raise ValueError(f"Còn {n} câu thuộc đoạn này; hãy gỡ hoặc xóa các câu đó trước")
+    q("DELETE FROM passages WHERE id=?", (pid,))
+
+
 def stats():
     tree = get_tree()
     counts = {}
@@ -1134,7 +1213,7 @@ def bulk_update(ids, chapter_id=None, bloom=None):
         raise ValueError("Mức Bloom không hợp lệ")
     if chapter_id is not None and not q("SELECT id FROM chapters WHERE id=?", (int(chapter_id),), fetch=True):
         raise ValueError("Chương đích không tồn tại")
-    rows = q(f"SELECT id, content, options FROM questions WHERE id IN ({','.join('?' * len(ids))})", ids, fetch=True)
+    rows = q(f"SELECT id, content, options, passage FROM questions WHERE id IN ({','.join('?' * len(ids))})", ids, fetch=True)
     if len(rows) != len(set(ids)):
         raise ValueError("Có câu không còn trong ngân hàng, hãy tải lại trang")
     if chapter_id is not None:
@@ -1144,10 +1223,15 @@ def bulk_update(ids, chapter_id=None, bloom=None):
             clash = [h for h in index.get(key, []) if h[1] == int(chapter_id) and h[0] not in moving]
             if clash:
                 raise ValueError(f"Câu #{r['id']} sẽ trùng với câu #{clash[0][0]} trong chương đích; không đổi câu nào")
+    new_pids = {}
+    if chapter_id is not None:  # đoạn văn thuộc chương: chuyển câu thì lấy đoạn của chương đích
+        for r in rows:
+            new_pids[r["id"]] = resolve_passage(int(chapter_id), r["passage"])
     with closing(sqlite3.connect(DB_PATH)) as conn:
         for i in ids:
             if chapter_id is not None:
-                conn.execute("UPDATE questions SET chapter_id=? WHERE id=?", (int(chapter_id), i))
+                conn.execute("UPDATE questions SET chapter_id=?, passage_id=? WHERE id=?",
+                             (int(chapter_id), new_pids[i], i))
             if bloom is not None:
                 conn.execute("UPDATE questions SET bloom=? WHERE id=?", (int(bloom), i))
         conn.commit()
@@ -1261,6 +1345,8 @@ class Handler(BaseHTTPRequestHandler):
                                "items": [{"id": r["id"], "code": r["code"], "chapter": r["chapter_label"],
                                           "used_count": r["used_count"]} for r in items]})
             return self._json(200, groups)
+        if p == "/api/passages":
+            return self._json(200, list_passages())
         if p == "/api/difficulty":
             return self._json(200, difficulty())
         if p == "/api/stats":
@@ -1412,6 +1498,10 @@ class Handler(BaseHTTPRequestHandler):
                     raise ValueError("Thiếu mã chương")
                 q("UPDATE chapters SET code=?, title=? WHERE id=?", (code, str(b.get("title", "")).strip(), rid))
             return self._json(200, {"ok": True})
+        pm = re.fullmatch(r"/api/passages/(\d+)", path)
+        if pm:
+            update_passage(int(pm.group(1)), self._json_body().get("content", ""))
+            return self._json(200, {"ok": True})
         cm = re.fullmatch(r"/api/courses/(\d+)/exam-meta", urlparse(self.path).path)
         if cm:  # thông tin đề thi gắn với học phần, tự điền khi xuất đề
             body = self._json_body()
@@ -1424,13 +1514,19 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(404, {"error": "không tìm thấy"})
         payload = clean_question(self._json_body())
         payload["id"] = int(m.group(1))
+        payload["passage_id"] = resolve_passage(payload["chapter_id"], payload["passage"])
         q("""UPDATE questions SET chapter_id=:chapter_id, bloom=:bloom, qtype=:qtype, content=:content,
-             options=:options, answer=:answer, solution=:solution, passage=:passage WHERE id=:id""", payload)
+             options=:options, answer=:answer, solution=:solution, passage=:passage, passage_id=:passage_id
+             WHERE id=:id""", payload)
         self._json(200, {"ok": True})
 
     # --- DELETE: chỉ xóa khi không còn dữ liệu bên trong (khóa ngoài RESTRICT)
     def _delete(self):
         path = urlparse(self.path).path
+        psg = re.fullmatch(r"/api/passages/(\d+)", path)
+        if psg:
+            delete_passage(int(psg.group(1)))
+            return self._json(200, {"ok": True})
         cfg = re.fullmatch(r"/api/configs/(\d+)", path)
         if cfg:
             q("DELETE FROM exam_configs WHERE id=?", (int(cfg.group(1)),))

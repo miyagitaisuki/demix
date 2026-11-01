@@ -111,6 +111,10 @@
     </div>
   </div>
   <div id="structMsg" class="msg"></div>
+  <div class="card" style="margin-top:16px">
+    <b>Đoạn văn</b> <span class="sub">Mỗi đoạn có mã riêng. Câu cùng đoạn được xuất liền nhau. Thêm đoạn bằng cách nhập đoạn trong form câu hỏi.</span>
+    <div id="passBox"></div>
+  </div>
 </section>
 
 <!-- ============ THỐNG KÊ ============ -->
@@ -317,6 +321,7 @@ async function editQ(id) {
   let q = { chapter_id: $("#fChapter").value || "", bloom: 1, qtype: "TN", content: "", options: ["", "", "", ""], answer: "A", solution: "" };
   if (id) q = (await api("/api/questions")).find(x => x.id === id) || q;
   if (!TREE.chapters.length) { alert("Hãy tạo học phần, giáo trình, chương trong tab Cấu trúc trước."); return; }
+  await loadPassages();
   $("#editor").style.display = "block";
   $("#editor").innerHTML = `
     <input type="hidden" id="eId" value="${id ?? ""}">
@@ -325,7 +330,8 @@ async function editQ(id) {
       <label>Bloom</label><select id="eBloom">${Object.entries(BLOOM).map(([k,v])=>`<option value="${k}" ${k==q.bloom?"selected":""}>${k}. ${v}</option>`).join("")}</select>
       <label>Loại</label><select id="eType">${["TN","DS","DT","TL"].map(t=>`<option value="${t}" ${q.qtype==t?"selected":""}>${t==="TN"?"Trắc nghiệm":t==="DS"?"Đúng/sai":t==="DT"?"Điền từ":"Tự luận"}</option>`).join("")}</select>
     </div>
-    <div class="row"><label>Đoạn văn dùng chung (tùy chọn; các câu cùng đoạn phải nhập giống hệt)</label></div>
+    <div class="row"><label>Đoạn văn (tùy chọn). Chọn đoạn có sẵn trong chương, hoặc nhập đoạn mới; đoạn giống hệt trong chương sẽ được dùng chung.</label></div>
+    <div class="row"><select id="ePassPick" style="min-width:260px"></select></div>
     <div class="row"><textarea id="ePassage" rows="2" placeholder="Để trống nếu câu không thuộc đoạn văn nào">${esc(q.passage || "")}</textarea></div>
     <div class="row"><label>Nội dung câu hỏi (furigana viết {漢字|かな})</label></div>
     <div class="row"><textarea id="eContent" rows="3" placeholder="Nội dung câu hỏi">${esc(q.content)}</textarea></div>
@@ -334,6 +340,59 @@ async function editQ(id) {
     <div class="row"><label>Đáp án (TN: A/B/C…; ĐS: Đ S Đ…; ĐT: đáp án, nhiều đáp án cách nhau bằng |; TL: để trống)</label><input id="eAns" value="${esc(q.answer)}">
       <label>Lời giải</label><input id="eSol" style="flex:1" value="${esc(q.solution)}"></div>
     <div class="row"><button class="p" onclick="saveQ()">Lưu</button><button class="g" onclick="$('#editor').style.display='none'">Đóng</button><span id="eMsg" class="err"></span></div>`;
+  fillPassPick(q.passage_id);
+  $("#eChap").onchange = () => fillPassPick(null);
+}
+
+// ---------- đoạn văn
+let PASSAGES = [];
+async function loadPassages() { PASSAGES = await api("/api/passages"); }
+function fillPassPick(selectedId) {
+  const chap = $("#eChap").value;
+  const list = PASSAGES.filter(p => p.chapter_id == chap);
+  $("#ePassPick").innerHTML = `<option value="">— đoạn có sẵn trong chương —</option>` +
+    list.map(p => `<option value="${p.id}" ${p.id == selectedId ? "selected" : ""}>${esc(p.code)}: ${esc(p.content.slice(0, 50))}</option>`).join("");
+  $("#ePassPick").onchange = () => {
+    const p = PASSAGES.find(x => x.id == $("#ePassPick").value);
+    if (p) $("#ePassage").value = p.content;
+  };
+}
+
+async function renderPassages() {
+  await loadPassages();
+  const rows = PASSAGES.map(p => `
+    <tr id="pr${p.id}">
+      <td>${esc(p.code)}</td><td>${esc(p.chapter)}</td>
+      <td style="white-space:pre-line">${esc(p.content.slice(0, 160))}${p.content.length > 160 ? "…" : ""}</td>
+      <td class="num">${p.count}</td>
+      <td style="white-space:nowrap"><button class="g" onclick="editPassage(${p.id})">Sửa</button>
+        <button class="d" onclick="delPassage(${p.id})">Xóa</button></td></tr>`).join("");
+  $("#passBox").innerHTML = PASSAGES.length
+    ? `<table><thead><tr><th>Mã đoạn</th><th>Chương</th><th>Nội dung</th><th class="num">Số câu</th><th></th></tr></thead><tbody>${rows}</tbody></table>`
+    : `<span class="msg">Chưa có đoạn văn nào.</span>`;
+}
+function editPassage(id) {
+  const p = PASSAGES.find(x => x.id === id);
+  $("#pr" + id).innerHTML = `<td colspan="5">
+    <textarea id="pe${id}" rows="4">${esc(p.content)}</textarea>
+    <div class="row"><button class="p" onclick="savePassage(${id})">Lưu</button>
+    <button class="g" onclick="renderPassages()">Hủy</button>
+    <span class="sub">Sửa nội dung áp dụng cho mọi câu thuộc đoạn này.</span></div></td>`;
+}
+async function savePassage(id) {
+  try {
+    await postJson(`/api/passages/${id}`, { content: $("#pe" + id).value }, "PUT");
+    toast("Đã lưu đoạn văn.");
+    renderPassages();
+  } catch (e) { toast(e.message, true); }
+}
+async function delPassage(id) {
+  if (!confirm("Xóa đoạn văn này?")) return;
+  try {
+    await api(`/api/passages/${id}`, { method: "DELETE" });
+    toast("Đã xóa đoạn văn.");
+  } catch (e) { toast(e.message, true); }
+  renderPassages();
 }
 
 async function saveQ() {
@@ -536,6 +595,7 @@ async function restoreJson(input) {
 // ---------- cấu trúc
 async function renderStruct() {
   await loadTree();
+  renderPassages();
   const byTb = id => TREE.chapters.filter(c => c.textbook_id == id);
   const byCourse = id => TREE.textbooks.filter(t => t.course_id == id);
   $("#treeBox").innerHTML = TREE.courses.length ? `<ul>` + TREE.courses.map(c => `
