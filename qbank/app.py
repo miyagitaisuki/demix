@@ -13,8 +13,11 @@ import os
 import random
 import re
 import sqlite3
+import shutil
 import sys
+import threading
 import unicodedata
+import webbrowser
 import zipfile
 from contextlib import closing
 from datetime import datetime
@@ -28,9 +31,14 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 
 BASE = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.path.join(BASE, "data", "qbank.db")
-TPL_DIR = os.path.join(BASE, "templates")
-STATIC = os.path.join(BASE, "static")
+if getattr(sys, "frozen", False):  # chạy từ file đóng gói PyInstaller
+    RES_DIR = sys._MEIPASS  # tài nguyên đi kèm (static, templates mẫu) nằm trong thư mục tạm của PyInstaller
+    DATA_DIR = os.path.dirname(os.path.abspath(sys.executable))  # dữ liệu nằm cạnh file exe, không mất khi tắt app
+else:
+    RES_DIR = DATA_DIR = BASE
+DB_PATH = os.path.join(DATA_DIR, "data", "qbank.db")
+TPL_DIR = os.path.join(DATA_DIR, "templates")
+STATIC = os.path.join(RES_DIR, "static")
 BLOOM = {1: "Biết", 2: "Hiểu", 3: "Vận dụng", 4: "Phân tích", 5: "Đánh giá"}
 LETTERS = "ABCDEFGH"
 QTYPES = ("TN", "DS", "DT", "TL")  # trắc nghiệm, đúng/sai, điền từ, tự luận
@@ -118,6 +126,12 @@ def init_storage():
     q("CREATE UNIQUE INDEX IF NOT EXISTS idx_questions_code ON questions(code)")
     for r in q("SELECT id FROM questions WHERE code IS NULL OR code=''", fetch=True):
         q("UPDATE questions SET code=? WHERE id=?", (make_code(r["id"]), r["id"]))
+    # mẫu đi kèm bản đóng gói: chép vào thư mục dữ liệu nếu chưa có, để người dùng sửa được
+    bundled = os.path.join(RES_DIR, "templates")
+    if os.path.abspath(bundled) != os.path.abspath(TPL_DIR) and os.path.isdir(bundled):
+        for f in os.listdir(bundled):
+            if f.endswith(".docx") and not os.path.exists(os.path.join(TPL_DIR, f)):
+                shutil.copy(os.path.join(bundled, f), os.path.join(TPL_DIR, f))
     if not any(f.endswith(".docx") for f in os.listdir(TPL_DIR)):
         make_sample_templates()
     if not os.path.exists(os.path.join(TPL_DIR, "de_thi_chuan.docx")):
@@ -1212,7 +1226,7 @@ def backup_payload():
     return {"app": "QBank", "version": 2, "questions": items}
 
 
-BACKUP_DIR = os.path.join(BASE, "data", "backup")
+BACKUP_DIR = os.path.join(DATA_DIR, "data", "backup")
 BACKUP_KEEP = 7
 
 
@@ -1747,8 +1761,19 @@ class Handler(BaseHTTPRequestHandler):
 def main():
     init_storage()
     backup_loop()
-    srv = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
-    print(f"QBank đang chạy tại http://127.0.0.1:{PORT}  (Ctrl+C để dừng)")
+    url = f"http://127.0.0.1:{PORT}"
+    try:
+        srv = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
+    except OSError:
+        srv = None
+    if srv is None:  # ra ngoài khối except để không in kèm traceback lồng nhau
+        print(f"Cổng {PORT} đang được dùng. Hãy đóng chương trình QBank đang chạy khác rồi thử lại.")
+        if getattr(sys, "frozen", False):
+            input("Nhấn Enter để thoát...")
+        sys.exit(1)
+    print(f"QBank đang chạy tại {url}  (đóng cửa sổ này hoặc Ctrl+C để dừng)")
+    if not os.environ.get("QBANK_NO_BROWSER"):
+        threading.Timer(1.0, lambda: webbrowser.open(url)).start()  # mở trình duyệt sau khi server sẵn sàng
     try:
         srv.serve_forever()
     except KeyboardInterrupt:

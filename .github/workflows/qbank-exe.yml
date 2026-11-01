@@ -1,0 +1,32 @@
+name: Build QBank.exe
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "qbank/**"
+      - ".github/workflows/qbank-exe.yml"
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Cài thư viện
+        run: python -m pip install --upgrade pip pyinstaller python-docx
+
+      - name: Đóng gói QBank.exe
+        working-directory: qbank
+        run: python tools/build_exe.py
+
+      - name: Lưu file chạy
+        uses: actions/upload-artifact@v4
+        with:
+          name: QBank-windows
+          path: qbank/dist/QBank.exe
+          if-no-files-found: error

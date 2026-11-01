@@ -1,0 +1,6 @@
+# sản phẩm build và dữ liệu cục bộ, không đưa vào git
+build/
+dist/
+*.spec
+data/
+__pycache__/
