@@ -35,6 +35,14 @@
   .tree > ul { padding-left:0; }
   .tree li { margin:3px 0; }
   .sub { color:var(--mut); font-size:12px; }
+  .stepper { display:flex; gap:6px; margin-bottom:14px; flex-wrap:wrap; }
+  .step { border:1px solid var(--line); background:#fff; border-radius:999px; padding:6px 12px; cursor:pointer; color:var(--mut); }
+  .step span { display:inline-block; width:20px; height:20px; line-height:20px; text-align:center; border-radius:50%; background:var(--line); margin-right:4px; font-size:12px; }
+  .step.on { color:var(--b); border-color:var(--b); }
+  .step.on span { background:var(--b); color:#fff; }
+  .step.done span { background:#16a34a; color:#fff; }
+  .pane { display:none; } .pane.on { display:block; }
+  .wiznav { margin-top:14px; padding-top:10px; border-top:1px solid var(--line); }
   .twocol { display:flex; gap:16px; align-items:flex-start; }
   .side { width:250px; flex:0 0 250px; border-right:1px solid var(--line); padding-right:12px; max-height:82vh; overflow:auto; position:sticky; top:8px; }
   .main-col { flex:1; min-width:0; }
@@ -148,62 +156,97 @@
 
 <!-- ============ XUẤT ĐỀ ============ -->
 <section id="export">
-  <div class="card">
-    <div class="row"><b>Thông tin đề thi</b> <span class="sub">(tên trường, khoa và bố cục lấy từ mẫu đề)</span></div>
-    <div class="row">
-      <label>Lấy từ học phần:</label><select id="metaCourse" onchange="applyCourseMeta()" style="min-width:200px"></select>
-      <button class="g" onclick="saveCourseMeta()">Lưu thông tin này cho học phần</button><span id="metaMsg" class="msg"></span>
+  <nav class="stepper" id="stepper">
+    <button class="step on" data-step="1" onclick="goStep(1)"><span>1</span> Cấu trúc đề</button>
+    <button class="step" data-step="2" onclick="goStep(2)"><span>2</span> Thông tin đề</button>
+    <button class="step" data-step="3" onclick="goStep(3)"><span>3</span> Xem trước</button>
+    <button class="step" data-step="4" onclick="goStep(4)"><span>4</span> Xác nhận và xuất</button>
+  </nav>
+
+  <!-- Bước 1: cấu trúc đề -->
+  <div class="pane on" id="pane1">
+    <div class="card">
+      <div class="row"><b>Cấu trúc đề đã lưu</b> <span class="sub">(lưu các phần, số câu, mẫu, furigana; không lưu mã đề, số mã đề, thông tin đề)</span></div>
+      <div class="row">
+        <select id="cfgSelect" style="min-width:220px"></select>
+        <button class="g" onclick="loadConfig()">Tải</button>
+        <button class="d" onclick="deleteConfig()">Xóa</button>
+        <input id="cfgName" placeholder="Tên cấu trúc (để trống = ghi đè cấu trúc đang chọn)" style="width:300px">
+        <button class="g" onclick="saveConfig()">Lưu cấu trúc</button>
+        <span id="cfgMsg" class="msg"></span>
+      </div>
     </div>
     <div class="row">
-      <label>Tên học phần:</label><input id="mon" style="width:200px" placeholder="Tiếng Nhật 4">
-      <label>Mã HP:</label><input id="maHp" style="width:100px" placeholder="1090411">
-      <label>Số tín chỉ:</label><input id="soTc" class="n" value="4">
-      <label>Khóa:</label><input id="khoaHoc" class="n" style="width:80px" placeholder="K47">
+      <label>Chỉ hiện chương của học phần:</label><select id="xCourse" onchange="filterExportRows()"></select>
     </div>
-    <div class="row">
-      <label>Học kỳ:</label><input id="hocKy" class="n" value="2">
-      <label>Năm học:</label><input id="namHoc" style="width:110px" placeholder="2025-2026">
-      <label>Thời gian (phút):</label><input id="thoiGian" class="n" value="90">
-      <label>Tên đề (ghi chú, không in):</label><input id="tenDe" style="width:160px">
-    </div>
-    <div class="row"><b>Mã đề và file</b></div>
-    <div class="row">
-      <label>Mẫu đề:</label><select id="tpl"></select>
-      <label>Mẫu đáp án:</label><select id="keyTpl"></select>
-      <label>Số mã đề:</label><input id="variants" class="n" value="1">
-      <label>Tiền tố:</label><input id="prefix" style="width:70px" placeholder="">
-      <label>Bắt đầu từ:</label><input id="start" class="n" value="1">
-    </div>
-    <div class="row">
-      <label>Furigana:</label><select id="furigana"><option value="ruby">Chữ đọc phía trên (Word)</option><option value="paren">Chữ(cách đọc) cùng dòng</option></select>
-      <label><input type="checkbox" id="answerKey"> Kèm đáp án cuối đề</label>
-      <label><input type="checkbox" id="keySeparate" checked> Đáp án ra file riêng (DapAn_xxx.docx)</label>
-      <label><input type="checkbox" id="recordUsage" checked> Ghi lịch sử dùng câu</label>
-      <label><input type="checkbox" id="saveHistory" checked> Lưu vào lịch sử xuất</label>
+    <p class="msg">Mỗi phần là một khối câu theo một dạng (TN, DS, DT, TL). Nhập số câu cho từng ô chương × Bloom, hoặc số đoạn văn ở dòng “Theo đoạn văn”. Bỏ tick “Xáo” để giữ thứ tự câu trong ngân hàng.</p>
+    <div id="sections"></div>
+    <div class="row"><button class="g" onclick="addSection()">+ Thêm phần</button></div>
+  </div>
+
+  <!-- Bước 2: thông tin đề -->
+  <div class="pane" id="pane2">
+    <div class="card">
+      <div class="row"><b>Thông tin đề thi</b> <span class="sub">(tên trường, khoa và bố cục lấy từ mẫu đề)</span></div>
+      <div class="row">
+        <label>Lấy từ học phần:</label><select id="metaCourse" onchange="applyCourseMeta()" style="min-width:200px"></select>
+        <button class="g" onclick="saveCourseMeta()">Lưu thông tin này cho học phần</button><span id="metaMsg" class="msg"></span>
+      </div>
+      <div class="row">
+        <label>Tên học phần:</label><input id="mon" style="width:200px" placeholder="Tiếng Nhật 4">
+        <label>Mã HP:</label><input id="maHp" style="width:100px" placeholder="1090411">
+        <label>Số tín chỉ:</label><input id="soTc" class="n" value="4">
+        <label>Khóa:</label><input id="khoaHoc" class="n" style="width:80px" placeholder="K47">
+      </div>
+      <div class="row">
+        <label>Học kỳ:</label><input id="hocKy" class="n" value="2">
+        <label>Năm học:</label><input id="namHoc" style="width:110px" placeholder="2025-2026">
+        <label>Thời gian (phút):</label><input id="thoiGian" class="n" value="90">
+        <label>Tên đề (ghi chú, không in):</label><input id="tenDe" style="width:160px">
+      </div>
+      <div class="row"><b>Mã đề và file</b></div>
+      <div class="row">
+        <label>Mẫu đề:</label><select id="tpl"></select>
+        <label>Mẫu đáp án:</label><select id="keyTpl"></select>
+        <label>Số mã đề:</label><input id="variants" class="n" value="1">
+        <label>Tiền tố:</label><input id="prefix" style="width:70px" placeholder="">
+        <label>Bắt đầu từ:</label><input id="start" class="n" value="1">
+      </div>
+      <div class="row">
+        <label>Furigana:</label><select id="furigana"><option value="ruby">Chữ đọc phía trên (Word)</option><option value="paren">Chữ(cách đọc) cùng dòng</option></select>
+        <label><input type="checkbox" id="answerKey"> Kèm đáp án cuối đề</label>
+        <label><input type="checkbox" id="keySeparate" checked> Đáp án ra file riêng (DapAn_xxx.docx)</label>
+        <label><input type="checkbox" id="recordUsage" checked> Ghi lịch sử dùng câu</label>
+        <label><input type="checkbox" id="saveHistory" checked> Lưu vào lịch sử xuất</label>
+      </div>
     </div>
   </div>
-  <div class="card">
-    <div class="row"><b>Cấu trúc đề đã lưu</b> <span class="sub">(lưu các phần, số câu, mẫu, furigana; không lưu mã đề, số mã đề, thông tin đề)</span></div>
-    <div class="row">
-      <select id="cfgSelect" style="min-width:220px"></select>
-      <button class="g" onclick="loadConfig()">Tải</button>
-      <button class="d" onclick="deleteConfig()">Xóa</button>
-      <input id="cfgName" placeholder="Tên cấu trúc (để trống = ghi đè cấu trúc đang chọn)" style="width:300px">
-      <button class="g" onclick="saveConfig()">Lưu cấu trúc</button>
-      <span id="cfgMsg" class="msg"></span>
+
+  <!-- Bước 3: xem trước -->
+  <div class="pane" id="pane3">
+    <p class="msg">Xem trước chọn câu cụ thể cho từng phần; bấm “Đổi câu” để thay câu khác. Có thể bỏ qua bước này: khi đó đề chọn câu ngẫu nhiên lúc xuất.</p>
+    <div class="row"><button class="g" onclick="previewExam()">Xem trước đề</button><span id="previewStatus" class="msg"></span></div>
+    <div id="previewBox"></div>
+  </div>
+
+  <!-- Bước 4: xác nhận và xuất -->
+  <div class="pane" id="pane4">
+    <div class="card">
+      <div class="row"><b>Tóm tắt trước khi xuất</b></div>
+      <div id="sumBox"></div>
+      <div class="row" style="margin-top:10px"><label><input type="checkbox" id="confirmChk"> Tôi đã kiểm tra thông tin trên và muốn xuất đề</label></div>
+    </div>
+    <div class="row"><button class="p" onclick="doExport()">Xuất .zip các file .docx</button><span id="exportMsg" class="msg"></span><span id="shortMsg" class="err"></span></div>
+    <div class="card">
+      <div class="row"><b>Lịch sử xuất</b> <span class="sub">(tải lại file .zip gồm đề và đáp án)</span><button class="g" onclick="loadHistory()">Làm mới</button></div>
+      <div id="histBox"></div>
     </div>
   </div>
-  <div class="row">
-    <label>Chỉ hiện chương của học phần:</label><select id="xCourse" onchange="filterExportRows()"></select>
-  </div>
-  <p class="msg">Mỗi phần là một khối câu theo một dạng (TN, DS, DT, TL). Bỏ tick “Xáo” để giữ thứ tự câu trong ngân hàng. Nhập số câu cho từng ô chương × Bloom; đề gốc chọn ngẫu nhiên một lần, mỗi mã đề là một hoán vị của đề gốc.</p>
-  <div id="sections"></div>
-  <div class="row"><button class="g" onclick="addSection()">+ Thêm phần</button></div>
-  <div id="previewBox"></div>
-  <div class="row"><button class="g" onclick="previewExam()">Xem trước đề</button><button class="p" onclick="doExport()">Xuất .zip các file .docx</button><span id="exportMsg" class="msg"></span><span id="shortMsg" class="err"></span></div>
-  <div class="card">
-    <div class="row"><b>Lịch sử xuất</b> <span class="sub">(tải lại file .zip gồm đề và đáp án)</span><button class="g" onclick="loadHistory()">Làm mới</button></div>
-    <div id="histBox"></div>
+
+  <div class="row wiznav">
+    <button class="g" id="btnBack" onclick="goStep(STEP - 1)">← Quay lại</button>
+    <button class="p" id="btnNext" onclick="goStep(STEP + 1)">Tiếp →</button>
+    <span class="sub" id="stepHint"></span>
   </div>
 </section>
 <div id="toast"></div>
@@ -547,15 +590,17 @@ function renderImportPreview(r) {
                   skip: `<span class="tag" style="background:#e5e7eb">Bỏ qua</span>`, error: `<span class="tag" style="background:#fee2e2;color:#b91c1c">Lỗi</span>` };
   const n = r.rows.filter(x => x.status === "ok" || x.status === "warn").length;
   box.style.display = "block";
-  box.innerHTML = `<div class="row"><b>Xem trước: ${esc(PENDING_IMPORT.name)}</b>
-      <span class="sub">${n} câu sẽ được nhập, ${r.rows.length - n} dòng bị bỏ qua hoặc lỗi. Chưa có gì được ghi.</span></div>
+  const tb = TREE.textbooks.find(t => t.id == PENDING_IMPORT.tid);
+  box.innerHTML = `<div class="sub" style="margin-bottom:6px">Bước 1 Chọn file ✓ → Bước 2 Kiểm tra ✓ → Bước 3 Xác nhận</div>
+      <div class="row"><b>Xem trước: ${esc(PENDING_IMPORT.name)}</b>
+      <span class="sub">${n} câu sẽ được nhập vào giáo trình «${esc(tb ? tb.name : "")}», ${r.rows.length - n} dòng bị bỏ qua hoặc lỗi. Chưa có gì được ghi.</span></div>
     <table><thead><tr><th>Vị trí</th><th>Mã chương</th><th>Loại</th><th>Nội dung</th><th>Trạng thái</th></tr></thead><tbody>` +
     r.rows.map(x => `<tr style="${x.status === "error" ? "background:#fef2f2" : ""}">
       <td>${esc(x.where)}</td><td>${esc(x.code)}</td><td>${esc(x.qtype)}</td><td>${esc(x.content)}</td>
       <td>${badge[x.status]} <span class="sub">${esc(x.note)}</span></td></tr>`).join("") +
     `</tbody></table>
     <div class="row" style="margin-top:8px">
-      <button class="p" ${n ? "" : "disabled"} onclick="confirmImport()">Nhập ${n} câu</button>
+      <button class="p" ${n ? "" : "disabled"} onclick="confirmImport()">Xác nhận: nhập ${n} câu</button>
       <button class="g" onclick="cancelImport()">Hủy</button></div>`;
 }
 function cancelImport() { PENDING_IMPORT = null; $("#importPreview").style.display = "none"; }
@@ -745,6 +790,7 @@ async function loadExport() {
   filterExportRows();
   refreshAllCells();
   loadHistory();
+  applyStep();
 }
 
 // ---------- ghi nhớ biểu mẫu xuất đề (lưu trên trình duyệt)
@@ -948,6 +994,7 @@ async function previewExam() {
     const r = await postJson("/api/exam/preview", { sections });
     PREVIEW = { sig: JSON.stringify(sections), sections: r.sections };
     renderPreview();
+    setPreviewStatus();
     $("#exportMsg").textContent = "Đang xem trước. Có thể đổi từng câu; xuất sẽ dùng đúng các câu này.";
   } catch (e) { $("#exportMsg").innerHTML = `<span class="err">${esc(e.message)}</span>`; }
 }
@@ -982,15 +1029,98 @@ async function swapItem(si, ii) {
   } catch (e) { $("#exportMsg").innerHTML = `<span class="err">${esc(e.message)}</span>`; }
 }
 
+
+// ---------- wizard xuất đề: 4 bước, mỗi bước xác nhận trước khi sang bước sau
+let STEP = 1;
+const STEP_HINT = {1: "Chọn phần và số câu/đoạn.", 2: "Kiểm tra thông tin đề in trên tài liệu.",
+                   3: "Xem và đổi câu (tùy chọn).", 4: "Kiểm tra tóm tắt rồi xuất."};
+function setPreviewStatus() {
+  if (!PREVIEW) { $("#previewStatus").textContent = "Chưa xem trước: câu sẽ chọn ngẫu nhiên khi xuất."; return; }
+  const n = PREVIEW.sections.reduce((a, s) => a + s.items.length, 0);
+  $("#previewStatus").textContent = `Đã xem trước: ${n} câu.`;
+}
+// kiểm tra bước hiện tại; trả về true nếu được đi tiếp
+function validateStep(n) {
+  if (n === 1) {
+    const sections = readSections();
+    if (!sections.some(s => s.matrix.length || s.passages.length)) {
+      toast("Chọn số câu hoặc số đoạn cho ít nhất một phần.", true); return false;
+    }
+    const short = [...document.querySelectorAll(".cell")].filter(x => (+x.value || 0) > +x.dataset.have).length;
+    if (short) { toast(`Còn ${short} ô thiếu câu hỏi (tô đỏ).`, true); return false; }
+    return true;
+  }
+  if (n === 2) {
+    if (!$("#tpl").value) { toast("Chọn mẫu đề.", true); return false; }
+    const missing = [["Tên học phần", "mon"], ["Mã HP", "maHp"], ["Năm học", "namHoc"]]
+      .filter(([, id]) => !$("#" + id).value.trim()).map(([label]) => label);
+    if (missing.length && !confirm(`Chưa nhập: ${missing.join(", ")}. Vẫn tiếp tục?`)) return false;
+    return true;
+  }
+  if (n === 3) {
+    if (PREVIEW && PREVIEW.sig !== JSON.stringify(readSections())) {
+      PREVIEW = null; renderPreview();
+      toast("Cấu trúc đã đổi sau khi xem trước; hãy xem trước lại hoặc bỏ qua bước này.", true);
+    }
+    setPreviewStatus();
+    return true;
+  }
+  return true;
+}
+function goStep(n) {
+  n = Math.max(1, Math.min(4, n));
+  if (n > STEP) for (let k = STEP; k < n; k++) if (!validateStep(k)) return;
+  if (n === 3 || n === 4) validateStep(3);
+  STEP = n;
+  applyStep();
+}
+function applyStep() {
+  document.querySelectorAll(".pane").forEach(p => p.classList.toggle("on", p.id === "pane" + STEP));
+  document.querySelectorAll(".step").forEach(b => {
+    const k = +b.dataset.step;
+    b.classList.toggle("on", k === STEP);
+    b.classList.toggle("done", k < STEP);
+  });
+  $("#btnBack").disabled = STEP === 1;
+  $("#btnNext").style.display = STEP === 4 ? "none" : "";
+  $("#stepHint").textContent = `Bước ${STEP}/4: ${STEP_HINT[STEP]}`;
+  if (STEP === 4) buildSummary();
+  if (STEP === 3) setPreviewStatus();
+}
+function buildSummary() {
+  const sections = readSections();
+  const v = id => $("#" + id).value || "—";
+  const cur = PREVIEW && PREVIEW.sig === JSON.stringify(sections);
+  const withPassages = sections.some(s => s.passages.length);
+  const count = sections.reduce((a, s) => a + s.matrix.reduce((b, c) => b + c.n, 0), 0);
+  const rows = sections.filter(s => s.matrix.length || s.passages.length).map((s, i) => `
+    <tr><td>${esc(s.title || "Phần " + (i + 1))}</td><td>${QT[s.qtype] || "Mọi dạng"}</td>
+      <td class="num">${s.matrix.reduce((b, c) => b + c.n, 0)}</td>
+      <td class="num">${s.passages.reduce((b, p) => b + p.n, 0) || "—"}</td>
+      <td>${s.shuffle ? "Có" : "Không"}</td></tr>`).join("");
+  $("#sumBox").innerHTML = `
+    <table style="margin-bottom:10px">
+      <tr><td style="width:180px">Học phần</td><td>${esc(v("mon"))} <span class="sub">(${esc(v("maHp"))})</span> <button class="g" onclick="goStep(2)">Sửa</button></td></tr>
+      <tr><td>Số tín chỉ / Khóa</td><td>${esc(v("soTc"))} / ${esc(v("khoaHoc"))}</td></tr>
+      <tr><td>Học kỳ / Năm học</td><td>${esc(v("hocKy"))} / ${esc(v("namHoc"))}, thời gian ${esc(v("thoiGian"))} phút</td></tr>
+      <tr><td>Mẫu đề / đáp án</td><td>${esc(v("tpl"))} / ${esc(v("keyTpl"))}</td></tr>
+      <tr><td>Số mã đề</td><td>${esc(v("variants"))} mã, bắt đầu từ ${esc(v("prefix"))}${esc(v("start"))}; đáp án ${$("#keySeparate").checked ? "ra file riêng" : "cuối đề"}</td></tr>
+      <tr><td>Chọn câu</td><td>${cur ? `Đã xem trước: ${PREVIEW.sections.reduce((a, s) => a + s.items.length, 0)} câu (đúng các câu đã xem)` : "Chưa xem trước: chọn ngẫu nhiên khi xuất"}
+          <button class="g" onclick="goStep(3)">Xem / sửa</button></td></tr>
+    </table>
+    <table><thead><tr><th>Phần</th><th>Dạng</th><th class="num">Số câu (ma trận)</th><th class="num">Số đoạn</th><th>Xáo</th></tr></thead>
+      <tbody>${rows || `<tr><td colspan="5" class="msg">Chưa có phần nào.</td></tr>`}</tbody></table>
+    <div class="sub" style="margin-top:6px">${withPassages ? "Số câu theo đoạn chỉ biết khi chọn; tổng số câu ma trận: " + count + "." : "Tổng số câu: " + count + "."}
+      <button class="g" onclick="goStep(1)">Sửa cấu trúc</button></div>`;
+}
+
 async function doExport() {
   const sections = readSections();
   // Kiểm tra trước khi xuất
   const short = [...document.querySelectorAll(".cell")].filter(x => (+x.value || 0) > +x.dataset.have).length;
   if (!sections.some(s => s.matrix.length || s.passages.length)) { $("#exportMsg").innerHTML = `<span class="err">Chưa nhập số câu hoặc số đoạn cho phần nào.</span>`; return; }
   if (short) { $("#exportMsg").innerHTML = `<span class="err">Không xuất: còn ${short} ô thiếu câu hỏi (tô đỏ).</span>`; return; }
-  const missing = [["Tên học phần", "mon"], ["Mã HP", "maHp"], ["Năm học", "namHoc"]]
-    .filter(([, id]) => !$("#" + id).value.trim()).map(([label]) => label);
-  if (missing.length && !confirm(`Chưa nhập: ${missing.join(", ")}. Vẫn xuất đề?`)) return;
+  if (!$("#confirmChk").checked) { $("#exportMsg").innerHTML = `<span class="err">Hãy tích xác nhận ở bước 4 trước khi xuất.</span>`; return; }
   if (PREVIEW && PREVIEW.sig !== JSON.stringify(sections)) {
     $("#exportMsg").innerHTML = `<span class="err">Số câu hoặc phần đã đổi sau khi xem trước. Bấm “Xem trước đề” lại.</span>`;
     PREVIEW = null; renderPreview(); return;
