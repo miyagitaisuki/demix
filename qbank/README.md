@@ -76,7 +76,7 @@ Lưu trong `data/qbank.db` (SQLite). Sao lưu bằng cách sao chép file này.
 - ✅ Gắn thông tin đề (tên HP, mã HP, số tín chỉ, khóa, học kỳ, năm học, thời gian) vào học phần: chọn học phần trong tab Xuất đề để tự điền, bấm "Lưu thông tin này cho học phần" để ghi lại.
 - ✅ Lưu lịch sử các lần xuất: mã đề, ngày, tên đề. Tải lại file .zip (đề và đáp án) hoặc xóa khỏi lịch sử. *Chưa lưu danh sách câu theo từng mã đề.*
 - ✅ Xem trước đề trên web, cho phép đổi một câu cụ thể mà không chọn lại toàn bộ. *Nút "Xem trước đề" ở tab Xuất đề; xuất dùng đúng các câu đã xem.*
-- ✅ Đoạn văn là đối tượng riêng: mỗi đoạn có mã (ví dụ `N4-MN1-B01-P001`), câu gắn vào đoạn qua form câu hỏi (chọn đoạn có sẵn hoặc nhập mới). Danh sách đoạn ở tab Cấu trúc: sửa nội dung, xóa khi không còn câu. *Chưa có ma trận đề chọn theo số đoạn.*
+- ✅ Đoạn văn là đối tượng riêng: mỗi đoạn có mã (ví dụ `N4-MN1-B01-P001`), câu gắn vào đoạn qua form câu hỏi (chọn đoạn có sẵn hoặc nhập mới). Danh sách đoạn ở tab Cấu trúc: sửa nội dung, xóa khi không còn câu. *Ma trận theo đoạn: trong từng phần, chọn số đoạn của một chương.*
 
 **Nên làm tiếp**
 - ✅ Sửa tên và mã học phần, giáo trình, chương (nút "Sửa" ở tab Cấu trúc).
@@ -86,7 +86,7 @@ Lưu trong `data/qbank.db` (SQLite). Sao lưu bằng cách sao chép file này.
 - ✅ Cân bằng đáp án khi xáo: trong mỗi mã đề, đáp án được rải đều A/B/C/D. Kiểm tra: 200 mã đề × 12 câu cho 600 lần mỗi chữ.
 
 ### 2. Giao diện (GUI)
-- Tab Ngân hàng hai cột: cây học phần → giáo trình → chương bên trái, danh sách câu bên phải.
+- ✅ Tab Ngân hàng hai cột: cây học phần → giáo trình → chương bên trái (có số câu), bấm để lọc; danh sách câu bên phải. Thu gọn xuống một cột trên màn hình hẹp.
 - Form sửa câu dạng panel bên phải hoặc cửa sổ nổi, có xem trước furigana khi gõ `{漢字|かな}`.
 - Hiển thị furigana thật trong danh sách (thẻ `<ruby>`), không hiện cú pháp thô.
 - Ma trận xuất đề gọn: chỉ hiện chương có câu đúng dạng của phần; ô hiện "đã chọn / có sẵn" (ví dụ `3/12`); có tổng số câu mỗi phần và cả đề.
@@ -120,6 +120,6 @@ Lưu trong `data/qbank.db` (SQLite). Sao lưu bằng cách sao chép file này.
 | 1 | ✅ Lưu cấu trúc đề và thông tin học phần, lịch sử xuất |
 | 2 | ✅ Xem trước và đổi từng câu | Giảm xuất sai, phải làm lại |
 | 3 | ✅ Đoạn văn là đối tượng riêng | Đề tiếng Nhật dùng đoạn văn nhiều |
-| 4 | Bố cục hai cột và form dạng panel | Thao tác hằng ngày nhanh hơn |
+| 4 | ✅ Bố cục hai cột (form dạng panel: còn để làm) | Thao tác hằng ngày nhanh hơn |
 | 5 | ✅ Xem trước khi nhập Word, toast, hoàn tác | Giảm lỗi khi nhập số lượng lớn |
 | 6 | Đóng gói Windows | Để giáo viên khác dùng được |
