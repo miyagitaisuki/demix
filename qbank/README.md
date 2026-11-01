@@ -29,7 +29,7 @@ Tải mẫu bằng nút **Tải mẫu nhập** (tab Ngân hàng). File là .docx
 - `Loại`: TN (trắc nghiệm), DS (đúng/sai), DT (điền từ), TL (tự luận). `Mức`: 1–5.
 - Phương án TN: mỗi dòng bắt đầu `A.` `B.`…; `#` đầu phương án = cố định vị trí khi xáo.
 - DS: mỗi ý một dòng `a)` `b)`…; đáp án `Đ S Đ S`. DT: nhiều đáp án cách nhau bằng `|`.
-- Furigana: `{試験|しけん}`.
+- Furigana: `{試験|しけん}`. Khi xuất đề chọn "tự thêm" thì app tự thêm furigana cho chữ Hán chưa có cú pháp (cần `pip install pykakasi`). Cách đọc tự sinh có thể sai với từ đọc đặc biệt, nên kiểm tra và viết tay `{chữ|cách đọc}` để ghi đè.
 - `Mã chương` phải đã tồn tại trong giáo trình được chọn ở bộ lọc.
 
 ## Mẫu chính thức (từ file gốc của trường)

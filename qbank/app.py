@@ -829,9 +829,54 @@ def _add_ruby(p, base, kana):
     p._p.append(holder)
 
 
+KANJI_RUN_RE = re.compile(r"[\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF々〆ヵヶ]+")
+_kakasi = None
+
+
+def _get_kakasi():
+    """Bộ đổi chữ Hán sang kana (pykakasi), nạp lần đầu khi cần. Trả về None nếu chưa cài."""
+    global _kakasi
+    if _kakasi is None:
+        try:
+            import pykakasi
+        except ImportError:
+            return None
+        _kakasi = pykakasi.kakasi()
+    return _kakasi
+
+
+def auto_ruby(text):
+    """Thêm {chữ Hán|cách đọc} cho các cụm chữ Hán chưa có cú pháp furigana.
+    Cách đọc lấy từ pykakasi nên có thể sai với từ đọc đặc biệt; người soạn nên kiểm tra
+    và viết tay {chữ|cách đọc} để ghi đè. Phần đã có {…|…} được giữ nguyên."""
+    kk = _get_kakasi()
+    if kk is None:
+        raise ValueError("Chưa cài pykakasi nên không tự thêm furigana được (pip install pykakasi)")
+    out, pos = [], 0
+    for m in RUBY_RE.finditer(text):
+        out.append(_auto_plain(kk, text[pos:m.start()]))
+        out.append(m.group(0))
+        pos = m.end()
+    out.append(_auto_plain(kk, text[pos:]))
+    return "".join(out)
+
+
+def _auto_plain(kk, seg):
+    def repl(m):
+        run = m.group(0)
+        reading = "".join(i["hira"] for i in kk.convert(run))
+        return "{%s|%s}" % (run, reading) if reading and reading != run else run
+    return KANJI_RUN_RE.sub(repl, seg)
+
+
 def add_rich(p, text, bold=False, mode="ruby"):
     """Thêm văn bản vào đoạn, đổi cú pháp {chữ|cách đọc} thành furigana.
-    mode='ruby': chữ đọc phía trên (chuẩn Word); mode='paren': chữ(cách đọc) cùng dòng (dự phòng)."""
+    mode='ruby': chữ đọc phía trên (chuẩn Word); mode='paren': chữ(cách đọc) cùng dòng (dự phòng).
+    Thêm '+auto' (vd 'ruby+auto') để tự thêm furigana cho chữ Hán chưa có cú pháp."""
+    auto = mode.endswith("+auto")
+    mode = mode.split("+")[0]
+    if auto:
+        text = auto_ruby(text)
     pos = 0
     for m in RUBY_RE.finditer(text):
         if m.start() > pos:
@@ -1706,7 +1751,10 @@ class Handler(BaseHTTPRequestHandler):
         sections = body.get("sections") or [{"title": "", "qtype": None,
                                              "shuffle": body.get("shuffle", True),
                                              "matrix": body.get("matrix", [])}]
-        furigana = "paren" if body.get("furigana") == "paren" else "ruby"
+        fg = str(body.get("furigana", "ruby"))
+        furigana = ("paren" if fg.startswith("paren") else "ruby") + ("+auto" if fg.endswith("_auto") else "")
+        if furigana.endswith("+auto") and _get_kakasi() is None:
+            raise ValueError("Chưa cài pykakasi nên không tự thêm furigana được (pip install pykakasi)")
         key_name = os.path.basename(body.get("key_template") or "dap_an_chuan.docx")
         key_tpl_path = os.path.join(TPL_DIR, key_name)
         usage = usage_map()
