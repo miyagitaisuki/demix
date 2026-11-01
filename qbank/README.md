@@ -90,7 +90,7 @@ Lưu trong `data/qbank.db` (SQLite). Sao lưu bằng cách sao chép file này.
 - Form sửa câu dạng panel bên phải hoặc cửa sổ nổi, có xem trước furigana khi gõ `{漢字|かな}`.
 - Hiển thị furigana thật trong danh sách (thẻ `<ruby>`), không hiện cú pháp thô.
 - Ma trận xuất đề gọn: chỉ hiện chương có câu đúng dạng của phần; ô hiện "đã chọn / có sẵn" (ví dụ `3/12`); có tổng số câu mỗi phần và cả đề.
-- ✅ Chia tab Xuất đề thành 4 bước: cấu trúc đề → thông tin đề → xem trước → xác nhận và xuất. Mỗi bước kiểm tra trước khi sang bước sau; bước 4 có tóm tắt và phải tích xác nhận. *Nhập Word: bước xem trước và xác nhận ghi rõ số câu sẽ nhập vào giáo trình nào.*
+- ✅ Chia tab Xuất đề thành 6 bước: phần và dạng câu → số câu và đoạn → thông tin đề → mẫu và mã đề → xem trước → xác nhận và xuất. Mỗi bước kiểm tra trước khi sang bước sau; bước 6 có tóm tắt và phải tích xác nhận. *Nhập Word: bước xem trước và xác nhận ghi rõ số câu sẽ nhập vào giáo trình nào.*
 - Phân trang hoặc cuộn ảo khi ngân hàng lên đến hàng nghìn câu.
 
 ### 3. Trải nghiệm người dùng (UX)

@@ -41,6 +41,10 @@
   .step.on { color:var(--b); border-color:var(--b); }
   .step.on span { background:var(--b); color:#fff; }
   .step.done span { background:#16a34a; color:#fff; }
+  #pane1 .sb { display:none; }  /* bước 1: chỉ tiêu đề, dạng, xáo */
+  #pane2 .sh { display:none; }  /* bước 2: chỉ bảng số câu */
+  .sec-title { display:none; }
+  #pane2 .sec-title { display:block; margin-bottom:6px; }
   .pane { display:none; } .pane.on { display:block; }
   .wiznav { margin-top:14px; padding-top:10px; border-top:1px solid var(--line); }
   .twocol { display:flex; gap:16px; align-items:flex-start; }
@@ -157,13 +161,15 @@
 <!-- ============ XUẤT ĐỀ ============ -->
 <section id="export">
   <nav class="stepper" id="stepper">
-    <button class="step on" data-step="1" onclick="goStep(1)"><span>1</span> Cấu trúc đề</button>
-    <button class="step" data-step="2" onclick="goStep(2)"><span>2</span> Thông tin đề</button>
-    <button class="step" data-step="3" onclick="goStep(3)"><span>3</span> Xem trước</button>
-    <button class="step" data-step="4" onclick="goStep(4)"><span>4</span> Xác nhận và xuất</button>
+    <button class="step on" data-step="1" onclick="goStep(1)"><span>1</span> Phần và dạng câu</button>
+    <button class="step" data-step="2" onclick="goStep(2)"><span>2</span> Số câu và đoạn</button>
+    <button class="step" data-step="3" onclick="goStep(3)"><span>3</span> Thông tin đề</button>
+    <button class="step" data-step="4" onclick="goStep(4)"><span>4</span> Mẫu và mã đề</button>
+    <button class="step" data-step="5" onclick="goStep(5)"><span>5</span> Xem trước</button>
+    <button class="step" data-step="6" onclick="goStep(6)"><span>6</span> Xác nhận và xuất</button>
   </nav>
 
-  <!-- Bước 1: cấu trúc đề -->
+  <!-- Bước 1: phần và dạng câu (cấu trúc đã lưu, tiêu đề, dạng, xáo) -->
   <div class="pane on" id="pane1">
     <div class="card">
       <div class="row"><b>Cấu trúc đề đã lưu</b> <span class="sub">(lưu các phần, số câu, mẫu, furigana; không lưu mã đề, số mã đề, thông tin đề)</span></div>
@@ -176,16 +182,22 @@
         <span id="cfgMsg" class="msg"></span>
       </div>
     </div>
-    <div class="row">
-      <label>Chỉ hiện chương của học phần:</label><select id="xCourse" onchange="filterExportRows()"></select>
-    </div>
-    <p class="msg">Mỗi phần là một khối câu theo một dạng (TN, DS, DT, TL). Nhập số câu cho từng ô chương × Bloom, hoặc số đoạn văn ở dòng “Theo đoạn văn”. Bỏ tick “Xáo” để giữ thứ tự câu trong ngân hàng.</p>
-    <div id="sections"></div>
+    <p class="msg">Mỗi phần là một khối câu theo một dạng (TN, DS, DT, TL). Đặt tên phần, chọn dạng và bật/tắt xáo ở đây; số câu nhập ở bước 2.</p>
+    <div class="secslot"><div id="sections"></div></div>
     <div class="row"><button class="g" onclick="addSection()">+ Thêm phần</button></div>
   </div>
 
-  <!-- Bước 2: thông tin đề -->
+  <!-- Bước 2: số câu và đoạn theo chương × Bloom -->
   <div class="pane" id="pane2">
+    <div class="row">
+      <label>Chỉ hiện chương của học phần:</label><select id="xCourse" onchange="filterExportRows()"></select>
+    </div>
+    <p class="msg">Nhập số câu cho từng ô chương × Bloom, hoặc số đoạn văn ở dòng “Theo đoạn văn”. Ô tô đỏ là chưa đủ câu; ô mờ là chương chưa có câu mức đó.</p>
+    <div class="secslot"></div>
+  </div>
+
+  <!-- Bước 3: thông tin đề -->
+  <div class="pane" id="pane3">
     <div class="card">
       <div class="row"><b>Thông tin đề thi</b> <span class="sub">(tên trường, khoa và bố cục lấy từ mẫu đề)</span></div>
       <div class="row">
@@ -204,33 +216,46 @@
         <label>Thời gian (phút):</label><input id="thoiGian" class="n" value="90">
         <label>Tên đề (ghi chú, không in):</label><input id="tenDe" style="width:160px">
       </div>
-      <div class="row"><b>Mã đề và file</b></div>
+    </div>
+  </div>
+
+  <!-- Bước 4: mẫu và mã đề -->
+  <div class="pane" id="pane4">
+    <div class="card">
+      <div class="row"><b>Mẫu file</b> <span class="sub">(mẫu nằm trong thư mục templates/)</span></div>
       <div class="row">
         <label>Mẫu đề:</label><select id="tpl"></select>
         <label>Mẫu đáp án:</label><select id="keyTpl"></select>
+        <label>Furigana:</label><select id="furigana"><option value="ruby">Chữ đọc phía trên (Word)</option><option value="paren">Chữ(cách đọc) cùng dòng</option></select>
+      </div>
+    </div>
+    <div class="card">
+      <div class="row"><b>Mã đề và đáp án</b></div>
+      <div class="row">
         <label>Số mã đề:</label><input id="variants" class="n" value="1">
         <label>Tiền tố:</label><input id="prefix" style="width:70px" placeholder="">
         <label>Bắt đầu từ:</label><input id="start" class="n" value="1">
       </div>
       <div class="row">
-        <label>Furigana:</label><select id="furigana"><option value="ruby">Chữ đọc phía trên (Word)</option><option value="paren">Chữ(cách đọc) cùng dòng</option></select>
         <label><input type="checkbox" id="answerKey"> Kèm đáp án cuối đề</label>
         <label><input type="checkbox" id="keySeparate" checked> Đáp án ra file riêng (DapAn_xxx.docx)</label>
+      </div>
+      <div class="row">
         <label><input type="checkbox" id="recordUsage" checked> Ghi lịch sử dùng câu</label>
         <label><input type="checkbox" id="saveHistory" checked> Lưu vào lịch sử xuất</label>
       </div>
     </div>
   </div>
 
-  <!-- Bước 3: xem trước -->
-  <div class="pane" id="pane3">
+  <!-- Bước 5: xem trước -->
+  <div class="pane" id="pane5">
     <p class="msg">Xem trước chọn câu cụ thể cho từng phần; bấm “Đổi câu” để thay câu khác. Có thể bỏ qua bước này: khi đó đề chọn câu ngẫu nhiên lúc xuất.</p>
     <div class="row"><button class="g" onclick="previewExam()">Xem trước đề</button><span id="previewStatus" class="msg"></span></div>
     <div id="previewBox"></div>
   </div>
 
-  <!-- Bước 4: xác nhận và xuất -->
-  <div class="pane" id="pane4">
+  <!-- Bước 6: xác nhận và xuất -->
+  <div class="pane" id="pane6">
     <div class="card">
       <div class="row"><b>Tóm tắt trước khi xuất</b></div>
       <div id="sumBox"></div>
@@ -280,8 +305,8 @@ async function api(path, opts = {}) {
 }
 const postJson = (path, body, method = "POST") => api(path, { method, headers: {"Content-Type":"application/json"}, body: JSON.stringify(body) });
 
-document.querySelectorAll("nav button").forEach(b => b.onclick = () => {
-  document.querySelectorAll("nav button").forEach(x => x.classList.toggle("on", x === b));
+document.querySelectorAll("nav:not(.stepper) button").forEach(b => b.onclick = () => {
+  document.querySelectorAll("nav:not(.stepper) button").forEach(x => x.classList.toggle("on", x === b));
   document.querySelectorAll("section").forEach(s => s.classList.toggle("on", s.id === b.dataset.tab));
   if (b.dataset.tab === "struct") renderStruct();
   if (b.dataset.tab === "stats") { loadStats(); loadDifficulty(); }
@@ -958,13 +983,14 @@ function addSection(title = "", qtype = "") {
   const div = document.createElement("div");
   div.className = "card sec";
   div.innerHTML = `
-    <div class="row">
-      <input class="st" style="width:260px" placeholder="Tiêu đề phần" value="${esc(title)}">
+    <div class="row sh">
+      <input class="st" style="width:260px" placeholder="Tiêu đề phần" value="${esc(title)}" oninput="this.closest('.sec').querySelector('.sec-title').textContent=this.value">
       <select class="sq">${Object.entries(QT).map(([k, v]) => `<option value="${k}" ${k === qtype ? "selected" : ""}>${v}</option>`).join("")}</select>
       <label><input type="checkbox" class="ss" checked> Xáo câu & phương án</label>
       <span style="flex:1"></span>
       <button class="d" onclick="this.closest('.sec').remove()">Xóa phần</button>
     </div>
+    <div class="sb"><b class="sec-title">${esc(title)}</b>
     <table>
       <thead><tr><th>Chương</th>${Object.entries(BLOOM).map(([k, v]) => `<th class="num">${k}. ${v}</th>`).join("")}</tr></thead>
       <tbody>${(STATS ? STATS.chapters : []).map(c => `
@@ -978,7 +1004,7 @@ function addSection(title = "", qtype = "") {
     </table>
     <div class="row pblock" style="margin-top:8px"><b>Theo đoạn văn:</b> <span class="sub">lấy đủ số đoạn của chương, mỗi đoạn lấy mọi câu phù hợp</span>
       <button class="g" onclick="addPassRow(this.closest('.sec'))">+ Thêm dòng đoạn</button></div>
-    <div class="prows"></div>`;
+    <div class="prows"></div></div>`;
   $("#sections").appendChild(div);
   filterExportRows();
 }
@@ -1061,10 +1087,12 @@ async function swapItem(si, ii) {
 }
 
 
-// ---------- wizard xuất đề: 4 bước, mỗi bước xác nhận trước khi sang bước sau
+// ---------- wizard xuất đề: 6 bước, mỗi bước xác nhận trước khi sang bước sau
 let STEP = 1;
-const STEP_HINT = {1: "Chọn phần và số câu/đoạn.", 2: "Kiểm tra thông tin đề in trên tài liệu.",
-                   3: "Xem và đổi câu (tùy chọn).", 4: "Kiểm tra tóm tắt rồi xuất."};
+const STEPS = 6;
+const STEP_HINT = {1: "Đặt tên phần, chọn dạng câu và xáo.", 2: "Nhập số câu và số đoạn cho từng chương.",
+                   3: "Kiểm tra thông tin in trên đề.", 4: "Chọn mẫu, số mã đề và đáp án.",
+                   5: "Xem và đổi câu (tùy chọn).", 6: "Kiểm tra tóm tắt rồi xuất."};
 function setPreviewStatus() {
   if (!PREVIEW) { $("#previewStatus").textContent = "Chưa xem trước: câu sẽ chọn ngẫu nhiên khi xuất."; return; }
   const n = PREVIEW.sections.reduce((a, s) => a + s.items.length, 0);
@@ -1072,7 +1100,11 @@ function setPreviewStatus() {
 }
 // kiểm tra bước hiện tại; trả về true nếu được đi tiếp
 function validateStep(n) {
-  if (n === 1) {
+  if (n === 1) {  // phần và dạng: phải có ít nhất một phần
+    if (!$("#sections").children.length) { toast("Thêm ít nhất một phần.", true); return false; }
+    return true;
+  }
+  if (n === 2) {  // số câu và đoạn
     const sections = readSections();
     if (!sections.some(s => s.matrix.length || s.passages.length)) {
       toast("Chọn số câu hoặc số đoạn cho ít nhất một phần.", true); return false;
@@ -1081,14 +1113,17 @@ function validateStep(n) {
     if (short) { toast(`Còn ${short} ô thiếu câu hỏi (tô đỏ).`, true); return false; }
     return true;
   }
-  if (n === 2) {
-    if (!$("#tpl").value) { toast("Chọn mẫu đề.", true); return false; }
+  if (n === 3) {  // thông tin đề: chỉ hỏi khi thiếu, người dùng có thể đi tiếp
     const missing = [["Tên học phần", "mon"], ["Mã HP", "maHp"], ["Năm học", "namHoc"]]
       .filter(([, id]) => !$("#" + id).value.trim()).map(([label]) => label);
     if (missing.length && !confirm(`Chưa nhập: ${missing.join(", ")}. Vẫn tiếp tục?`)) return false;
     return true;
   }
-  if (n === 3) {
+  if (n === 4) {
+    if (!$("#tpl").value) { toast("Chọn mẫu đề.", true); return false; }
+    return true;
+  }
+  if (n === 5) {
     if (PREVIEW && PREVIEW.sig !== JSON.stringify(readSections())) {
       PREVIEW = null; renderPreview();
       toast("Cấu trúc đã đổi sau khi xem trước; hãy xem trước lại hoặc bỏ qua bước này.", true);
@@ -1099,12 +1134,13 @@ function validateStep(n) {
   return true;
 }
 function goStep(n) {
-  n = Math.max(1, Math.min(4, n));
+  n = Math.max(1, Math.min(STEPS, n));
   if (n > STEP) for (let k = STEP; k < n; k++) if (!validateStep(k)) return;
-  if (n === 3 || n === 4) validateStep(3);
+  if (n === 5 || n === 6) validateStep(5);
   STEP = n;
   applyStep();
 }
+// bảng phần (#sections) nằm ở bước 1 (tiêu đề, dạng) hoặc bước 2 (bảng số câu): chuyển chỗ khi đổi bước, giữ nguyên giá trị đã nhập
 function applyStep() {
   document.querySelectorAll(".pane").forEach(p => p.classList.toggle("on", p.id === "pane" + STEP));
   document.querySelectorAll(".step").forEach(b => {
@@ -1112,11 +1148,13 @@ function applyStep() {
     b.classList.toggle("on", k === STEP);
     b.classList.toggle("done", k < STEP);
   });
+  const slot = STEP === 1 ? $("#pane1 .secslot") : STEP === 2 ? $("#pane2 .secslot") : null;
+  if (slot && $("#sections").parentNode !== slot) slot.appendChild($("#sections"));
   $("#btnBack").disabled = STEP === 1;
-  $("#btnNext").style.display = STEP === 4 ? "none" : "";
-  $("#stepHint").textContent = `Bước ${STEP}/4: ${STEP_HINT[STEP]}`;
-  if (STEP === 4) buildSummary();
-  if (STEP === 3) setPreviewStatus();
+  $("#btnNext").style.display = STEP === STEPS ? "none" : "";
+  $("#stepHint").textContent = `Bước ${STEP}/${STEPS}: ${STEP_HINT[STEP]}`;
+  if (STEP === STEPS) buildSummary();
+  if (STEP === 5) setPreviewStatus();
 }
 function buildSummary() {
   const sections = readSections();
@@ -1131,13 +1169,13 @@ function buildSummary() {
       <td>${s.shuffle ? "Có" : "Không"}</td></tr>`).join("");
   $("#sumBox").innerHTML = `
     <table style="margin-bottom:10px">
-      <tr><td style="width:180px">Học phần</td><td>${esc(v("mon"))} <span class="sub">(${esc(v("maHp"))})</span> <button class="g" onclick="goStep(2)">Sửa</button></td></tr>
+      <tr><td style="width:180px">Học phần</td><td>${esc(v("mon"))} <span class="sub">(${esc(v("maHp"))})</span> <button class="g" onclick="goStep(3)">Sửa</button></td></tr>
       <tr><td>Số tín chỉ / Khóa</td><td>${esc(v("soTc"))} / ${esc(v("khoaHoc"))}</td></tr>
       <tr><td>Học kỳ / Năm học</td><td>${esc(v("hocKy"))} / ${esc(v("namHoc"))}, thời gian ${esc(v("thoiGian"))} phút</td></tr>
       <tr><td>Mẫu đề / đáp án</td><td>${esc(v("tpl"))} / ${esc(v("keyTpl"))}</td></tr>
       <tr><td>Số mã đề</td><td>${esc(v("variants"))} mã, bắt đầu từ ${esc(v("prefix"))}${esc(v("start"))}; đáp án ${$("#keySeparate").checked ? "ra file riêng" : "cuối đề"}</td></tr>
       <tr><td>Chọn câu</td><td>${cur ? `Đã xem trước: ${PREVIEW.sections.reduce((a, s) => a + s.items.length, 0)} câu (đúng các câu đã xem)` : "Chưa xem trước: chọn ngẫu nhiên khi xuất"}
-          <button class="g" onclick="goStep(3)">Xem / sửa</button></td></tr>
+          <button class="g" onclick="goStep(5)">Xem / sửa</button></td></tr>
     </table>
     <table><thead><tr><th>Phần</th><th>Dạng</th><th class="num">Số câu (ma trận)</th><th class="num">Số đoạn</th><th>Xáo</th></tr></thead>
       <tbody>${rows || `<tr><td colspan="5" class="msg">Chưa có phần nào.</td></tr>`}</tbody></table>
@@ -1151,7 +1189,7 @@ async function doExport() {
   const short = [...document.querySelectorAll(".cell")].filter(x => (+x.value || 0) > +x.dataset.have).length;
   if (!sections.some(s => s.matrix.length || s.passages.length)) { $("#exportMsg").innerHTML = `<span class="err">Chưa nhập số câu hoặc số đoạn cho phần nào.</span>`; return; }
   if (short) { $("#exportMsg").innerHTML = `<span class="err">Không xuất: còn ${short} ô thiếu câu hỏi (tô đỏ).</span>`; return; }
-  if (!$("#confirmChk").checked) { $("#exportMsg").innerHTML = `<span class="err">Hãy tích xác nhận ở bước 4 trước khi xuất.</span>`; return; }
+  if (!$("#confirmChk").checked) { $("#exportMsg").innerHTML = `<span class="err">Hãy tích xác nhận ở bước 6 trước khi xuất.</span>`; return; }
   if (PREVIEW && PREVIEW.sig !== JSON.stringify(sections)) {
     $("#exportMsg").innerHTML = `<span class="err">Số câu hoặc phần đã đổi sau khi xem trước. Bấm “Xem trước đề” lại.</span>`;
     PREVIEW = null; renderPreview(); return;
