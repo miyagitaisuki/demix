@@ -135,6 +135,7 @@ def init_storage():
     ensure_column("questions", "passage", "TEXT NOT NULL DEFAULT ''")
     ensure_column("questions", "points", "REAL")  # điểm câu hỏi, không bắt buộc
     ensure_column("questions", "clo", "TEXT NOT NULL DEFAULT ''")  # chuẩn đầu ra học phần, ví dụ CLO1
+    ensure_column("questions", "rubric", "TEXT NOT NULL DEFAULT ''")  # tự luận: tiêu chí × 5 mức (JSON)
     ensure_column("questions", "tags", "TEXT NOT NULL DEFAULT ''")  # thẻ, lưu dạng ",thẻ1,thẻ2,"
     ensure_column("questions", "media", "TEXT NOT NULL DEFAULT '[]'")  # [{kind, file, name}]
     # câu có sẵn từ trước được coi là đã duyệt, để đề đang dùng không bị thiếu câu
@@ -359,6 +360,20 @@ def tags_list(stored):
     return [t for t in (stored or "").split(",") if t]
 
 
+# Câu đối đáp (từ hai người trở lên, ví dụ "A: ... / B: ..."): mặc định CLO3 (nghe hiểu, phát âm)
+SPEAKER_LINE = re.compile(r"(?m)^\s*([^\n:：]{1,12})\s*[:：]")
+
+
+def is_dialogue(*texts):
+    labels = set()
+    for t in texts:
+        for m in SPEAKER_LINE.finditer(t or ""):
+            lab = m.group(1).strip().lower()
+            if lab and not re.match(r"^(câu|bài|đáp|phần|\d)", lab):
+                labels.add(lab)
+    return len(labels) >= 2
+
+
 def clean_question(data):
     try:
         chapter_id = int(data.get("chapter_id", 0))
@@ -402,6 +417,8 @@ def clean_question(data):
         options = []
     passage = str(data.get("passage", "")).strip()
     clo = str(data.get("clo", "")).strip()[:20]
+    if not clo and is_dialogue(content, passage):  # câu đối đáp mặc định là CLO3
+        clo = "CLO3"
     tags = norm_tags(data.get("tags", ""))
     media = norm_media(data.get("media") or [])
     status = str(data.get("status") or "nhap")
@@ -416,19 +433,37 @@ def clean_question(data):
             raise ValueError("Điểm phải là số, ví dụ 0,5 hoặc 2")
         if not 0 < points <= 10:
             raise ValueError("Điểm của câu phải từ 0 đến 10")
+    rubric = []  # tự luận: mỗi tiêu chí có điểm và mô tả cho mức 0-4
+    if qtype == "TL":
+        for crit in data.get("rubric") or []:
+            text = str(crit.get("text", "")).strip()
+            if not text:
+                continue
+            raw = crit.get("points")
+            pts = None
+            if raw not in (None, ""):
+                try:
+                    pts = float(str(raw).replace(",", "."))
+                except ValueError:
+                    raise ValueError("Điểm tiêu chí phải là số")
+            levels = [str(x).strip() for x in (crit.get("levels") or [])][:5]
+            levels += [""] * (5 - len(levels))
+            rubric.append({"text": text, "points": pts, "levels": levels})
     return dict(chapter_id=chapter_id, bloom=bloom, qtype=qtype, content=content,
                 options=json.dumps(options, ensure_ascii=False), answer=answer, solution=solution,
                 passage=passage, points=points, clo=clo, tags=tags, media=json.dumps(media, ensure_ascii=False),
-                status=status)
+                status=status, rubric=json.dumps(rubric, ensure_ascii=False))
 
 
-INSERT_Q = """INSERT INTO questions(code,chapter_id,bloom,qtype,content,options,answer,solution,passage,passage_id,points,clo,tags,media,status)
-              VALUES(:code,:chapter_id,:bloom,:qtype,:content,:options,:answer,:solution,:passage,:passage_id,:points,:clo,:tags,:media,:status)"""
+INSERT_Q = """INSERT INTO questions(code,chapter_id,bloom,qtype,content,options,answer,solution,passage,passage_id,points,clo,tags,media,status,rubric)
+              VALUES(:code,:chapter_id,:bloom,:qtype,:content,:options,:answer,:solution,:passage,:passage_id,:points,:clo,:tags,:media,:status,:rubric)"""
 
 
 def row_to_api(r):
     r = dict(r)
     r["options"] = json.loads(r["options"])
+    if "rubric" in r:
+        r["rubric"] = json.loads(r["rubric"] or "[]")
     if "tags" in r:
         r["tags"] = tags_list(r["tags"])
     if "media" in r:
@@ -1191,24 +1226,84 @@ def render_docx(template_path, meta, exam, code, answer_key, mode="ruby"):
     return buf.getvalue()
 
 
-def render_key_doc(template_path, meta, code, exam):
+KEY_PER_ROW = 10  # số câu mỗi dòng của lưới đáp án
+
+
+def clo_lines(flat):
+    """Đáp án theo CĐR: các câu gom theo CLO, số câu trắc nghiệm và tự luận, điểm của mỗi CLO."""
+    by = {}
+    for n, _, it in flat:
+        by.setdefault(it.get("clo") or "", []).append((n, it))
+    lines = ["ĐÁP ÁN THEO CHUẨN ĐẦU RA"]
+    for clo in sorted(by):
+        items = by[clo]
+        tn = sum(1 for _, it in items if it["qtype"] != "TL")
+        tl = sum(1 for _, it in items if it["qtype"] == "TL")
+        pts = sum(it["points"] for _, it in items if it.get("points") is not None)
+        extra = f", {fmt_points(pts)} điểm" if pts else ""
+        lines.append(f"{clo}: câu {', '.join(str(n) for n, _ in items)} ({tn} trắc nghiệm, {tl} tự luận{extra})")
+    return lines
+
+
+def rubric_table(doc, marker, n, it):
+    """Bảng tiêu chí × mức 0-4 cho một câu tự luận (theo mẫu 'đánh giá theo CĐR')."""
+    crits = it.get("rubric") or []
+    lines_before = f"Câu {n} (tự luận): hướng dẫn chấm theo tiêu chí"
+    marker.insert_paragraph_before(lines_before)
+    t = doc.add_table(rows=1 + len(crits), cols=7)
+    _set_borders(t)
+    head = ["Tiêu chí", "Điểm", "Mức 0 (<40%)", "Mức 1 (40–54%)", "Mức 2 (55–69%)", "Mức 3 (70–84%)", "Mức 4 (85–100%)"]
+    for c, h in zip(t.rows[0].cells, head):
+        c.text = h
+    for r, crit in enumerate(crits, 1):
+        cells = t.rows[r].cells
+        cells[0].text = crit.get("text", "")
+        cells[1].text = fmt_points(crit["points"]) if crit.get("points") is not None else ""
+        levels = crit.get("levels") or [""] * 5
+        for j in range(5):
+            cells[2 + j].text = levels[j] if j < len(levels) else ""
+    from docx.shared import Cm  # vừa khổ giấy: tiêu chí rộng, điểm hẹp, năm mức đều nhau
+    t.autofit = False
+    widths = [Cm(3.1), Cm(1.5)] + [Cm(2.38)] * 5
+    for col, w in zip(t.columns, widths):  # lưới cột (tblGrid) để Word và LibreOffice cùng áp dụng
+        col.width = w
+    for row in t.rows:
+        for c, w in zip(row.cells, widths):
+            c.width = w
+    marker._p.addprevious(t._tbl)
+
+
+def render_key_doc(template_path, meta, code, exam, clo_mode=False):
     """Đáp án theo mẫu trường: bảng lưới 10 câu mỗi dòng, dòng 'Câu' và dòng 'Đáp án'."""
     doc = Document(template_path)
     flat = flatten(exam)
     fill_placeholders(doc, meta_values(meta, code, len(flat)))
     ans = [(n, answer_text(it)) for n, _, it in flat]
-    groups = [ans[i:i + 10] for i in range(0, len(ans), 10)]
+    # lưới đáp án: 10 câu mỗi dòng cho mọi số câu (50, 90...), dòng sau tự xuống; không cố định theo đề
+    per_row = KEY_PER_ROW
+    groups = [ans[i:i + per_row] for i in range(0, len(ans), per_row)]
     marker = next((p for p in _every_paragraph(doc) if "{{BANG_DAP_AN}}" in p.text), None)
     if marker is None:
         marker = doc.add_paragraph()
-    tbl = doc.add_table(rows=2 * len(groups), cols=11)
+    tbl = doc.add_table(rows=2 * len(groups), cols=per_row + 1)
     _set_borders(tbl)
+    from docx.shared import Cm  # cột tiêu đề rộng để không ngắt chữ "Câu", "Đáp án"; các cột đáp án đều nhau
+    tbl.autofit = False
+    for row in tbl.rows:
+        for i, c in enumerate(row.cells):
+            c.width = Cm(1.8) if i == 0 else Cm((16.5 - 1.8) / per_row)
     for gi, g in enumerate(groups):
         r1, r2 = tbl.rows[2 * gi], tbl.rows[2 * gi + 1]
         r1.cells[0].text, r2.cells[0].text = "Câu", "Đáp án"
         for j, (n, a) in enumerate(g):
             r1.cells[j + 1].text, r2.cells[j + 1].text = str(n), a
     marker._p.addprevious(tbl._tbl)
+    if clo_mode:
+        for line in clo_lines(flat):
+            marker.insert_paragraph_before(line)
+    for n, _, it in flat:
+        if it["qtype"] == "TL" and it.get("rubric"):
+            rubric_table(doc, marker, n, it)
     for line in rubric_lines(flat):
         marker.insert_paragraph_before(line)
     _set_text(marker, "")
@@ -1326,7 +1421,7 @@ def make_import_template():
     d.add_paragraph("MẪU NHẬP CÂU HỎI (lưu thành .docx, mỗi bảng là một nhóm câu, dòng 1 là tiêu đề cột)")
     d.add_paragraph("Cột: Mã chương (bắt buộc, phải có trong giáo trình đã chọn) | Nội dung (bắt buộc) | "
                     "Đáp án (bắt buộc) | Loại: TN, DS, DT, TL | Mức: 1–5 | Đoạn văn (tùy chọn, các câu cùng đoạn ghi giống hệt) | "
-                    "Lời giải (tùy chọn). Thứ tự cột tùy ý. Furigana viết dạng {試験|しけん}. "
+                    "Lời giải (tùy chọn) | CLO (tùy chọn, một CLO cho mỗi câu, ví dụ CLO1). Thứ tự cột tùy ý. Furigana viết dạng {試験|しけん}. "
                     "TN: mỗi phương án một dòng bắt đầu bằng A. B. C. D.; # đầu phương án = cố định vị trí. "
                     "DS: mỗi ý một dòng bắt đầu a) b) c); đáp án Đ S Đ S. DT: nhiều đáp án cách nhau bằng |.")
     d.add_paragraph("Hướng dẫn cho AI khi soạn câu hỏi: mỗi câu là một dòng trong bảng; không ghi đáp án hay "
@@ -1335,16 +1430,18 @@ def make_import_template():
                     "TN ít nhất 2 phương án và Đáp án là một chữ cái (A, B, C…); DS là các ý a) b) c) và Đáp án "
                     "gồm Đ/S đủ số ý; DT ghi Đáp án là từ cần điền; TL để trống Đáp án; "
                     "Đoạn văn chỉ điền khi câu thuộc một đoạn, và các câu cùng đoạn phải ghi giống hệt nhau; "
+                    "CLO: ghi một CLO cho mỗi câu, ví dụ CLO1; câu đối đáp hoặc tự luận viết hội thoại ghi CLO3; để trống nếu chưa rõ. "
                     "không thêm cột, không gộp ô, không để dòng trống giữa các câu.")
-    t = d.add_table(rows=1, cols=7)
+    t = d.add_table(rows=1, cols=8)
     t.style = "Table Grid"
-    for c, h in zip(t.rows[0].cells, ["Mã chương", "Nội dung", "Đáp án", "Loại", "Mức", "Đoạn văn", "Lời giải"]):
+    for c, h in zip(t.rows[0].cells, ["Mã chương", "Nội dung", "Đáp án", "Loại", "Mức", "Đoạn văn", "Lời giải", "CLO"]):
         c.text = h
     examples = [
-        ("B01", "{試験|しけん}の{結果|けっか}が悪かった。\nA. おけばよかった\nB. おくべきだ", "A", "TN", "1", "", ""),
-        ("B01", "「インターンシップを通して」と同じ意味はどれですか。\nA. 間に\nB. おかげで", "B", "TN", "2", "私は先月、インターンシップに参加しました。", ""),
-        ("B01", "Câu đúng/sai:\na) 私は学生です。\nb) 本を読むです。", "ĐS", "DS", "2", "", ""),
-        ("B02", "学校の___", "がっこう", "DT", "1", "", ""),
+        ("B01", "{試験|しけん}の{結果|けっか}が悪かった。\nA. おけばよかった\nB. おくべきだ", "A", "TN", "1", "", "", "CLO1"),
+        ("B01", "「インターンシップを通して」と同じ意味はどれですか。\nA. 間に\nB. おかげで", "B", "TN", "2", "私は先月、インターンシップに参加しました。", "", "CLO1"),
+        ("B01", "Câu đúng/sai:\na) 私は学生です。\nb) 本を読むです。", "ĐS", "DS", "2", "", "", "CLO1"),
+        ("B02", "学校の___", "がっこう", "DT", "1", "", "", "CLO1"),
+        ("B02", "A: どこへ行きますか。\nB: 駅へ行きます。\n\nこの会話の続きを書いてください。", "", "TL", "3", "", "会話の内容と文法の正確さ", "CLO3"),
     ]
     for ex in examples:
         cells = t.add_row().cells
@@ -2159,7 +2256,7 @@ class Handler(BaseHTTPRequestHandler):
         with closing(sqlite3.connect(DB_PATH)) as conn:
             conn.execute("PRAGMA foreign_keys = ON")
             cur = conn.execute("""UPDATE questions SET chapter_id=:chapter_id, bloom=:bloom, qtype=:qtype, content=:content,
-                 options=:options, answer=:answer, solution=:solution, passage=:passage, passage_id=:passage_id,
+                 options=:options, answer=:answer, solution=:solution, passage=:passage, passage_id=:passage_id, rubric=:rubric,
                  points=:points, clo=:clo, tags=:tags, media=:media, status=:status WHERE id=:id""", payload)
             conn.commit()
             updated = cur.rowcount
@@ -2221,12 +2318,13 @@ class Handler(BaseHTTPRequestHandler):
         furigana = ("paren" if fg.startswith("paren") else "ruby") + ("+auto" if fg.endswith("_auto") else "")
         if furigana.endswith("+auto") and _get_kakasi() is None:
             raise ValueError("Chưa cài pykakasi nên không tự thêm furigana được (pip install pykakasi)")
-        key_name = os.path.basename(body.get("key_template") or "dap_an_chuan.docx")
+        key_name = os.path.basename(body.get("key_template") or "phieu_dap_an.docx")
         key_tpl_path = os.path.join(TPL_DIR, key_name)
         usage = usage_map()
         counts = usage_counts()
         # seed: cùng seed và cùng lịch sử dùng thì chọn lại đúng các câu cũ; mỗi lần xuất có seed riêng
         seed = int(body["seed"]) if str(body.get("seed", "")).strip() else random.SystemRandom().randrange(1, 10**9)
+        clo_mode = bool(body.get("clo_mode"))
         rng = random.Random(seed)
         taken = set()
         picked = body.get("picked")  # câu đã xem trước và đổi tay, aligned theo sections
@@ -2244,6 +2342,10 @@ class Handler(BaseHTTPRequestHandler):
                         raise ValueError("Bản xem trước không khớp số câu; hãy xem trước lại")
             base = build_section(s, usage, taken, ids or None, rng, counts)
             parts.append((str(s.get("title", "")).strip(), base, bool(s.get("shuffle", True))))
+        if clo_mode:  # đáp án theo CĐR: mọi câu trong đề phải có CLO
+            missing = [it["code"] for _, base, _ in parts for it in base if not it.get("clo")]
+            if missing:
+                raise ValueError("Đáp án theo CĐR: còn câu chưa gắn CLO: " + ", ".join(missing[:15]))
         if not parts:
             raise ValueError("Chưa có phần nào có số câu")
         reused = sum(1 for _, base, _ in parts for it in base if it.get("last_used"))
@@ -2279,7 +2381,7 @@ class Handler(BaseHTTPRequestHandler):
                             z.write(path, f"Am_thanh/{m['file']}")
                 if key_separate:
                     if os.path.isfile(key_tpl_path):
-                        z.writestr(f"DapAn_{code}.docx", render_key_doc(key_tpl_path, body.get("meta", {}), code, exam))
+                        z.writestr(f"DapAn_{code}.docx", render_key_doc(key_tpl_path, body.get("meta", {}), code, exam, clo_mode))
                     else:
                         z.writestr(f"DapAn_{code}.docx", render_key(code, exam))
                 if body.get("record_usage", True):

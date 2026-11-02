@@ -133,8 +133,86 @@ def _is_grid(tbl):
     return texts == "Câu"
 
 
-if __name__ == "__main__":
-    os.makedirs(DST, exist_ok=True)
+# Biến thể của đề thi chuẩn: cùng khung, tiêu đề và thông tin trường. Đổi tiêu đề loại đề,
+# và (nếu có) thay dòng ghi chú về tài liệu ở cuối khối tiêu đề.
+VARIANTS = {
+    "kiem_tra_giua_ky.docx": ("ĐỀ KIỂM TRA GIỮA KỲ", None),
+    "kiem_tra_nhanh.docx": ("ĐỀ KIỂM TRA NHANH", None),
+    "bai_tap_ve_nha.docx": ("BÀI TẬP VỀ NHÀ", "(Sinh viên được sử dụng tài liệu khi làm bài)."),
+}
+
+
+def build_variants():
+    src = os.path.join(DST, "de_thi_chuan.docx")
+    for name, (title, note) in VARIANTS.items():
+        doc = Document(src)
+        right = doc.tables[0].rows[0].cells[1]
+        right.paragraphs[0].runs[0].text = title + " "
+        if note:
+            runs = right.paragraphs[7].runs
+            runs[0].text = note
+            for r in runs[1:]:
+                r.text = ""
+        doc.save(os.path.join(DST, name))
+
+
+def _set_para(p, text):
+    """Đặt lại chữ của một đoạn: giữ run đầu tiên, bỏ các run sau."""
+    runs = p.runs
+    if not runs:
+        p.add_run(text)
+        return
+    runs[0].text = text
+    for r in runs[1:]:
+        r.text = ""
+
+
+def build_answer_sheet():
+    """Phiếu đáp án trắc nghiệm trên giấy theo Mẫu M2 của trường: khung tiêu đề và các lưới đáp án.
+    Giữ bảng tiêu đề lồng (khoa, học phần, học kỳ...), thay giá trị bằng placeholder, và thay khối
+    'Mã đề' + lưới mẫu bằng điểm chèn {{BANG_DAP_AN}}. Lưới 20 câu mỗi dòng do render_key_doc dựng."""
+    from docx.table import Table
+    doc = Document(os.path.join(SRC, "phieu_dap_an_goc_mau.docx"))
+    body = doc.element.body
+    kids = list(body)
+    outer_el = [el for el in kids if el.tag == qn("w:tbl")][-1]  # bảng phiếu đáp án là bảng cuối cùng
+    for el in kids:  # chỉ giữ bảng khung và sectPr; bỏ tiêu đề "Mẫu M2" và các mục hướng dẫn phía sau
+        if el is not outer_el and el.tag != qn("w:sectPr"):
+            body.remove(el)
+    nested = Table(outer_el, doc).rows[0].cells[0].tables[0]
+    left, right = nested.rows[0].cells
+    for p in left.paragraphs:
+        if p.text.startswith("Đáp án đề số"):
+            _set_para(p, "Đáp án đề số: {{MA_DE}}")
+    values = [
+        ("ĐÀO TẠO", "ĐÀO TẠO TRÌNH ĐỘ ĐẠI HỌC HỆ CHÍNH QUY"),
+        ("HỌC KỲ", "HỌC KỲ {{HOC_KY}} NĂM HỌC {{NAM_HOC}}"),
+        ("Học phần", "Học phần: {{TEN_HP}}"),
+        ("Mã HP", "Mã HP {{MA_HP}}          Số tín chỉ: {{SO_TC}}"),
+        ("Khóa", "Khóa {{KHOA_HOC}}"),
+        ("Thời gian", "Thời gian làm bài: {{THOI_GIAN}} phút (Không kể thời gian phát đề)"),
+    ]
+    for p in right.paragraphs:
+        for prefix, new in values:
+            if p.text.startswith(prefix):
+                _set_para(p, new)
+                break
+    # ô chứa khối mã đề và lưới mẫu (hàng 3 của bảng lồng): thay bằng điểm chèn
+    cell = nested.rows[2].cells[0]
+    for child in list(cell._tc):
+        if child.tag != qn("w:tcPr"):
+            cell._tc.remove(child)
+    cell.add_paragraph("Mã đề: {{MA_DE}}")
+    cell.add_paragraph("{{BANG_DAP_AN}}")
+    cell.add_paragraph("Ghi chú:  - Giảng viên ghi mã đề và điền đáp án A, B, C, D vào ô tương ứng.")
+    cell.add_paragraph("- (1): Ghi cụ thể hình thức đào tạo (chính quy, thường xuyên)")
+    cell.add_paragraph("- (2): Ghi địa điểm liên kết đào tạo đối với đào tạo thường xuyên.")
+    doc.save(os.path.join(DST, "phieu_dap_an.docx"))
+
+
+
     build_exam()
     build_key()
-    print("Đã dựng: templates/de_thi_chuan.docx, templates/dap_an_chuan.docx")
+    build_variants()
+    build_answer_sheet()
+    print("Đã dựng: templates/de_thi_chuan.docx, dap_an_chuan.docx, phieu_dap_an.docx và các biến thể đề")
