@@ -30,6 +30,9 @@
   .err { color:#b91c1c; }
   .opts { color:var(--mut); white-space:pre-line; }
   input.n { width:70px; text-align:right; }
+  .pager { display:flex; align-items:center; justify-content:flex-end; gap:4px; color:var(--mut); font-size:13px; margin-bottom:6px; }
+  .pager button { padding:2px 10px; font-size:18px; line-height:1.2; }
+  .pager button:disabled { opacity:.35; cursor:default; }
   label { color:var(--mut); font-size:13px; }
   .tree ul { list-style:none; padding-left:18px; margin:4px 0; }
   .tree > ul { padding-left:0; }
@@ -56,6 +59,20 @@
   .tn.l2 { padding-left:18px; } .tn.l3 { padding-left:32px; }
   .tn .cnt { color:var(--mut); font-size:12px; }
   @media (max-width:800px) { .twocol { flex-direction:column; } .side { width:auto; flex:none; border-right:0; max-height:none; position:static; } }
+  .chips { display:flex; flex-wrap:wrap; gap:6px; flex:1; }
+  .chips label { display:inline-flex; align-items:center; gap:4px; border:1px solid var(--line); border-radius:999px; padding:3px 10px; background:#fff; color:#0f172a; font-size:13px; cursor:pointer; }
+  .chips input { margin:0; }
+  .tblwrap { max-height:60vh; overflow:auto; border:1px solid var(--line); border-radius:6px; background:#fff; }
+  .tblwrap thead th { position:sticky; top:0; background:#fff; z-index:2; box-shadow:0 1px 0 var(--line); }
+  .tblwrap td:first-child, .tblwrap th:first-child { position:sticky; left:0; background:#fff; z-index:1; min-width:260px; }
+  .tblwrap thead th:first-child { z-index:3; }
+  .tblwrap tr.ghead td { background:#f1f5f9; cursor:pointer; user-select:none; font-size:13px; }
+  .ctab td { height:40px; padding:4px 8px; vertical-align:middle; }
+  .ctab td:first-child { min-width:260px; max-width:380px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .ctab tr.ghead td { max-width:none; overflow:visible; }
+  .ctab tr.spacer td { padding:0; border:0; height:auto; }
+  .fillbar { font-size:13px; }
+  .sec-total { margin-left:auto; font-weight:600; }
   #toast { position:fixed; bottom:16px; right:16px; background:#0f172a; color:#fff; padding:10px 14px; border-radius:8px; display:none; max-width:420px; z-index:10; box-shadow:0 4px 12px rgba(0,0,0,.2); }
   #toast.err { background:#b91c1c; }
 </style>
@@ -114,6 +131,7 @@
     <button class="g" onclick="selectShown()">Chọn các câu đang hiện</button>
     <button class="g" onclick="clearSel()">Bỏ chọn</button>
   </div>
+  <div class="pager" id="qPager"></div>
   <table>
     <thead><tr><th style="width:28px"></th><th>Mã câu</th><th>Học phần / Giáo trình / Chương</th><th>Bloom</th><th>Loại</th><th>Nội dung</th><th>Đáp án</th><th></th></tr></thead>
     <tbody id="qBody"></tbody>
@@ -194,10 +212,16 @@
 
   <!-- Bước 2: số câu và đoạn theo chương × Bloom -->
   <div class="pane" id="pane2">
-    <div class="row">
-      <label>Chỉ hiện chương của học phần:</label><select id="xCourse" onchange="filterExportRows()"></select>
+    <div class="row" style="align-items:flex-start">
+      <label style="padding-top:6px">Học phần (không chọn = tất cả):</label>
+      <div id="xCourseChips" class="chips"></div>
+      <button class="g" onclick="clearCourses()">Bỏ chọn</button>
     </div>
-    <p class="msg">Nhập số câu cho từng ô chương × Bloom, hoặc số đoạn văn ở dòng “Theo đoạn văn”. Ô tô đỏ là chưa đủ câu; ô mờ là chương chưa có câu mức đó.</p>
+    <div class="row">
+      <input id="xSearch" placeholder="Tìm chương (giáo trình, mã bài, tên bài)" oninput="filterExportRows()" style="min-width:300px">
+      <label><input type="checkbox" id="xOnlyFilled" onchange="filterExportRows()"> Chỉ hiện dòng đã nhập</label>
+    </div>
+    <p class="msg">Nhập số câu cho từng ô chương × Bloom, hoặc số đoạn văn ở dòng “Theo đoạn văn”. Chỉ hiện chương có câu thuộc dạng của phần; bấm tên học phần để thu gọn. Ô tô đỏ là chưa đủ câu; ô mờ là chương chưa có câu mức đó.</p>
     <div class="secslot"></div>
   </div>
 
@@ -329,7 +353,7 @@ async function loadTree() {
   $("#newTbCourse").innerHTML = TREE.courses.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join("");
   $("#newChTb").innerHTML = TREE.textbooks.map(t => `<option value="${t.id}">${esc(courseName(t.course_id))} / ${esc(t.name)}</option>`).join("");
   $("#fBloom").innerHTML = `<option value="">Mọi mức</option>` + Object.entries(BLOOM).map(([k,v]) => `<option value="${k}">${k}. ${v}</option>`).join("");
-  $("#xCourse").innerHTML = `<option value="">Tất cả</option>` + TREE.courses.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join("");
+  renderCourseChips();
 }
 const courseName = id => (TREE.courses.find(c => c.id == id) || {}).name || "";
 const textbookName = id => (TREE.textbooks.find(t => t.id == id) || {}).name || "";
@@ -384,13 +408,20 @@ async function bulkApply() {
   } catch (e) { toast(e.message, true); }
 }
 
-async function loadQuestions() {
+// bảng ngân hàng hiện từng trang; đổi bộ lọc thì về trang đầu
+const QPER = 50;
+let QPAGE = 0;
+async function loadQuestions(page = 0) {
   await loadTree();
+  QPAGE = Math.max(0, page);
   const p = new URLSearchParams();
   const pairs = {course_id:"#fCourse", textbook_id:"#fTextbook", chapter_id:"#fChapter", bloom:"#fBloom", qtype:"#fType"};
   for (const [k, sel] of Object.entries(pairs)) if ($(sel).value) p.set(k, $(sel).value);
   if ($("#fSearch").value.trim()) p.set("q", $("#fSearch").value.trim());
-  const list = await api("/api/questions?" + p);
+  p.set("page", QPAGE); p.set("per", QPER);
+  const res = await api("/api/questions?" + p);
+  const list = res.items;
+  renderQPager(res.total);
   $("#bulkChap").innerHTML = `<option value="">Giữ chương</option>` + chapterOptions("");
   QMAP = Object.fromEntries(list.map(x => [x.id, x]));
   renderBankTree();
@@ -406,6 +437,15 @@ async function loadQuestions() {
       <td style="white-space:nowrap"><button class="g" onclick="editQ(${q.id})">Sửa</button>
           <button class="d" onclick="delQ(${q.id})">Xóa</button></td>
     </tr>`).join("") || `<tr><td colspan="8" class="msg">Chưa có câu hỏi nào. Nhấn “+ Câu mới” hoặc nhập từ .docx.</td></tr>`;
+}
+
+// thanh phân trang kiểu Gmail: "1–50 của 17981" và hai nút ‹ ›
+function renderQPager(total) {
+  const from = total ? QPAGE * QPER + 1 : 0, to = Math.min(total, (QPAGE + 1) * QPER);
+  const last = (QPAGE + 1) * QPER >= total;
+  $("#qPager").innerHTML = `<span>${from}–${to} của ${total}</span>
+    <button class="g" title="Trang trước" aria-label="Trang trước" ${QPAGE <= 0 ? "disabled" : ""} onclick="loadQuestions(${QPAGE - 1})">‹</button>
+    <button class="g" title="Trang sau" aria-label="Trang sau" ${last ? "disabled" : ""} onclick="loadQuestions(${QPAGE + 1})">›</button>`;
 }
 
 // cây học phần / giáo trình / chương ở bên trái; bấm để lọc
@@ -863,11 +903,12 @@ async function loadStats() {
 // ---------- xuất đề
 async function loadExport() {
   STATS = await api("/api/stats");
+  indexChapters();
   TREE = await api("/api/tree");
   const tpls = await api("/api/templates");
   $("#tpl").innerHTML = tpls.map(t => `<option ${t === "de_thi_chuan.docx" ? "selected" : ""}>${esc(t)}</option>`).join("");
   $("#keyTpl").innerHTML = tpls.map(t => `<option ${t === "dap_an_chuan.docx" ? "selected" : ""}>${esc(t)}</option>`).join("");
-  $("#xCourse").innerHTML = `<option value="">Tất cả</option>` + TREE.courses.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join("");
+  renderCourseChips();
   $("#metaCourse").innerHTML = `<option value="">— chọn học phần —</option>` + TREE.courses.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join("");
   await loadPassages();
   restoreForm();  // sau khi đã có danh sách mẫu, để giữ lại lựa chọn của lần trước
@@ -943,8 +984,7 @@ function readSections() {
     title: card.querySelector(".st").value,
     qtype: card.querySelector(".sq").value,
     shuffle: card.querySelector(".ss").checked,
-    matrix: [...card.querySelectorAll(".cell:not(:disabled)")]  // ô bị khóa (không có câu dạng này) không tính
-      .map(i => ({ chapter_id: +i.dataset.ch, bloom: +i.dataset.b, n: +i.value || 0 })).filter(x => x.n > 0),
+    matrix: matrixOf(card),
     passages: [...card.querySelectorAll(".prow")]
       .map(r => ({ chapter_id: +r.querySelector(".pch").value, n: +r.querySelector(".pn").value || 0 }))
       .filter(x => x.n > 0 && x.chapter_id),
@@ -977,8 +1017,7 @@ function loadConfig() {
     const card = $("#sections").lastElementChild;
     card.querySelector(".ss").checked = s.shuffle !== false;
     for (const m of s.matrix || []) {
-      const el = card.querySelector(`.cell[data-ch="${m.chapter_id}"][data-b="${m.bloom}"]`);
-      if (el) el.value = m.n;
+      if (m.n > 0 && haveFor(m.chapter_id, m.bloom, s.qtype || "") > 0) card._vals.set(valKey(m.chapter_id, m.bloom), m.n);
     }
     for (const ps of s.passages || []) addPassRow(card, ps.chapter_id, ps.n);
   }
@@ -1011,9 +1050,48 @@ document.addEventListener("keydown", e => {
   else if (e.key === "/") { e.preventDefault(); $("#fSearch").focus(); }
 });
 
+// ---------- bảng số câu theo chương (bước 2)
+// Chỉ vẽ các dòng trong vùng nhìn thấy (virtual scrolling); số đã nhập lưu trong card._vals: "chương:mức" -> n
+const COLLAPSED = new Set();  // học phần đang thu gọn
+const ROW_H = 40;             // chiều cao cố định của một dòng (px)
+const BUF = 12;               // số dòng vẽ thêm ở đầu và cuối vùng nhìn thấy
+const BLOOMS = Object.keys(BLOOM);
+let CHMAP = new Map();        // id chương -> chương
+const fold = s => (s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/đ/g, "d");
+const selectedCourses = () => [...document.querySelectorAll("#xCourseChips input:checked")].map(i => i.value);
+const chapterLabel = c => `${c.textbook} / ${c.code}${c.title ? " - " + c.title : ""}`;
+const valKey = (ch, b) => ch + ":" + b;
+const cellVal = (card, ch, b) => card._vals.get(valKey(ch, b)) || 0;
+const haveFor = (chId, b, qtype) => { const c = CHMAP.get(+chId); return c ? haveOf(c, +b, qtype) : 0; };
+
+// lập chỉ mục chương: thứ tự, chuỗi tìm kiếm
+function indexChapters() {
+  CHMAP = new Map();
+  (STATS ? STATS.chapters : []).forEach((c, i) => {
+    c._ord = i;
+    c._search = fold(c.course + " " + chapterLabel(c));
+    CHMAP.set(c.id, c);
+  });
+}
+
+// chọn nhiều học phần; không chọn cái nào = hiện tất cả
+function renderCourseChips() {
+  const keep = new Set(selectedCourses());
+  $("#xCourseChips").innerHTML = TREE.courses.length
+    ? TREE.courses.map(c => `<label><input type="checkbox" value="${c.id}" ${keep.has(String(c.id)) ? "checked" : ""} onchange="filterExportRows()"> ${esc(c.name)}</label>`).join("")
+    : `<span class="sub">Chưa có học phần</span>`;
+}
+function clearCourses() {
+  document.querySelectorAll("#xCourseChips input").forEach(i => i.checked = false);
+  filterExportRows();
+}
+
 function addSection(title = "", qtype = "") {
   const div = document.createElement("div");
   div.className = "card sec";
+  div._vals = new Map();  // số câu đã nhập
+  div._items = [];        // các mục đang hiển thị (đầu học phần hoặc dòng chương)
+  div._sums = {};         // tổng câu theo học phần
   div.innerHTML = `
     <div class="row sh">
       <input class="st" style="width:260px" placeholder="Tiêu đề phần" value="${esc(title)}" oninput="this.closest('.sec').querySelector('.sec-title').textContent=this.value">
@@ -1023,19 +1101,24 @@ function addSection(title = "", qtype = "") {
       <button class="d" onclick="this.closest('.sec').remove()">Xóa phần</button>
     </div>
     <div class="sb"><b class="sec-title">${esc(title)}</b>
-    <table>
-      <thead><tr><th>Chương</th>${Object.entries(BLOOM).map(([k, v]) => `<th class="num">${k}. ${v}</th>`).join("")}</tr></thead>
-      <tbody>${(STATS ? STATS.chapters : []).map(c => `
-        <tr class="crow" data-course="${c.course_id ?? ""}">
-          <td>${esc(c.course)} / ${esc(c.textbook)} / ${esc(c.code)}${c.title ? " - " + esc(c.title) : ""}</td>
-          ${Object.keys(BLOOM).map(k => cellHtml(c, k, qtype)).join("")}
-        </tr>`).join("") || `<tr><td class="msg">Chưa có chương nào.</td></tr>`}</tbody>
-    </table>
-    <div class="row pblock" style="margin-top:8px"><b>Theo đoạn văn:</b> <span class="sub">lấy đủ số đoạn của chương, mỗi đoạn lấy mọi câu phù hợp</span>
-      <button class="g" onclick="addPassRow(this.closest('.sec'))">+ Thêm dòng đoạn</button></div>
-    <div class="prows"></div></div>`;
+      <div class="row fillbar">
+        <label>Điền nhanh các dòng đang hiện:</label>
+        <select class="fb-b">${[["", "Mọi mức"], ...Object.entries(BLOOM)].map(([k, v]) => `<option value="${k}">${k ? k + ". " : ""}${v}</option>`).join("")}</select>
+        <input class="n fb-n" value="1" style="width:60px">
+        <button class="g" onclick="fillVisible(this.closest('.sec'))">Điền</button>
+        <span class="sub sec-total"></span>
+      </div>
+      <div class="tblwrap"><table class="ctab">
+        <thead><tr><th>Chương</th>${Object.entries(BLOOM).map(([k, v]) => `<th class="num">${k}. ${v}</th>`).join("")}</tr></thead>
+        <tbody class="cbody"></tbody>
+      </table></div>
+      <div class="row pblock" style="margin-top:8px"><b>Theo đoạn văn:</b> <span class="sub">lấy đủ số đoạn của chương, mỗi đoạn lấy mọi câu phù hợp</span>
+        <button class="g" onclick="addPassRow(this.closest('.sec'))">+ Thêm dòng đoạn</button></div>
+      <div class="prows"></div>
+    </div>`;
   $("#sections").appendChild(div);
-  filterExportRows();
+  div.querySelector(".tblwrap").addEventListener("scroll", () => scheduleWindow(div), { passive: true });
+  renderCard(div);
 }
 
 // số câu sẵn có của một ô: chỉ đếm đúng dạng câu của phần ("" = mọi dạng)
@@ -1043,65 +1126,232 @@ function haveOf(c, bloom, qtype) {
   return qtype ? ((c.counts_by_qtype || {})[qtype] || {})[bloom] || 0 : (c.counts[bloom] || 0);
 }
 
-// ô nhập số câu; ô không có câu nào (theo dạng của phần) bị khóa và làm mờ để không nhập nhầm
-function cellHtml(c, k, qtype) {
+// ô nhập số câu; ô không có câu nào (theo dạng của phần) bị khóa và làm mờ
+function cellHtml(c, k, qtype, val = 0) {
   const have = haveOf(c, k, qtype);
-  return have > 0
-    ? `<td class="num"><input class="n cell" data-ch="${c.id}" data-b="${k}" data-have="${have}" value="0" oninput="checkCell(this)"></td>`
-    : `<td class="num"><input class="n cell" data-ch="${c.id}" data-b="${k}" data-have="0" value="0" disabled title="Chưa có câu mức ${BLOOM[k]}${qtype ? " dạng " + QT[qtype] : ""}" style="opacity:.35"></td>`;
+  const tip = have > 0 ? `Có ${have} câu` : `Chưa có câu mức ${BLOOM[k]}${qtype ? " dạng " + QT[qtype] : ""}`;
+  return `<td class="num"><input class="n cell" data-ch="${c.id}" data-b="${k}" data-have="${have}" value="${have > 0 ? val : 0}"`
+    + (have > 0 ? ` oninput="cellInput(this)"` : ` disabled style="opacity:.35"`) + ` title="${tip}"></td>`;
 }
 
-// đổi dạng câu của phần: cập nhật số câu sẵn có, khóa các ô không còn câu (xóa số đã nhập ở ô bị khóa)
+// các mục hiển thị của một phần: theo dạng, học phần, tìm kiếm, "chỉ dòng đã nhập", thu gọn
+function buildItems(card) {
+  const qtype = card.querySelector(".sq").value;
+  const sel = selectedCourses();
+  const q = fold($("#xSearch").value.trim());
+  const onlyFilled = $("#xOnlyFilled").checked;
+  const groups = new Map(TREE.courses.map(c => [String(c.id), []]));
+  for (const c of CHMAP.values()) {
+    if (!BLOOMS.some(k => haveOf(c, k, qtype) > 0)) continue;
+    const cid = c.course_id == null ? "" : String(c.course_id);
+    if (!groups.has(cid)) groups.set(cid, []);
+    groups.get(cid).push(c);
+  }
+  const items = [];
+  for (const [cid, list] of groups) {
+    if (!list.length || (sel.length && !sel.includes(cid))) continue;
+    const hits = list.filter(c => (!q || c._search.includes(q))
+      && (!onlyFilled || BLOOMS.some(k => cellVal(card, c.id, k) > 0)));
+    if (!hits.length) continue;
+    items.push({ head: true, cid });
+    if (!COLLAPSED.has(cid)) for (const c of hits) items.push({ head: false, c, cid });
+  }
+  return items;
+}
+
+// tổng câu theo học phần của phần
+function courseSums(card) {
+  const sums = {};
+  for (const [k, n] of card._vals) {
+    const c = CHMAP.get(+k.split(":")[0]);
+    const cid = c && c.course_id != null ? String(c.course_id) : "";
+    sums[cid] = (sums[cid] || 0) + n;
+  }
+  return sums;
+}
+
+function renderCard(card) {
+  card._items = buildItems(card);
+  card._sums = courseSums(card);
+  renderWindow(card);
+  updateTotals(card);
+}
+function renderAll() { document.querySelectorAll(".sec").forEach(renderCard); }
+
+// vẽ lại các dòng trong vùng nhìn thấy, phần còn lại là khoảng trống để giữ chiều cao cuộn
+function renderWindow(card) {
+  const wrap = card.querySelector(".tblwrap");
+  const tb = card.querySelector(".cbody");
+  const qtype = card.querySelector(".sq").value;
+  const items = card._items, colspan = BLOOMS.length + 1;
+  if (!items.length) {
+    tb.innerHTML = `<tr><td class="msg" colspan="${colspan}">Không có chương nào khớp bộ lọc.</td></tr>`;
+    return;
+  }
+  const headH = card.querySelector("thead").offsetHeight || 36;
+  const viewH = wrap.clientHeight || 600;
+  const first = Math.floor(Math.max(0, wrap.scrollTop - headH) / ROW_H);
+  const start = Math.min(Math.max(0, first - BUF), items.length);
+  const end = Math.min(items.length, Math.max(start, first + Math.ceil(viewH / ROW_H) + BUF));
+  let html = `<tr class="spacer"><td colspan="${colspan}" style="height:${start * ROW_H}px"></td></tr>`;
+  for (let i = start; i < end; i++) html += itemHtml(card, items[i], qtype);
+  html += `<tr class="spacer"><td colspan="${colspan}" style="height:${(items.length - end) * ROW_H}px"></td></tr>`;
+  tb.innerHTML = html;
+}
+let WIN_RAF = new WeakMap();
+function scheduleWindow(card) {
+  if (WIN_RAF.get(card)) return;
+  WIN_RAF.set(card, requestAnimationFrame(() => { WIN_RAF.delete(card); renderWindow(card); }));
+}
+
+function itemHtml(card, it, qtype) {
+  if (it.head) {
+    const s = card._sums[it.cid] || 0;
+    return `<tr class="ghead" data-course="${it.cid}"><td colspan="${BLOOMS.length + 1}"><span class="garrow">${COLLAPSED.has(it.cid) ? "▸" : "▾"}</span> <b>${esc(courseName(it.cid) || "Không rõ học phần")}</b> <span class="sub">${s ? "· " + s + " câu" : ""}</span></td></tr>`;
+  }
+  const c = it.c;
+  return `<tr class="crow" data-course="${it.cid}"><td title="${esc(chapterLabel(c))}">${esc(chapterLabel(c))}</td>`
+    + BLOOMS.map(k => cellHtml(c, k, qtype, cellVal(card, c.id, k))).join("") + `</tr>`;
+}
+
+// tổng của phần và số câu nằm ở dòng đang bị ẩn (do lọc, tìm kiếm hoặc thu gọn)
+function updateTotals(card) {
+  let total = 0;
+  for (const n of card._vals.values()) total += n;
+  let shown = 0;
+  for (const it of card._items) if (!it.head) for (const k of BLOOMS) shown += cellVal(card, it.c.id, k);
+  const hidden = total - shown;
+  card.querySelector(".sec-total").textContent = `Tổng phần: ${total} câu` + (hidden > 0 ? ` (${hidden} câu ở dòng đang ẩn)` : "");
+}
+
+// số ô nhập vượt số câu có sẵn, trên mọi phần
+function shortCount() {
+  let bad = 0;
+  document.querySelectorAll(".sec").forEach(card => {
+    const qtype = card.querySelector(".sq").value;
+    for (const [k, n] of card._vals) {
+      const [ch, b] = k.split(":");
+      if (n > haveFor(ch, b, qtype)) bad++;
+    }
+  });
+  return bad;
+}
+function updateShort() {
+  const bad = shortCount();
+  $("#shortMsg").textContent = bad ? `${bad} ô đang thiếu câu hỏi.` : "";
+}
+function refreshAllCells() { updateShort(); }
+
+// ô nhập vừa đổi: ghi vào bộ nhớ, cập nhật màu, tổng và cảnh báo
+function cellInput(i) {
+  const card = i.closest(".sec");
+  const n = Math.max(0, Math.floor(+i.value || 0));
+  const key = valKey(i.dataset.ch, i.dataset.b);
+  if (n > 0) card._vals.set(key, n); else card._vals.delete(key);
+  paintCell(i);
+  updateTotals(card);
+  updateShort();
+}
+function paintCell(i) {
+  const n = Math.max(0, Math.floor(+i.value || 0)), have = +i.dataset.have, short = n > have;
+  i.style.background = short ? "#fee2e2" : "";
+  i.style.borderColor = short ? "#b91c1c" : "";
+  i.title = `Có ${have} câu, cần ${n}` + (short ? " - THIẾU" : "");
+}
+
+// số câu của phần theo ma trận (thứ tự chương rồi mức Bloom)
+function matrixOf(card) {
+  const qtype = card.querySelector(".sq").value;
+  return [...card._vals].map(([k, n]) => {
+    const [ch, b] = k.split(":").map(Number);
+    return { chapter_id: ch, bloom: b, n, ord: (CHMAP.get(ch) || {})._ord || 0 };
+  }).filter(x => x.n > 0 && haveFor(x.chapter_id, x.bloom, qtype) > 0)
+    .sort((a, b) => a.ord - b.ord || a.bloom - b.bloom)
+    .map(({ chapter_id, bloom, n }) => ({ chapter_id, bloom, n }));
+}
+
+// đổi dạng câu của phần: bỏ số đã nhập ở các ô không còn câu dạng này, rồi vẽ lại
 function refreshSection(card) {
   const qtype = card.querySelector(".sq").value;
-  card.querySelectorAll(".crow").forEach(row => {
-    const chId = +row.querySelector(".cell").dataset.ch;
-    const c = STATS.chapters.find(x => x.id === chId);
-    if (!c) return;
-    row.querySelectorAll(".cell").forEach(i => {
-      const k = +i.dataset.b, have = haveOf(c, k, qtype);
-      i.dataset.have = have;
-      i.disabled = have === 0;
-      i.style.opacity = have === 0 ? ".35" : "";
-      i.title = have === 0 ? `Chưa có câu mức ${BLOOM[k]}${qtype ? " dạng " + QT[qtype] : ""}` : `Có ${have} câu`;
-      if (have === 0) i.value = 0;
-      checkCell(i);
-    });
-  });
+  for (const k of [...card._vals.keys()]) {
+    const [ch, b] = k.split(":");
+    if (!haveFor(ch, b, qtype)) card._vals.delete(k);
+  }
+  renderCard(card);
+  updateShort();
+}
+
+// điền nhanh: đặt số cho mọi ô của các dòng đang hiện (không vượt số câu có sẵn)
+function fillVisible(card) {
+  const b = card.querySelector(".fb-b").value;
+  const n = Math.max(0, parseInt(card.querySelector(".fb-n").value, 10) || 0);
+  const qtype = card.querySelector(".sq").value;
+  let capped = 0;
+  for (const it of card._items) {
+    if (it.head) continue;
+    for (const k of BLOOMS) {
+      if (b && k !== b) continue;
+      const have = haveOf(it.c, k, qtype);
+      if (!have) continue;
+      if (n > have) capped++;
+      const v = Math.min(n, have), key = valKey(it.c.id, k);
+      if (v > 0) card._vals.set(key, v); else card._vals.delete(key);
+    }
+  }
+  renderCard(card);
+  updateShort();
+  toast(`Đã điền ${n} câu cho các dòng đang hiện${capped ? `; ${capped} ô bị giới hạn theo số câu có sẵn` : ""}.`, capped > 0);
 }
 
 // dòng "lấy n đoạn của chương" trong một phần
 function addPassRow(card, chapterId = "", n = 1) {
-  const chapIds = [...new Set(PASSAGES.map(p => p.chapter_id))];
-  const opts = TREE.chapters.filter(c => chapIds.includes(c.id)).map(c => {
-    const cnt = PASSAGES.filter(p => p.chapter_id == c.id).length;
-    const tb = TREE.textbooks.find(t => t.id == c.textbook_id);
-    return `<option value="${c.id}" ${c.id == chapterId ? "selected" : ""}>${esc(courseName(tb ? tb.course_id : 0))} / ${esc(tb ? tb.name : "")} / ${esc(c.code)} (${cnt} đoạn)</option>`;
-  }).join("");
   const div = document.createElement("div");
   div.className = "row prow";
-  div.innerHTML = `<select class="pch">${opts || `<option value="">Chưa có đoạn văn nào</option>`}</select>
+  div.dataset.cur = chapterId;
+  div.innerHTML = `<input class="pq" placeholder="Tìm chương..." style="width:180px" oninput="fillPassSelect(this.closest('.prow'))">
+    <select class="pch" style="max-width:420px"></select>
     <label>Số đoạn:</label><input class="n pn" value="${n}" oninput="this.dataset.touched=1">
     <button class="d" onclick="this.closest('.prow').remove()">Bỏ</button>`;
   card.querySelector(".prows").appendChild(div);
+  fillPassSelect(div);
 }
 
+// danh sách chương có đoạn: lọc theo học phần đã chọn và ô tìm kiếm; tối đa 200 mục, chương đang chọn luôn có mặt
+function fillPassSelect(row) {
+  const sel = selectedCourses();
+  const q = fold(row.querySelector(".pq").value.trim());
+  const pch = row.querySelector(".pch");
+  const cur = pch.value || row.dataset.cur || "";
+  const cnt = {};
+  PASSAGES.forEach(p => cnt[p.chapter_id] = (cnt[p.chapter_id] || 0) + 1);
+  const list = TREE.chapters.filter(c => cnt[c.id]).map(c => {
+    const tb = TREE.textbooks.find(t => t.id == c.textbook_id);
+    const cid = tb ? tb.course_id : 0;
+    return { c, tb, cid, text: fold(`${courseName(cid)} ${tb ? tb.name : ""} ${c.code} ${c.title || ""}`) };
+  }).filter(x => x.c.id == cur || ((!sel.length || sel.includes(String(x.cid))) && (!q || x.text.includes(q))))
+    .sort((a, b) => (b.c.id == cur) - (a.c.id == cur));
+  const shown = list.slice(0, 200);
+  pch.innerHTML = shown.length
+    ? shown.map(({ c, tb, cid }) => `<option value="${c.id}" ${c.id == cur ? "selected" : ""}>${esc(courseName(cid))} / ${esc(tb ? tb.name : "")} / ${esc(c.code)} (${cnt[c.id]} đoạn)</option>`).join("")
+    : `<option value="">Không có chương khớp</option>`;
+  row.dataset.cur = "";
+}
+function refreshPassSelects() { document.querySelectorAll(".prow").forEach(fillPassSelect); }
+
+// lọc hiển thị theo học phần, tìm kiếm, "chỉ dòng đã nhập" và thu gọn
 function filterExportRows() {
-  const cid = $("#xCourse").value;
-  document.querySelectorAll(".crow").forEach(r => r.style.display = (!cid || r.dataset.course == cid) ? "" : "none");
+  renderAll();
+  refreshPassSelects();
 }
 
-function refreshAllCells() { document.querySelectorAll(".cell").forEach(checkCell); }
-
-// Cảnh báo ô nhập lớn hơn số câu có sẵn
-function checkCell(i) {
-  const have = +i.dataset.have, n = +i.value || 0, short = n > have;
-  i.style.background = short ? "#fee2e2" : "";
-  i.style.borderColor = short ? "#b91c1c" : "";
-  i.title = `Có ${have} câu, cần ${n}` + (short ? " - THIẾU" : "");
-  const bad = [...document.querySelectorAll(".cell")].filter(x => (+x.value || 0) > +x.dataset.have).length;
-  $("#shortMsg").textContent = bad ? `${bad} ô đang thiếu câu hỏi.` : "";
-}
+// bấm tên học phần để thu gọn / mở các dòng của nó
+document.getElementById("sections").addEventListener("click", e => {
+  const h = e.target.closest("tr.ghead");
+  if (!h) return;
+  const cid = h.dataset.course;
+  COLLAPSED.has(cid) ? COLLAPSED.delete(cid) : COLLAPSED.add(cid);
+  filterExportRows();
+});
 
 // ---------- xem trước đề và đổi từng câu
 let PREVIEW = null;  // {sig, sections:[{items}]}: sig = sections lúc xem trước, để phát hiện thay đổi
@@ -1170,7 +1420,7 @@ function validateStep(n) {
     if (!sections.some(s => s.matrix.length || s.passages.length)) {
       toast("Chọn số câu hoặc số đoạn cho ít nhất một phần.", true); return false;
     }
-    const short = [...document.querySelectorAll(".cell")].filter(x => (+x.value || 0) > +x.dataset.have).length;
+    const short = shortCount();
     if (short) { toast(`Còn ${short} ô thiếu câu hỏi (tô đỏ).`, true); return false; }
     return true;
   }
@@ -1214,6 +1464,7 @@ function applyStep() {
   $("#btnBack").disabled = STEP === 1;
   $("#btnNext").style.display = STEP === STEPS ? "none" : "";
   $("#stepHint").textContent = `Bước ${STEP}/${STEPS}: ${STEP_HINT[STEP]}`;
+  if (STEP === 2) renderAll();
   if (STEP === STEPS) buildSummary();
   if (STEP === 5) setPreviewStatus();
 }
@@ -1247,7 +1498,7 @@ function buildSummary() {
 async function doExport() {
   const sections = readSections();
   // Kiểm tra trước khi xuất
-  const short = [...document.querySelectorAll(".cell")].filter(x => (+x.value || 0) > +x.dataset.have).length;
+  const short = shortCount();
   if (!sections.some(s => s.matrix.length || s.passages.length)) { $("#exportMsg").innerHTML = `<span class="err">Chưa nhập số câu hoặc số đoạn cho phần nào.</span>`; return; }
   if (short) { $("#exportMsg").innerHTML = `<span class="err">Không xuất: còn ${short} ô thiếu câu hỏi (tô đỏ).</span>`; return; }
   if (!$("#confirmChk").checked) { $("#exportMsg").innerHTML = `<span class="err">Hãy tích xác nhận ở bước 6 trước khi xuất.</span>`; return; }
