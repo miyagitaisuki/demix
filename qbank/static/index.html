@@ -128,6 +128,7 @@
     <select id="bulkChap"></select>
     <select id="bulkBloom"><option value="">Giữ mức Bloom</option><option value="1">1. Biết</option><option value="2">2. Hiểu</option><option value="3">3. Vận dụng</option><option value="4">4. Phân tích</option><option value="5">5. Đánh giá</option></select>
     <button class="g" onclick="bulkApply()">Áp dụng cho câu đã chọn</button>
+    <button class="d" onclick="bulkDelete()">Xóa các câu đã chọn</button>
     <button class="g" onclick="selectShown()">Chọn các câu đang hiện</button>
     <button class="g" onclick="clearSel()">Bỏ chọn</button>
   </div>
@@ -408,6 +409,21 @@ async function bulkApply() {
   } catch (e) { toast(e.message, true); }
 }
 
+// xóa các câu đã chọn; có nút hoàn tác như khi xóa một câu
+async function bulkDelete() {
+  if (!SEL.size) { toast("Chưa chọn câu nào.", true); return; }
+  if (!confirm(`Xóa ${SEL.size} câu đã chọn? Lịch sử dùng và kết quả thi của các câu này cũng bị xóa.`)) return;
+  try {
+    const ids = [...SEL];
+    const r = await postJson("/api/questions/bulk-delete", { ids });
+    const openId = document.getElementById("eId");
+    if (openId && ids.includes(+openId.value)) $("#editor").style.display = "none";  // form đang mở của câu vừa xóa
+    clearSel();
+    loadQuestions();
+    showUndo(r.items, `Đã xóa ${r.deleted} câu.`);
+  } catch (e) { toast(e.message, true); }
+}
+
 // bảng ngân hàng hiện từng trang; đổi bộ lọc thì về trang đầu
 const QPER = 50;
 let QPAGE = 0;
@@ -420,6 +436,7 @@ async function loadQuestions(page = 0) {
   if ($("#fSearch").value.trim()) p.set("q", $("#fSearch").value.trim());
   p.set("page", QPAGE); p.set("per", QPER);
   const res = await api("/api/questions?" + p);
+  if (!res.items.length && QPAGE > 0) return loadQuestions(QPAGE - 1);  // trang vừa xóa hết câu: lùi về trang trước
   const list = res.items;
   renderQPager(res.total);
   $("#bulkChap").innerHTML = `<option value="">Giữ chương</option>` + chapterOptions("");
@@ -519,6 +536,8 @@ async function editQ(id) {
     <div class="row"><button class="p" onclick="saveQ()">Lưu</button><button class="g" onclick="$('#editor').style.display='none'">Đóng</button><span id="eMsg" class="err"></span></div>`;
   fillPassPick(q.passage_id);
   $("#eChap").onchange = () => fillPassPick(null);
+  // form nằm phía trên bảng: cuộn tới để người dùng thấy ngay khi bấm Sửa ở dòng dưới
+  $("#editor").scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 // ---------- đoạn văn
