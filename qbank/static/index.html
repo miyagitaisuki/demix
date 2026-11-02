@@ -117,7 +117,7 @@
   <div class="row">
     <span class="sub">Rà soát dữ liệu:</span>
     <button class="g" onclick="showDuplicates()">Kiểm tra trùng</button>
-    <button class="g" onclick="showSimilar()">Tìm câu gần giống</button>
+    <button class="g" onclick="withBusy(this, showSimilar)">Tìm câu gần giống</button>
   </div>
   <div id="importMsg" class="msg"></div>
   <div id="importPreview" class="card" style="display:none"></div>
@@ -244,6 +244,7 @@
         <label>Học kỳ:</label><input id="hocKy" class="n" value="2">
         <label>Năm học:</label><input id="namHoc" style="width:110px" placeholder="2025-2026">
         <label>Thời gian (phút):</label><input id="thoiGian" class="n" value="90">
+        <label>Số trang:</label><input id="soTrang" class="n" style="width:70px" placeholder="(để trống)">
         <label>Tên đề (ghi chú, không in):</label><input id="tenDe" style="width:160px">
       </div>
     </div>
@@ -291,7 +292,7 @@
       <div id="sumBox"></div>
       <div class="row" style="margin-top:10px"><label><input type="checkbox" id="confirmChk"> Tôi đã kiểm tra thông tin trên và muốn xuất đề</label></div>
     </div>
-    <div class="row"><button class="p" onclick="doExport()">Xuất .zip các file .docx</button><span id="exportMsg" class="msg"></span><span id="shortMsg" class="err"></span></div>
+    <div class="row"><button class="p" id="btnExport" onclick="withBusy(this, doExport)">Xuất .zip các file .docx</button><span id="exportMsg" class="msg"></span><span id="shortMsg" class="err"></span></div>
     <div class="card">
       <div class="row"><b>Lịch sử xuất</b> <span class="sub">(tải lại file .zip gồm đề và đáp án)</span><button class="g" onclick="loadHistory()">Làm mới</button></div>
       <div id="histBox"></div>
@@ -516,7 +517,7 @@ function chapterOptions(selected) {
 async function editQ(id) {
   await loadTree();
   let q = { chapter_id: $("#fChapter").value || "", bloom: 1, qtype: "TN", content: "", options: ["", "", "", ""], answer: "A", solution: "" };
-  if (id) q = (await api("/api/questions")).find(x => x.id === id) || q;
+  if (id) q = await api(`/api/questions/${id}`);
   if (!TREE.chapters.length) { alert("Hãy tạo học phần, giáo trình, chương trong tab Cấu trúc trước."); return; }
   await loadPassages();
   $("#editor").style.display = "block";
@@ -669,17 +670,21 @@ async function loadDifficulty() {
         <td>${f.flag}</td><td>${esc(f.content)}</td></tr>`).join("") + `</tbody></table>`
       : `<span class="msg">Chưa có câu nào bất thường.</span>`}`;
 }
-async function saveResults() {
+// nhận "mã,tỷ lệ", "mã<Tab>tỷ lệ" (dán từ Excel) hoặc "mã;tỷ lệ"
+async function saveResults(replace = false) {
   const rows = $("#resRows").value.split("\n").map(s => s.trim()).filter(Boolean).map(line => {
-    const i = line.lastIndexOf(",");
-    return i < 0 ? { code: line, pct: "" } : { code: line.slice(0, i).trim(), pct: line.slice(i + 1).trim() };
+    const m = /^(.+?)\s*[\t;,]\s*(\S.*)$/.exec(line);
+    return m ? { code: m[1].trim(), pct: m[2].trim() } : { code: line, pct: "" };
   });
   if (!rows.length) { $("#resMsg").innerHTML = `<span class="err">Nhập ít nhất một dòng.</span>`; return; }
   try {
-    const r = await postJson("/api/results", { exam_code: $("#resExam").value, rows });
+    const r = await postJson("/api/results", { exam_code: $("#resExam").value, rows, replace });
     $("#resMsg").innerHTML = `Đã ghi ${r.added} dòng.` + (r.errors.length ? ` <span class="err">${esc(r.errors.join(" | "))}</span>` : "");
     if (r.added) { $("#resRows").value = ""; loadDifficulty(); }
-  } catch (e) { $("#resMsg").innerHTML = `<span class="err">${esc(e.message)}</span>`; }
+  } catch (e) {
+    if (e.confirm && confirm(e.message + "\n\nBấm Hủy để giữ kết quả cũ và chỉnh lại mã đề.")) return saveResults(true);
+    $("#resMsg").innerHTML = `<span class="err">${esc(e.message)}</span>`;
+  }
 }
 
 // nhập Word: kiểm tra trước (không ghi), người dùng xác nhận rồi mới nhập
@@ -939,7 +944,12 @@ async function loadExport() {
   await loadPassages();
   restoreForm();  // sau khi đã có danh sách mẫu, để giữ lại lựa chọn của lần trước
   await loadConfigs();
-  if (!$("#sections").children.length) DEFAULT_PARTS.forEach(([t, q]) => addSection(t, q));
+  if (!$("#sections").children.length) {
+    const wiz = loadWizard();
+    if (wiz && wiz.sections && wiz.sections.length) applyCfg({ sections: wiz.sections });
+    else DEFAULT_PARTS.forEach(([t, q]) => addSection(t, q));
+    if (wiz && wiz.step) STEP = wiz.step;
+  }
   filterExportRows();
   refreshAllCells();
   loadHistory();
@@ -947,7 +957,7 @@ async function loadExport() {
 }
 
 // ---------- ghi nhớ biểu mẫu xuất đề (lưu trên trình duyệt)
-const REMEMBER = {mon:"v", maHp:"v", soTc:"v", khoaHoc:"v", hocKy:"v", namHoc:"v", thoiGian:"v", tenDe:"v",
+const REMEMBER = {mon:"v", maHp:"v", soTc:"v", khoaHoc:"v", hocKy:"v", namHoc:"v", thoiGian:"v", tenDe:"v", soTrang:"v",
                   tpl:"v", keyTpl:"v", furigana:"v", variants:"v", prefix:"v", start:"v",
                   answerKey:"c", keySeparate:"c", recordUsage:"c", saveHistory:"c"};
 function saveForm() {
@@ -971,6 +981,14 @@ function restoreForm() {
   }
 }
 document.getElementById("export").addEventListener("change", saveForm);
+// nháp wizard: các phần và số câu đang nhập, bước hiện tại (lưu trên trình duyệt, không lưu lên server)
+function saveWizard() {
+  try { localStorage.setItem("qbank_wizard", JSON.stringify({ sections: readSections(), step: STEP })); } catch (e) {}
+}
+function loadWizard() {
+  try { return JSON.parse(localStorage.getItem("qbank_wizard") || "null"); } catch (e) { return null; }
+}
+document.getElementById("export").addEventListener("input", saveWizard);
 
 // ---------- thông tin đề thi theo học phần
 const META_FIELDS = {ten_hp:"mon", ma_hp:"maHp", so_tc:"soTc", khoa_hoc:"khoaHoc", nam_hoc:"namHoc", hoc_ky:"hocKy", thoi_gian:"thoiGian"};
@@ -1036,7 +1054,12 @@ async function saveConfig() {
 function loadConfig() {
   const c = CONFIGS.find(x => String(x.id) === $("#cfgSelect").value);
   if (!c) { $("#cfgMsg").innerHTML = `<span class="err">Chọn cấu trúc cần tải.</span>`; return; }
-  const cfg = c.config || {};
+  applyCfg(c.config || {});
+  $("#cfgName").value = c.name;
+  $("#cfgMsg").textContent = `Đã tải cấu trúc "${c.name}". Kiểm tra lại số câu trước khi xuất.`;
+}
+// nạp phần, số câu, mẫu, furigana từ một cấu trúc (từ danh sách đã lưu hoặc từ nháp)
+function applyCfg(cfg) {
   $("#sections").innerHTML = "";
   for (const s of cfg.sections || []) {
     addSection(s.title || "", s.qtype || "");
@@ -1052,9 +1075,7 @@ function loadConfig() {
   if (cfg.furigana) $("#furigana").value = cfg.furigana;
   if (cfg.answer_key !== undefined) $("#answerKey").checked = !!cfg.answer_key;
   if (cfg.key_separate !== undefined) $("#keySeparate").checked = !!cfg.key_separate;
-  refreshAllCells(); filterExportRows(); saveForm();
-  $("#cfgName").value = c.name;
-  $("#cfgMsg").textContent = `Đã tải cấu trúc "${c.name}". Kiểm tra lại số câu trước khi xuất.`;
+  refreshAllCells(); filterExportRows(); saveForm(); saveWizard();
 }
 async function deleteConfig() {
   const c = CONFIGS.find(x => String(x.id) === $("#cfgSelect").value);
@@ -1063,6 +1084,12 @@ async function deleteConfig() {
   await api(`/api/configs/${c.id}`, { method: "DELETE" });
   await loadConfigs();
   $("#cfgMsg").textContent = `Đã xóa cấu trúc "${c.name}".`;
+}
+
+// ---------- trạng thái đang xử lý: khóa nút và hiện chữ trong lúc chờ server (tránh bấm hai lần)
+async function withBusy(btn, fn) {
+  const old = btn.textContent; btn.disabled = true; btn.textContent = "Đang xử lý...";
+  try { return await fn(); } finally { btn.disabled = false; btn.textContent = old; }
 }
 
 // ---------- phím tắt: Ctrl+S lưu câu (khi đang sửa), N câu mới, / tìm kiếm
@@ -1522,6 +1549,9 @@ function buildSummary() {
 }
 
 async function doExport() {
+  return doExportInner();
+}
+async function doExportInner() {
   const sections = readSections();
   // Kiểm tra trước khi xuất
   const short = shortCount();
@@ -1537,7 +1567,7 @@ async function doExport() {
     picked: PREVIEW ? PREVIEW.sections.map(s => s.items.map(i => i.id)) : undefined,
     meta: { ten_hp: $("#mon").value, ma_hp: $("#maHp").value, so_tc: $("#soTc").value,
             khoa_hoc: $("#khoaHoc").value, nam_hoc: $("#namHoc").value, hoc_ky: $("#hocKy").value,
-            thoi_gian: $("#thoiGian").value, ten_de: $("#tenDe").value },
+            thoi_gian: $("#thoiGian").value, ten_de: $("#tenDe").value, so_trang: $("#soTrang").value },
     template: $("#tpl").value, key_template: $("#keyTpl").value, furigana: $("#furigana").value,
     variants: +$("#variants").value || 1,
     start: $("#start").value.trim() === "" ? 1 : parseInt($("#start").value, 10),  // 0 là hợp lệ

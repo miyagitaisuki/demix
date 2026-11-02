@@ -582,6 +582,12 @@ def parse_import(data: bytes, textbook_id, dry_run=False):
                 })
                 same, other, key = check_duplicate(index, payload)
                 label = f"Bảng {t_idx}, dòng {r_idx}"
+                if payload["passage"] and not dry_run and not q(
+                        "SELECT 1 FROM passages WHERE chapter_id=? AND content=?",
+                        (payload["chapter_id"], payload["passage"]), True):  # đúng từng chữ thì dùng chung, không cảnh báo
+                    sim = similar_passage(payload["chapter_id"], payload["passage"])
+                    if sim:
+                        warnings.append(f"{label}: đoạn văn gần giống đoạn {sim[0]} ({round(sim[1] * 100)}%); kiểm tra lại")
                 preview = {"where": label, "code": code, "qtype": qtype, "content": " ".join(stem)[:80]}
                 if same:
                     ref = same[0][0]
@@ -1180,11 +1186,15 @@ def make_sample_templates():
 
 
 # ---------------------------------------------------------------- stats & backup
-def record_results(exam_code, rows):
-    """rows: [(mã câu, tỷ lệ đúng %)]. Trả về số dòng đã ghi và danh sách lỗi theo dòng."""
+def record_results(exam_code, rows, replace=False):
+    """rows: [(mã câu, tỷ lệ đúng %)]. Mã đề đã có kết quả thì hỏi trước khi thay thế (replace=True)."""
     exam_code = str(exam_code).strip()
     if not exam_code:
         raise ValueError("Thiếu mã đề")
+    if q("SELECT 1 FROM question_results WHERE exam_code=? LIMIT 1", (exam_code,), True):
+        if not replace:
+            raise NeedConfirm(f"Mã đề {exam_code} đã có kết quả. Bấm OK để thay thế toàn bộ kết quả cũ của mã đề này.")
+        q("DELETE FROM question_results WHERE exam_code=?", (exam_code,))
     now = datetime.now().isoformat(timespec="seconds")
     added, errors, to_insert = 0, [], []
     for n, (code, pct) in enumerate(rows, 1):
@@ -1350,30 +1360,39 @@ SIMILAR_THRESHOLD = 0.9
 
 def similar_pairs(threshold=SIMILAR_THRESHOLD):
     """Các cặp câu cùng dạng có nội dung gần giống (không tính cặp trùng y hệt đã có mục riêng).
-    Lọc nhanh bằng độ dài và quick_ratio trước khi tính ratio đầy đủ."""
+    Ứng viên lấy từ chỉ mục 3-ký-tự (chỉ cặp chung nhiều cụm 3 ký tự mới được so chi tiết),
+    thay vì so mọi cặp; mỗi cụm quá phổ biến (> 300 câu) bị bỏ qua để tránh bùng nổ tổ hợp."""
     from difflib import SequenceMatcher
+    from collections import defaultdict
     rows = q(QUESTION_SQL + " ORDER BY qs.id", fetch=True)
-    keys = {}
+    keys = {r["id"]: dup_key(r["content"], json.loads(r["options"])) for r in rows}
+    by_id = {r["id"]: r for r in rows}
+    index = defaultdict(set)
     for r in rows:
-        k = dup_key(r["content"], json.loads(r["options"]))
-        keys[r["id"]] = k
-    by_type = {}
-    for r in rows:
-        by_type.setdefault(r["qtype"], []).append(r)
+        k = keys[r["id"]]
+        if len(k) < 3:
+            continue
+        for g in {k[i:i + 3] for i in range(len(k) - 2)}:
+            index[(r["qtype"], g)].add(r["id"])
+    shared = defaultdict(int)
+    for ids in index.values():
+        if 2 <= len(ids) <= 300:
+            ordered = sorted(ids)
+            for i, a in enumerate(ordered):
+                for b in ordered[i + 1:]:
+                    shared[(a, b)] += 1
     pairs = []
-    for items in by_type.values():
-        for i, a in enumerate(items):
-            ka = keys[a["id"]]
-            for b in items[i + 1:]:
-                kb = keys[b["id"]]
-                if ka == kb or not ka or not kb:
-                    continue
-                sm = SequenceMatcher(None, ka, kb, autojunk=False)
-                if sm.real_quick_ratio() < threshold or sm.quick_ratio() < threshold:
-                    continue
-                ratio = sm.ratio()
-                if ratio >= threshold:
-                    pairs.append((ratio, a, b))
+    for (ia, ib), n in shared.items():
+        a, b = by_id[ia], by_id[ib]
+        ka, kb = keys[ia], keys[ib]
+        if n < 3 or ka == kb or not ka or not kb:
+            continue
+        sm = SequenceMatcher(None, ka, kb, autojunk=False)
+        if sm.real_quick_ratio() < threshold or sm.quick_ratio() < threshold:
+            continue
+        ratio = sm.ratio()
+        if ratio >= threshold:
+            pairs.append((ratio, a, b))
     pairs.sort(key=lambda t: -t[0])
     return [{"ratio": round(r, 3),
              "items": [{"id": a["id"], "code": a["code"], "chapter": a["chapter_label"],
@@ -1599,6 +1618,12 @@ class Handler(BaseHTTPRequestHandler):
                 rows = q(sql + " LIMIT ? OFFSET ?", args + [per, page_no * per], fetch=True)
                 return self._json(200, {"items": [row_to_api(r) for r in rows], "total": total})
             return self._json(200, [row_to_api(r) for r in q(sql, args, fetch=True)])
+        one = re.fullmatch(r"/api/questions/(\d+)", p)
+        if one:  # một câu, để mở form Sửa không phải tải cả ngân hàng
+            rows = q(QUESTION_SQL + " WHERE qs.id=?", (int(one.group(1)),), fetch=True)
+            if not rows:
+                return self._json(404, {"error": "Câu này không còn trong ngân hàng"})
+            return self._json(200, row_to_api(rows[0]))
         if p == "/api/tree":
             return self._json(200, get_tree())
         if p == "/api/similar":  # cặp câu gần giống (>= 90%), để rà soát
@@ -1695,7 +1720,7 @@ class Handler(BaseHTTPRequestHandler):
         if p == "/api/results":  # nhập tỷ lệ đúng của câu sau kỳ thi
             b = self._json_body()
             rows = [(line.get("code", ""), line.get("pct", "")) for line in b.get("rows", [])]
-            return self._json(200, record_results(b.get("exam_code", ""), rows))
+            return self._json(200, record_results(b.get("exam_code", ""), rows, bool(b.get("replace"))))
         if p == "/api/questions/bulk":  # đổi chương/mức Bloom cho nhiều câu
             b = self._json_body()
             return self._json(200, bulk_update(b.get("ids", []), b.get("chapter_id") or None, b.get("bloom") or None))
@@ -1831,6 +1856,9 @@ class Handler(BaseHTTPRequestHandler):
         m = re.fullmatch(r"/api/(questions|courses|textbooks|chapters)/(\d+)", path)
         if not m:
             return self._json(404, {"error": "không tìm thấy"})
+        if m.group(1) == "chapters":  # đoạn văn không còn câu nào trong chương thì xóa theo
+            q("DELETE FROM passages WHERE chapter_id=? AND id NOT IN (SELECT passage_id FROM questions WHERE passage_id IS NOT NULL)",
+              (int(m.group(2)),))
         table = {"questions": "questions", "courses": "courses",
                  "textbooks": "textbooks", "chapters": "chapters"}[m.group(1)]
         try:
@@ -1884,6 +1912,9 @@ class Handler(BaseHTTPRequestHandler):
         reused = sum(1 for _, base, _ in parts for it in base if it.get("last_used"))
         meta = body.get("meta", {})
         so_tc = str(meta.get("so_tc", "")).strip()
+        st = str(meta.get("so_trang", "")).strip()
+        if st and not st.isdigit():
+            raise ValueError("Số trang phải là số nguyên")
         if so_tc and not re.fullmatch(r"\d+(\.\d)?", so_tc):
             raise ValueError("Số tín chỉ phải là số, ví dụ 4 hoặc 2.5")
         tg = str(meta.get("thoi_gian", "")).strip()
@@ -1919,6 +1950,7 @@ class Handler(BaseHTTPRequestHandler):
               (now, exam_name, ", ".join(codes),
                json.dumps({"meta": body.get("meta", {}), "variants": variants, "start": start,
                            "prefix": prefix, "template": tpl}, ensure_ascii=False), data))
+            q("DELETE FROM exam_exports WHERE id NOT IN (SELECT id FROM exam_exports ORDER BY id DESC LIMIT 100)")
         fname = export_filename(meta.get("ma_hp"), codes_all, now)
         self._send(200, data, "application/zip",
                    {"X-Reused": str(reused), "X-Variants": str(variants),
