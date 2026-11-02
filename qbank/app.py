@@ -126,6 +126,7 @@ def init_storage():
     ensure_column("questions", "passage", "TEXT NOT NULL DEFAULT ''")
     ensure_column("questions", "points", "REAL")  # điểm câu hỏi, không bắt buộc
     ensure_column("questions", "clo", "TEXT NOT NULL DEFAULT ''")  # chuẩn đầu ra học phần, ví dụ CLO1
+    ensure_column("questions", "tags", "TEXT NOT NULL DEFAULT ''")  # thẻ, lưu dạng ",thẻ1,thẻ2,"
     q("""CREATE TABLE IF NOT EXISTS trash(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             deleted_at TEXT NOT NULL,
@@ -310,6 +311,28 @@ def normalize_ds(ans, n):
     return "".join(letters)
 
 
+def norm_tags(value):
+    """Thẻ từ chuỗi "a, b" hoặc danh sách -> chuỗi lưu ",a,b,". Bỏ trùng (không phân biệt hoa thường), tối đa 15 thẻ."""
+    if isinstance(value, str):
+        parts = re.split(r"[,;，]", value)
+    else:
+        parts = [str(x) for x in (value or [])]
+    out, seen = [], set()
+    for t in parts:
+        t = re.sub(r"\s+", " ", t).strip()[:30]
+        if not t or t.lower() in seen:
+            continue
+        if len(out) >= 15:
+            raise ValueError("Mỗi câu tối đa 15 thẻ")
+        seen.add(t.lower())
+        out.append(t)
+    return "," + ",".join(out) + "," if out else ""
+
+
+def tags_list(stored):
+    return [t for t in (stored or "").split(",") if t]
+
+
 def clean_question(data):
     try:
         chapter_id = int(data.get("chapter_id", 0))
@@ -353,6 +376,7 @@ def clean_question(data):
         options = []
     passage = str(data.get("passage", "")).strip()
     clo = str(data.get("clo", "")).strip()[:20]
+    tags = norm_tags(data.get("tags", ""))
     raw = data.get("points")
     points = None
     if raw not in (None, ""):
@@ -364,16 +388,18 @@ def clean_question(data):
             raise ValueError("Điểm của câu phải từ 0 đến 10")
     return dict(chapter_id=chapter_id, bloom=bloom, qtype=qtype, content=content,
                 options=json.dumps(options, ensure_ascii=False), answer=answer, solution=solution,
-                passage=passage, points=points, clo=clo)
+                passage=passage, points=points, clo=clo, tags=tags)
 
 
-INSERT_Q = """INSERT INTO questions(code,chapter_id,bloom,qtype,content,options,answer,solution,passage,passage_id,points,clo)
-              VALUES(:code,:chapter_id,:bloom,:qtype,:content,:options,:answer,:solution,:passage,:passage_id,:points,:clo)"""
+INSERT_Q = """INSERT INTO questions(code,chapter_id,bloom,qtype,content,options,answer,solution,passage,passage_id,points,clo,tags)
+              VALUES(:code,:chapter_id,:bloom,:qtype,:content,:options,:answer,:solution,:passage,:passage_id,:points,:clo,:tags)"""
 
 
 def row_to_api(r):
     r = dict(r)
     r["options"] = json.loads(r["options"])
+    if "tags" in r:
+        r["tags"] = tags_list(r["tags"])
     return r
 
 
@@ -517,6 +543,7 @@ IMPORT_COLUMNS = {
     "doan_van": ["đoạn văn", "doan van"],
     "loi_giai": ["lời giải", "loi giai"],
     "clo": ["clo", "chuẩn đầu ra", "chuan dau ra"],
+    "tags": ["thẻ", "the", "tags"],
 }
 IMPORT_REQUIRED = ("ma", "noi_dung", "dap_an", "loai", "muc")
 
@@ -658,6 +685,7 @@ def parse_rows(tables, textbook_id, dry_run=False, docx=True):
                     "solution": solution,
                     "passage": get("doan_van"),
                     "clo": get("clo"),
+                    "tags": get("tags"),
                 })
                 same, other, key = check_duplicate(index, payload)
                 label = where(t_idx, r_idx)
@@ -1411,7 +1439,7 @@ def build_items(rows):
                       "chapter_code": r["chapter_code"], "chapter_title": r["chapter_title"],
                       "bloom": r["bloom"], "qtype": r["qtype"], "content": r["content"], "options": r["options"],
                       "answer": r["answer"], "solution": r["solution"], "passage": r["passage"],
-                      "points": r.get("points"), "clo": r.get("clo", ""),
+                      "points": r.get("points"), "clo": r.get("clo", ""), "tags": r.get("tags", []),
                       "used": usage.get(r["code"], []), "results": results.get(r["code"], [])})
     return items
 
@@ -1707,16 +1735,24 @@ class Handler(BaseHTTPRequestHandler):
         if origin and origin not in (f"http://127.0.0.1:{PORT}", f"http://localhost:{PORT}"):
             raise ValueError("Yêu cầu từ trang khác đã bị chặn")
 
+    def _fix_path(self):
+        # máy chủ đọc dòng yêu cầu theo latin-1; URL có chữ UTF-8 thô (không mã hóa) được đọc lại thành UTF-8
+        self.path = self.path.encode("latin-1", "replace").decode("utf-8", "replace")
+
     def do_GET(self):
+        self._fix_path()
         self._guard(self._get)
 
     def do_POST(self):
+        self._fix_path()
         self._guard(self._post, write=True)
 
     def do_PUT(self):
+        self._fix_path()
         self._guard(self._put, write=True)
 
     def do_DELETE(self):
+        self._fix_path()
         self._guard(self._delete, write=True)
 
     # --- GET
@@ -1741,6 +1777,9 @@ class Handler(BaseHTTPRequestHandler):
                 sql += " AND qs.bloom=?"; args.append(int(arg("bloom")))
             if arg("qtype"):
                 sql += " AND qs.qtype=?"; args.append(arg("qtype"))
+            if arg("tag"):  # thẻ lưu dạng ",a,b," nên khớp ",thẻ," là chính xác
+                esc_tag = arg("tag").replace("!", "!!").replace("%", "!%").replace("_", "!_")
+                sql += " AND qs.tags LIKE ? ESCAPE '!'"; args.append(f"%,{esc_tag},%")
             kw = arg("q")
             if kw:  # ký tự % _ trong từ khóa được coi là chữ thường (escape bằng !)
                 cond = " OR ".join(f"{c} LIKE ? ESCAPE '!'" for c in ("qs.content", "qs.solution", "qs.options", "qs.answer", "qs.code"))
@@ -1761,6 +1800,12 @@ class Handler(BaseHTTPRequestHandler):
             if not rows:
                 return self._json(404, {"error": "Câu này không còn trong ngân hàng"})
             return self._json(200, row_to_api(rows[0]))
+        if p == "/api/tags":  # thẻ đang dùng và số câu của từng thẻ
+            count = {}
+            for r in q("SELECT tags FROM questions WHERE tags <> ''", fetch=True):
+                for t in tags_list(r["tags"]):
+                    count[t] = count.get(t, 0) + 1
+            return self._json(200, [{"tag": t, "count": n} for t, n in sorted(count.items(), key=lambda x: x[0].lower())])
         if p == "/api/trash":
             return self._json(200, list_trash())
         if p == "/api/tree":
@@ -1987,7 +2032,7 @@ class Handler(BaseHTTPRequestHandler):
             conn.execute("PRAGMA foreign_keys = ON")
             cur = conn.execute("""UPDATE questions SET chapter_id=:chapter_id, bloom=:bloom, qtype=:qtype, content=:content,
                  options=:options, answer=:answer, solution=:solution, passage=:passage, passage_id=:passage_id,
-                 points=:points, clo=:clo WHERE id=:id""", payload)
+                 points=:points, clo=:clo, tags=:tags WHERE id=:id""", payload)
             conn.commit()
             updated = cur.rowcount
         if not updated:

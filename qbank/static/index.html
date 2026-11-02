@@ -100,6 +100,7 @@
     <select id="fChapter" title="Chương"></select>
     <select id="fBloom"><option value="">Mọi mức</option></select>
     <select id="fType"><option value="">Mọi loại</option><option value="TN">Trắc nghiệm</option><option value="DS">Đúng/sai</option><option value="DT">Điền từ</option><option value="TL">Tự luận</option></select>
+    <input id="fTag" list="tagList" placeholder="Thẻ" style="width:110px" title="Lọc theo thẻ (ngữ pháp, trợ từ…)"><datalist id="tagList"></datalist>
     <input id="fSearch" placeholder="Tìm nội dung hoặc mã câu" style="width:190px">
     <button class="g" onclick="loadQuestions()">Lọc</button>
   </div>
@@ -396,6 +397,12 @@ $("#fChapter").onchange = () => loadQuestions();  // không truyền Event làm 
 $("#fBloom").onchange = () => loadQuestions();
 $("#fType").onchange = () => loadQuestions();
 $("#fSearch").addEventListener("keydown", e => { if (e.key === "Enter") loadQuestions(); });
+$("#fTag").addEventListener("keydown", e => { if (e.key === "Enter") loadQuestions(); });
+$("#fTag").addEventListener("change", () => loadQuestions());
+async function loadTagList() {
+  const tags = await api("/api/tags");
+  $("#tagList").innerHTML = tags.map(t => `<option value="${esc(t.tag)}">${esc(t.tag)} (${t.count})</option>`).join("");
+}
 
 // ---------- ngân hàng
 // ---------- chọn nhiều câu để sửa hàng loạt
@@ -441,7 +448,7 @@ async function loadQuestions(page = 0) {
   await loadTree();
   QPAGE = Math.max(0, page);
   const p = new URLSearchParams();
-  const pairs = {course_id:"#fCourse", textbook_id:"#fTextbook", chapter_id:"#fChapter", bloom:"#fBloom", qtype:"#fType"};
+  const pairs = {course_id:"#fCourse", textbook_id:"#fTextbook", chapter_id:"#fChapter", bloom:"#fBloom", qtype:"#fType", tag:"#fTag"};
   for (const [k, sel] of Object.entries(pairs)) if ($(sel).value) p.set(k, $(sel).value);
   if ($("#fSearch").value.trim()) p.set("q", $("#fSearch").value.trim());
   p.set("page", QPAGE); p.set("per", QPER);
@@ -452,12 +459,13 @@ async function loadQuestions(page = 0) {
   $("#bulkChap").innerHTML = `<option value="">Giữ chương</option>` + chapterOptions("");
   QMAP = Object.fromEntries(list.map(x => [x.id, x]));
   renderBankTree();
+  loadTagList();
   if (TRASH_OPEN) loadTrash();  // thùng rác đang mở: làm mới sau mỗi thay đổi
   $("#qBody").innerHTML = list.map(q => `
     <tr>
       <td><input type="checkbox" class="qsel" value="${q.id}" ${SEL.has(q.id) ? "checked" : ""} onchange="toggleSel(${q.id}, this.checked)"></td>
       <td>${esc(q.code)}</td>
-      <td>${esc(q.course)} / ${esc(q.textbook)}<div class="sub">${esc(q.chapter_code)}${q.chapter_title ? " - " + esc(q.chapter_title) : ""}</div></td>
+      <td>${esc(q.course)} / ${esc(q.textbook)}<div class="sub">${esc(q.chapter_code)}${q.chapter_title ? " - " + esc(q.chapter_title) : ""}</div>${q.tags && q.tags.length ? `<div class="sub">🏷 ${esc(q.tags.join(", "))}</div>` : ""}</td>
       <td><span class="tag">${q.bloom}. ${BLOOM[q.bloom]}</span>${q.clo ? `<div class="sub">${esc(q.clo)}</div>` : ""}</td>
       <td>${q.qtype}</td>
       <td>${esc(q.content)}<div class="opts">${esc(q.options.map((o,k)=>(q.qtype==="DS"?"abcdefgh"[k]+") ":"ABCDEFGH"[k]+". ")+o).join("\n"))}</div></td>
@@ -533,6 +541,7 @@ async function editQ(id) {
     <div class="row">
       <label>Chương</label><select id="eChap">${chapterOptions(q.chapter_id)}</select>
       <label>Bloom</label><select id="eBloom">${Object.entries(BLOOM).map(([k,v])=>`<option value="${k}" ${k==q.bloom?"selected":""}>${k}. ${v}</option>`).join("")}</select>
+      <label>Thẻ</label><input id="eTags" style="width:200px" placeholder="ngữ pháp, trợ từ" value="${esc((q.tags || []).join(", "))}">
       <label>CLO</label><input id="eClo" style="width:90px" placeholder="CLO1" value="${esc(q.clo || "")}">
       <label>Điểm</label><input id="ePoints" class="n" style="width:70px" placeholder="—" value="${q.points ?? ""}">
       <label>Loại</label><select id="eType">${["TN","DS","DT","TL"].map(t=>`<option value="${t}" ${q.qtype==t?"selected":""}>${t==="TN"?"Trắc nghiệm":t==="DS"?"Đúng/sai":t==="DT"?"Điền từ":"Tự luận"}</option>`).join("")}</select>
@@ -645,7 +654,7 @@ async function saveQ(confirmPassage = false) {
   const body = {
     chapter_id: $("#eChap").value, bloom: $("#eBloom").value, qtype: $("#eType").value,
     content: $("#eContent").value, answer: $("#eAns").value, solution: $("#eSol").value, points: $("#ePoints").value,
-    clo: $("#eClo").value,
+    clo: $("#eClo").value, tags: $("#eTags").value,
     passage: $("#ePassage").value,
     options: $("#eOpts").value.split("\n").map(s => s.trim()).filter(Boolean).map(s => s.replace(/^[A-Ha-h][\.\)]\s*/, "")),
   };
