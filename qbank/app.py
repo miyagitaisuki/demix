@@ -553,6 +553,12 @@ def usage_map():
         "SELECT question_id, MAX(used_at) AS last FROM exam_usage GROUP BY question_id", fetch=True)}
 
 
+def usage_counts():
+    """question_id -> số lần đã ra đề (mỗi lần xuất đếm một lần)."""
+    return {r["question_id"]: r["n"] for r in q(
+        "SELECT question_id, COUNT(DISTINCT used_at) AS n FROM exam_usage GROUP BY question_id", fetch=True)}
+
+
 def record_usage(rows):
     """rows: [(question_id, exam_code, exam_name, used_at)]"""
     if not rows:
@@ -759,18 +765,22 @@ def parse_rows(tables, textbook_id, dry_run=False, docx=True):
             "dry_run": dry_run, "rows": rows_out}
 
 
-def pick_base_exam(matrix, qtype=None, usage=None, taken=None):
+def pick_base_exam(matrix, qtype=None, usage=None, taken=None, rng=None, counts=None):
     """matrix: [{chapter_id, bloom, n}] -> câu gốc của một phần.
-    Ưu tiên câu chưa dùng, sau đó câu dùng lâu nhất; các câu cùng mức được chọn ngẫu nhiên.
+    Ưu tiên câu ra đề ít lần nhất (chưa ra đề = 0), rồi câu có lần dùng gần nhất cũ hơn;
+    các câu còn ngang nhau được chọn ngẫu nhiên theo rng (có seed thì tái tạo được).
+    Câu thuộc đoạn văn không chọn lẻ ở đây; đoạn văn lấy theo pick_passages.
     qtype: lọc theo dạng câu (TN/DS/DT/TL) của phần; None = mọi dạng."""
     usage = usage or {}
+    counts = counts if counts is not None else usage_counts()
+    rng = rng or random
     taken = taken if taken is not None else set()  # câu đã chọn cho đề này (mọi phần): không chọn lại
     base, shortage = [], []
     for cell in matrix:
         n = int(cell.get("n", 0))
         if n <= 0:
             continue
-        sql = "SELECT * FROM questions WHERE chapter_id=? AND bloom=? AND status='da_duyet'"
+        sql = "SELECT * FROM questions WHERE chapter_id=? AND bloom=? AND status='da_duyet' AND passage_id IS NULL"
         args = [int(cell["chapter_id"]), int(cell["bloom"])]
         if qtype:
             sql += " AND qtype=?"
@@ -779,8 +789,8 @@ def pick_base_exam(matrix, qtype=None, usage=None, taken=None):
         if len(pool) < n:
             shortage.append(f"{chapter_label(cell['chapter_id'])} / Bloom {cell['bloom']}: cần {n}, có {len(pool)}")
             continue
-        random.shuffle(pool)
-        pool.sort(key=lambda it: usage.get(it["id"]) or "")  # chưa dùng ("") lên trước, rồi cũ tới mới
+        rng.shuffle(pool)
+        pool.sort(key=lambda it: (counts.get(it["id"], 0), usage.get(it["id"]) or ""))  # ít lần nhất, rồi cũ nhất
         for it in pool[:n]:
             it["last_used"] = usage.get(it["id"])
             taken.add(it["id"])
@@ -825,7 +835,7 @@ def find_replacement(spec, exclude, usage):
     return it
 
 
-def pick_passages(entries, qtype, usage, taken):
+def pick_passages(entries, qtype, usage, taken, rng=None):
     """Ma trận theo đoạn: entries = [{chapter_id, n}] -> lấy n đoạn của chương (ưu tiên đoạn ít dùng),
     mỗi đoạn lấy mọi câu chưa dùng (đúng dạng của phần nếu có). Đoạn không có câu phù hợp thì bỏ qua."""
     out = []
@@ -845,7 +855,7 @@ def pick_passages(entries, qtype, usage, taken):
                 cands.append(items)
         if len(cands) < n:
             raise ValueError(f"Không đủ đoạn văn: {chapter_label(int(e['chapter_id']))} cần {n}, có {len(cands)}")
-        random.shuffle(cands)
+        (rng or random).shuffle(cands)
         # đoạn có câu được dùng gần nhất xếp sau (chưa dùng xếp trước)
         cands.sort(key=lambda items: max((usage.get(it["id"]) or "") for it in items))
         for items in cands[:n]:
@@ -861,7 +871,7 @@ def section_has_content(s):
            any(int(c.get("n", 0)) > 0 for c in s.get("passages", []) or [])
 
 
-def build_section(s, usage, taken, ids=None):
+def build_section(s, usage, taken, ids=None, rng=None, counts=None):
     """Chọn câu cho một phần: theo ma trận chương × Bloom và theo đoạn văn. ids: danh sách đã xem trước."""
     if ids is not None:
         base = load_items(ids, usage)
@@ -870,8 +880,8 @@ def build_section(s, usage, taken, ids=None):
     qtype = s.get("qtype") or None
     base = []
     if any(int(c.get("n", 0)) > 0 for c in s.get("matrix", [])):
-        base += pick_base_exam(s.get("matrix", []), qtype, usage, taken)
-    base += pick_passages(s.get("passages", []), qtype, usage, taken)
+        base += pick_base_exam(s.get("matrix", []), qtype, usage, taken, rng, counts)
+    base += pick_passages(s.get("passages", []), qtype, usage, taken, rng)
     return base
 
 
@@ -1445,11 +1455,19 @@ def stats():
     tree = get_tree()
     counts = {}  # chương -> mức -> số câu (mọi dạng)
     by_qt = {}   # chương -> dạng -> mức -> số câu (để ô ma trận của từng phần chỉ đếm đúng dạng)
-    for r in q("SELECT chapter_id, bloom, qtype, status, COUNT(*) AS n FROM questions GROUP BY chapter_id, bloom, qtype, status", fetch=True):
+    for r in q("SELECT chapter_id, bloom, qtype, status, (passage_id IS NULL) AS np, COUNT(*) AS n FROM questions GROUP BY chapter_id, bloom, qtype, status, np", fetch=True):
         c = counts.setdefault(r["chapter_id"], {b: 0 for b in BLOOM})
         c[r["bloom"]] += r["n"]
-        if r["status"] == "da_duyet":  # ô ma trận chỉ tính câu đã duyệt (câu nháp và ngưng dùng không ra đề)
+        # ô ma trận chỉ tính câu đã duyệt và không thuộc đoạn (câu đoạn văn chỉ ra đề theo cả đoạn)
+        if r["status"] == "da_duyet" and r["np"]:
             by_qt.setdefault(r["chapter_id"], {}).setdefault(r["qtype"], {b: 0 for b in BLOOM})[r["bloom"]] += r["n"]
+    # số câu chưa từng ra đề: chương -> dạng -> mức -> số câu
+    unused = {}
+    for r in q("""SELECT qs.chapter_id, qs.qtype, qs.bloom, COUNT(*) AS n FROM questions qs
+                  WHERE qs.status='da_duyet' AND qs.passage_id IS NULL
+                    AND NOT EXISTS (SELECT 1 FROM exam_usage u WHERE u.question_id = qs.id)
+                  GROUP BY qs.chapter_id, qs.qtype, qs.bloom""", fetch=True):
+        unused.setdefault(r["chapter_id"], {}).setdefault(r["qtype"], {b: 0 for b in BLOOM})[r["bloom"]] = r["n"]
     by_type = {t: 0 for t in QTYPES}
     for r in q("SELECT qtype, COUNT(*) AS n FROM questions GROUP BY qtype", fetch=True):
         by_type[r["qtype"]] = r["n"]
@@ -1463,7 +1481,7 @@ def stats():
         r["counts_by_qtype"] = by_qt.get(r["id"], {})
         r["total"] = sum(r["counts"].values())
         chapters.append(r)
-    return {"chapters": chapters, "blooms": BLOOM, "by_type": by_type,
+    return {"chapters": chapters, "blooms": BLOOM, "by_type": by_type, "unused": unused,
             "total": sum(by_type.values()), "tree": tree}
 
 
@@ -2047,6 +2065,8 @@ class Handler(BaseHTTPRequestHandler):
         if p == "/api/exam/preview":  # chọn câu để xem trước (chưa ghi lịch sử)
             sections = self._json_body().get("sections") or []
             return self._json(200, {"sections": preview_exam(sections)})
+        if p == "/api/usage/reset":  # reset tình trạng ra đề: câu, chương, hoặc toàn bộ (cần gõ RESET)
+            return self._json(200, reset_usage(self._json_body()))
         if p == "/api/exam/swap":  # đổi một câu trong bản xem trước
             b = self._json_body()
             usage = usage_map()
@@ -2204,6 +2224,10 @@ class Handler(BaseHTTPRequestHandler):
         key_name = os.path.basename(body.get("key_template") or "dap_an_chuan.docx")
         key_tpl_path = os.path.join(TPL_DIR, key_name)
         usage = usage_map()
+        counts = usage_counts()
+        # seed: cùng seed và cùng lịch sử dùng thì chọn lại đúng các câu cũ; mỗi lần xuất có seed riêng
+        seed = int(body["seed"]) if str(body.get("seed", "")).strip() else random.SystemRandom().randrange(1, 10**9)
+        rng = random.Random(seed)
         taken = set()
         picked = body.get("picked")  # câu đã xem trước và đổi tay, aligned theo sections
         parts = []  # (tiêu đề, danh sách câu gốc, có xáo)
@@ -2218,7 +2242,7 @@ class Handler(BaseHTTPRequestHandler):
                     want = sum(int(c.get("n", 0)) for c in s.get("matrix", []))
                     if len(ids) != want:
                         raise ValueError("Bản xem trước không khớp số câu; hãy xem trước lại")
-            base = build_section(s, usage, taken, ids or None)
+            base = build_section(s, usage, taken, ids or None, rng, counts)
             parts.append((str(s.get("title", "")).strip(), base, bool(s.get("shuffle", True))))
         if not parts:
             raise ValueError("Chưa có phần nào có số câu")
@@ -2237,7 +2261,6 @@ class Handler(BaseHTTPRequestHandler):
         exam_name = str(meta.get("ten_de", "")).strip() or default_exam_name(meta, codes_all)
         now = datetime.now().isoformat(timespec="seconds")
         used_at = datetime.now().isoformat(timespec="microseconds")  # mỗi lần xuất một mốc riêng để đếm đúng số lần dùng
-        rng = random.Random()
         out = io.BytesIO()
         usage_rows = []
         codes = []
@@ -2269,12 +2292,44 @@ class Handler(BaseHTTPRequestHandler):
             q("INSERT INTO exam_exports(created_at, name, codes, config, data) VALUES(?,?,?,?,?)",
               (now, exam_name, ", ".join(codes),
                json.dumps({"meta": body.get("meta", {}), "variants": variants, "start": start,
-                           "prefix": prefix, "template": tpl}, ensure_ascii=False), data))
+                           "prefix": prefix, "template": tpl, "seed": seed,
+                           "picked_ids": [[it["id"] for it in base] for _, base, _ in parts]}, ensure_ascii=False), data))
 
         fname = export_filename(meta.get("ma_hp"), codes_all, now)
         self._send(200, data, "application/zip",
-                   {"X-Reused": str(reused), "X-Variants": str(variants),
+                   {"X-Reused": str(reused), "X-Variants": str(variants), "X-Seed": str(seed),
                     "Content-Disposition": attachment_header(fname)})
+
+
+def reset_usage(body):
+    """Xóa lịch sử ra đề của câu, của các chương, hoặc toàn bộ. Không xóa câu hỏi hay file đề đã xuất.
+    Trước khi xóa luôn ghi bản sao: qbank_<ngày>.json (cả CSDL) và truoc_reset_<thời điểm>.json (lịch sử bị xóa)."""
+    scope = body.get("scope")
+    if scope in ("questions", "chapters"):
+        ids = [int(i) for i in body.get("ids", [])]
+        if not ids:
+            raise ValueError("Chưa chọn mục nào để reset")
+        ph = ",".join("?" * len(ids))
+        if scope == "questions":
+            where, args = f"question_id IN ({ph})", ids
+        else:
+            where, args = f"question_id IN (SELECT id FROM questions WHERE chapter_id IN ({ph}))", ids
+    elif scope == "all":
+        if body.get("confirm") != "RESET":
+            raise ValueError("Phải gõ RESET để xác nhận reset toàn bộ")
+        where, args = "1=1", []
+    else:
+        raise ValueError("Phạm vi reset không hợp lệ")
+    auto_backup()  # bản sao đầy đủ của hôm nay (đã gồm lịch sử dùng)
+    rows = [{k: r[k] for k in r.keys()} for r in q(f"SELECT * FROM exam_usage WHERE {where}", args, fetch=True)]
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    snap = os.path.join(BACKUP_DIR, f"truoc_reset_{stamp}.json")
+    with open(snap, "w", encoding="utf-8") as f:
+        json.dump({"scope": scope, "ids": body.get("ids", []), "usage": rows}, f, ensure_ascii=False, indent=1)
+    with closing(sqlite3.connect(DB_PATH)) as conn:
+        n = conn.execute(f"DELETE FROM exam_usage WHERE {where}", args).rowcount
+        conn.commit()
+    return {"deleted": n, "snapshot": os.path.basename(snap)}
 
 
 def item_analysis(tables):

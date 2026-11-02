@@ -49,6 +49,11 @@
   .sec-title { display:none; }
   #pane2 .sec-title { display:block; margin-bottom:6px; }
   .pane { display:none; } .pane.on { display:block; }
+  .pc { width:34px; text-align:center; }
+  .sec:not(.pct) .pc, .sec:not(.pct) .pctbar { display:none; }
+  .pctbar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:8px; }
+  .pctbar label { white-space:nowrap; }
+  .pctbar .ok { color:#16a34a; font-weight:600; } .pctbar .bad { color:#b91c1c; font-weight:600; }
   .wiznav { margin-top:14px; padding-top:10px; border-top:1px solid var(--line); }
   .twocol { display:flex; gap:16px; align-items:flex-start; }
   .side { width:250px; flex:0 0 250px; border-right:1px solid var(--line); padding-right:12px; max-height:82vh; overflow:auto; position:sticky; top:8px; }
@@ -121,6 +126,13 @@
     <button class="g" onclick="importPaste()">Xem trước dữ liệu dán</button>
   </details>
   <div class="row">
+    <span class="sub">Reset tình trạng ra đề:</span>
+    <button class="d" onclick="resetUsage('questions')">Câu đang tick</button>
+    <button class="d" onclick="resetUsage('chapters')">Chương đang lọc</button>
+    <button class="d" onclick="resetUsage('all')">Toàn bộ CSDL</button>
+    <span class="sub">Chỉ xóa số lần đã ra đề, không xóa câu.</span>
+  </div>
+  <div class="row">
     <span class="sub">Rà soát dữ liệu:</span>
     <button class="g" onclick="showDuplicates()">Kiểm tra trùng</button>
     <button class="g" onclick="withBusy(this, showSimilar)">Tìm câu gần giống</button>
@@ -183,6 +195,12 @@
 <section id="stats">
   <div id="statTotals" class="row"></div>
   <table id="statTable"></table>
+  <div class="card" style="margin-top:16px">
+    <b>Chưa từng ra đề</b> <span class="sub">Câu đã duyệt, không thuộc đoạn văn, chưa có trong lịch sử dùng. Đây là số câu còn có thể chọn không trùng.</span>
+    <div class="row" style="margin-top:8px"><label>Dạng câu:</label>
+      <select id="unusedType" onchange="renderUnused()"><option value="">Mọi dạng</option><option value="TN">Trắc nghiệm</option><option value="DS">Đúng/sai</option><option value="DT">Điền từ</option><option value="TL">Tự luận</option></select></div>
+    <div class="tblwrap"><table id="unusedTable"></table></div>
+  </div>
   <div class="card" style="margin-top:16px">
     <b>Độ khó thực tế</b> <span class="sub">Nhập tỷ lệ đúng (%) của từng câu sau kỳ thi. Mỗi dòng: mã câu, tỷ lệ. Nhập nhiều lần cho cùng câu thì lấy trung bình.</span>
     <div class="row" style="margin-top:8px">
@@ -311,6 +329,7 @@
     <div class="card">
       <div class="row"><b>Tóm tắt trước khi xuất</b></div>
       <div id="sumBox"></div>
+      <div class="row" style="margin-top:10px"><label>Seed chọn câu (để trống = ngẫu nhiên): <input id="seedIn" class="n" style="width:140px"></label></div>
       <div class="row" style="margin-top:10px"><label><input type="checkbox" id="confirmChk"> Tôi đã kiểm tra thông tin trên và muốn xuất đề</label></div>
     </div>
     <div class="row"><button class="p" id="btnExport" onclick="withBusy(this, doExport)">Xuất .zip các file .docx</button><button class="g" onclick="printPreview()">Xem bản in</button><span id="exportMsg" class="msg"></span><span id="shortMsg" class="err"></span></div>
@@ -449,6 +468,8 @@ async function exportMoodle() {
 
 // ---------- chọn nhiều câu để sửa hàng loạt
 const SEL = new Set();
+const PCT_OPTS = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
+let UNUSED_STATS = null;  // thống kê gần nhất (có số câu chưa từng ra đề)
 function updateSelBar() {
   $("#selCount").textContent = SEL.size;
 }
@@ -1071,6 +1092,49 @@ async function loadStats() {
   const rows = s.chapters.map(c => `<tr><td>${esc(c.course)}</td><td>${esc(c.textbook)}</td><td>${esc(c.code)}${c.title ? " - " + esc(c.title) : ""}</td>
       ${Object.keys(BLOOM).map(k=>`<td class="num">${c.counts[k]||0}</td>`).join("")}<td class="num"><b>${c.total}</b></td></tr>`).join("");
   $("#statTable").innerHTML = `<thead>${head}</thead><tbody>${rows || `<tr><td colspan="9" class="msg">Chưa có chương nào.</td></tr>`}</tbody>`;
+  UNUSED_STATS = s;
+  renderUnused();
+}
+function renderUnused() {
+  const s = UNUSED_STATS;
+  if (!s) return;
+  const qt = $("#unusedType").value;
+  const cnt = (u, k) => qt ? ((u[qt] || {})[k] || 0) : Object.values(u).reduce((a, t) => a + (t[k] || 0), 0);
+  const tot = Object.fromEntries(Object.keys(BLOOM).map(k => [k, 0]));
+  const rows = s.chapters.map(c => {
+    const u = (s.unused || {})[c.id] || {};
+    const vals = Object.keys(BLOOM).map(k => { tot[k] += cnt(u, k); return cnt(u, k); });
+    return `<tr><td>${esc(c.course)}</td><td>${esc(c.textbook)}</td><td>${esc(c.code)}${c.title ? " - " + esc(c.title) : ""}</td>
+      ${vals.map(v => `<td class="num">${v}</td>`).join("")}<td class="num"><b>${vals.reduce((a, b) => a + b, 0)}</b></td></tr>`;
+  }).join("");
+  const head = `<tr><th>Học phần</th><th>Giáo trình</th><th>Chương</th>${Object.entries(BLOOM).map(([k, v]) => `<th class="num">${k}. ${v}</th>`).join("")}<th class="num">Cộng</th></tr>`;
+  const foot = `<tr><th colspan="3">Tổng</th>${Object.keys(BLOOM).map(k => `<th class="num">${tot[k]}</th>`).join("")}<th class="num">${Object.values(tot).reduce((a, b) => a + b, 0)}</th></tr>`;
+  $("#unusedTable").innerHTML = `<thead>${head}</thead><tbody>${rows || `<tr><td colspan="9" class="msg">Chưa có chương nào.</td></tr>`}</tbody><tfoot>${foot}</tfoot>`;
+}
+
+// reset tình trạng ra đề: câu đang tick, chương đang lọc, hoặc toàn bộ (phải gõ RESET)
+async function resetUsage(scope) {
+  const body = { scope };
+  if (scope === "questions") {
+    if (!SEL.size) { toast("Chưa tick câu nào ở bảng.", true); return; }
+    if (!confirm(`Reset lịch sử ra đề của ${SEL.size} câu đã tick? Câu không bị xóa.`)) return;
+    body.ids = [...SEL];
+  } else if (scope === "chapters") {
+    const ch = $("#fChapter").value;
+    if (!ch) { toast("Chọn một chương ở bộ lọc trước.", true); return; }
+    if (!confirm("Reset lịch sử ra đề của toàn bộ câu trong chương đang lọc? Câu không bị xóa.")) return;
+    body.ids = [+ch];
+  } else {
+    const t = prompt("Reset lịch sử ra đề của TOÀN BỘ câu hỏi (câu vẫn giữ nguyên, trước khi reset sẽ có bản sao lưu).\nGõ RESET để xác nhận:");
+    if (t !== "RESET") { if (t !== null) toast("Chưa đúng chữ RESET, chưa reset.", true); return; }
+    body.confirm = "RESET";
+  }
+  try {
+    const r = await postJson("/api/usage/reset", body);
+    toast(`Đã reset ${r.deleted} lượt ra đề. Bản sao lưu: ${r.snapshot}`);
+    loadQuestions();
+    if (UNUSED_STATS) loadStats();
+  } catch (e) { toast(e.message, true); }
 }
 
 // ---------- phân tích câu hỏi từ bảng điểm
@@ -1199,6 +1263,11 @@ function readSections() {
     passages: [...card.querySelectorAll(".prow")]
       .map(r => ({ chapter_id: +r.querySelector(".pch").value, n: +r.querySelector(".pn").value || 0 }))
       .filter(x => x.n > 0 && x.chapter_id),
+    mode: card.classList.contains("pct") ? "pct" : "manual",
+    total: Math.max(0, Math.floor(+card.querySelector(".pc-total").value || 0)),
+    pct: Object.fromEntries([...card.querySelectorAll(".pc-p")].map(sel => [sel.dataset.b, +sel.value])),
+    chapters: [...card._picked].sort((a, b) => a - b),
+    locked: !!card._locked,
   }));
 }
 async function saveConfig() {
@@ -1236,6 +1305,13 @@ function applyCfg(cfg) {
       if (m.n > 0 && haveFor(m.chapter_id, m.bloom, s.qtype || "") > 0) card._vals.set(valKey(m.chapter_id, m.bloom), m.n);
     }
     for (const ps of s.passages || []) addPassRow(card, ps.chapter_id, ps.n);
+    if (s.mode === "pct") {
+      card._picked = new Set((s.chapters || []).map(Number));
+      card.querySelector(".pc-total").value = s.total || "";
+      card.querySelectorAll(".pc-p").forEach(sel => { sel.value = (s.pct || {})[sel.dataset.b] ?? 0; });
+      setMode(card, "pct");
+      if (s.locked) pctLock(card);
+    }
   }
   if (cfg.template) $("#tpl").value = cfg.template;
   if (cfg.key_template) $("#keyTpl").value = cfg.key_template;
@@ -1312,15 +1388,25 @@ function addSection(title = "", qtype = "") {
   div._vals = new Map();  // số câu đã nhập
   div._items = [];        // các mục đang hiển thị (đầu học phần hoặc dòng chương)
   div._sums = {};         // tổng câu theo học phần
+  div._picked = new Set(); // chương được chọn để chia theo tỷ lệ
+  div._locked = false;     // đã chốt (tổng, tỷ lệ, chương): không sửa được cho tới khi mở khóa
   div.innerHTML = `
     <div class="row sh">
       <input class="st" style="width:260px" placeholder="Tiêu đề phần" value="${esc(title)}" oninput="this.closest('.sec').querySelector('.sec-title').textContent=this.value">
       <select class="sq" onchange="refreshSection(this.closest('.sec'))">${Object.entries(QT).map(([k, v]) => `<option value="${k}" ${k === qtype ? "selected" : ""}>${v}</option>`).join("")}</select>
+      <select class="smode" onchange="setMode(this.closest('.sec'), this.value)"><option value="manual">Nhập tay từng ô</option><option value="pct">Theo tỷ lệ %</option></select>
       <label><input type="checkbox" class="ss" checked> Xáo câu & phương án</label>
       <span style="flex:1"></span>
       <button class="d" onclick="this.closest('.sec').remove()">Xóa phần</button>
     </div>
     <div class="sb"><b class="sec-title">${esc(title)}</b>
+      <div class="row pctbar">
+        <label>Tổng số câu: <input class="n pc-total" style="width:70px" placeholder="vd 50" oninput="pctInput(this)"></label>
+        ${Object.entries(BLOOM).map(([k, v]) => `<label>${k}. ${v} <select class="pc-p" data-b="${k}" onchange="pctInput(this)">${PCT_OPTS.map(x => `<option value="${x}" ${x === 20 ? "selected" : ""}>${x}%</option>`).join("")}</select></label>`).join("")}
+        <span class="pc-sum sub"></span>
+        <button class="g pc-lock" onclick="pctLock(this.closest('.sec'))">Chốt</button>
+        <span class="pc-msg sub"></span>
+      </div>
       <div class="row fillbar">
         <label>Điền nhanh các dòng đang hiện:</label>
         <select class="fb-b">${[["", "Mọi mức"], ...Object.entries(BLOOM)].map(([k, v]) => `<option value="${k}">${k ? k + ". " : ""}${v}</option>`).join("")}</select>
@@ -1329,7 +1415,7 @@ function addSection(title = "", qtype = "") {
         <span class="sub sec-total"></span>
       </div>
       <div class="tblwrap"><table class="ctab">
-        <thead><tr><th>Chương</th>${Object.entries(BLOOM).map(([k, v]) => `<th class="num">${k}. ${v}</th>`).join("")}</tr></thead>
+        <thead><tr><th class="pc">Chọn</th><th>Chương</th>${Object.entries(BLOOM).map(([k, v]) => `<th class="num">${k}. ${v}</th>`).join("")}</tr></thead>
         <tbody class="cbody"></tbody>
       </table></div>
       <div class="row pblock" style="margin-top:8px"><b>Theo đoạn văn:</b> <span class="sub">lấy đủ số đoạn của chương, mỗi đoạn lấy mọi câu phù hợp</span>
@@ -1347,11 +1433,12 @@ function haveOf(c, bloom, qtype) {
 }
 
 // ô nhập số câu; ô không có câu nào (theo dạng của phần) bị khóa và làm mờ
-function cellHtml(c, k, qtype, val = 0) {
+function cellHtml(c, k, qtype, val = 0, ro = false) {
   const have = haveOf(c, k, qtype);
   const tip = have > 0 ? `Có ${have} câu` : `Chưa có câu mức ${BLOOM[k]}${qtype ? " dạng " + QT[qtype] : ""}`;
   return `<td class="num"><input class="n cell" data-ch="${c.id}" data-b="${k}" data-have="${have}" value="${have > 0 ? val : 0}"`
-    + (have > 0 ? ` oninput="cellInput(this)"` : ` disabled style="opacity:.35"`) + ` title="${tip}"></td>`;
+    + (have > 0 && !ro ? ` oninput="cellInput(this)"` : "") + (ro || have === 0 ? " disabled" : "")
+    + (have === 0 ? ` style="opacity:.35"` : "") + ` title="${tip}"></td>`;
 }
 
 // các mục hiển thị của một phần: theo dạng, học phần, tìm kiếm, "chỉ dòng đã nhập", thu gọn
@@ -1403,7 +1490,7 @@ function renderWindow(card) {
   const wrap = card.querySelector(".tblwrap");
   const tb = card.querySelector(".cbody");
   const qtype = card.querySelector(".sq").value;
-  const items = card._items, colspan = BLOOMS.length + 1;
+  const items = card._items, colspan = BLOOMS.length + 2;
   if (!items.length) {
     tb.innerHTML = `<tr><td class="msg" colspan="${colspan}">Không có chương nào khớp bộ lọc.</td></tr>`;
     return;
@@ -1427,11 +1514,12 @@ function scheduleWindow(card) {
 function itemHtml(card, it, qtype) {
   if (it.head) {
     const s = card._sums[it.cid] || 0;
-    return `<tr class="ghead" data-course="${it.cid}"><td colspan="${BLOOMS.length + 1}"><span class="garrow">${COLLAPSED.has(it.cid) ? "▸" : "▾"}</span> <b>${esc(courseName(it.cid) || "Không rõ học phần")}</b> <span class="sub">${s ? "· " + s + " câu" : ""}</span></td></tr>`;
+    return `<tr class="ghead" data-course="${it.cid}"><td colspan="${BLOOMS.length + 2}"><span class="garrow">${COLLAPSED.has(it.cid) ? "▸" : "▾"}</span> <b>${esc(courseName(it.cid) || "Không rõ học phần")}</b> <span class="sub">${s ? "· " + s + " câu" : ""}</span></td></tr>`;
   }
   const c = it.c;
-  return `<tr class="crow" data-course="${it.cid}"><td title="${esc(chapterLabel(c))}">${esc(chapterLabel(c))}</td>`
-    + BLOOMS.map(k => cellHtml(c, k, qtype, cellVal(card, c.id, k))).join("") + `</tr>`;
+  const ro = card.classList.contains("pct");
+  return `<tr class="crow" data-course="${it.cid}"><td class="pc"><input type="checkbox" class="pchk" value="${c.id}" ${card._picked.has(c.id) ? "checked" : ""} ${card._locked ? "disabled" : ""} onchange="pickChapter(this)"></td><td title="${esc(chapterLabel(c))}">${esc(chapterLabel(c))}</td>`
+    + BLOOMS.map(k => cellHtml(c, k, qtype, cellVal(card, c.id, k), ro)).join("") + `</tr>`;
 }
 
 // tổng của phần và số câu nằm ở dòng đang bị ẩn (do lọc, tìm kiếm hoặc thu gọn)
@@ -1493,16 +1581,115 @@ function matrixOf(card) {
 // đổi dạng câu của phần: bỏ số đã nhập ở các ô không còn câu dạng này, rồi vẽ lại
 function refreshSection(card) {
   const qtype = card.querySelector(".sq").value;
+  if (card._locked) { card._locked = false; applyLockUI(card); toast("Đã mở khóa phần vì đổi dạng câu; hãy chốt lại."); }
   for (const k of [...card._vals.keys()]) {
     const [ch, b] = k.split(":");
     if (!haveFor(ch, b, qtype)) card._vals.delete(k);
   }
+  if (card.classList.contains("pct")) { pctRecalc(card); return; }
   renderCard(card);
   updateShort();
 }
 
+// ---------- chia theo tỷ lệ %: tổng câu × tỷ lệ từng mức, chia đều cho các chương được chọn
+// làm tròn theo phần dư lớn nhất để tổng đúng bằng số câu; chương nào thiếu câu thì phần dư chia cho chương còn chỗ
+function allocPercent(card) {
+  const qtype = card.querySelector(".sq").value;
+  const N = Math.max(0, Math.floor(+card.querySelector(".pc-total").value || 0));
+  const pct = {};
+  card.querySelectorAll(".pc-p").forEach(sel => { pct[sel.dataset.b] = +sel.value; });
+  const sum = Object.values(pct).reduce((a, b) => a + b, 0);
+  const target = {}, rem = [];
+  let base = 0;
+  for (const k of BLOOMS) {
+    const exact = N * (pct[k] || 0) / 100;
+    target[k] = Math.floor(exact); base += target[k];
+    rem.push([k, exact - Math.floor(exact)]);
+  }
+  rem.sort((a, b) => b[1] - a[1]);
+  for (let i = 0; i < N - base; i++) target[rem[i % rem.length][0]]++;
+  const chs = [...card._picked].map(id => CHMAP.get(id)).filter(Boolean).sort((a, b) => a._ord - b._ord);
+  const cells = new Map(), short = [];
+  for (const k of BLOOMS) {
+    let r = target[k];
+    const give = new Map(chs.map(c => [c.id, 0]));
+    while (r > 0) {
+      let progressed = false;
+      for (const c of chs) {
+        if (r <= 0) break;
+        if (give.get(c.id) < haveOf(c, k, qtype)) { give.set(c.id, give.get(c.id) + 1); r--; progressed = true; }
+      }
+      if (!progressed) break;
+    }
+    if (r > 0) short.push(`${BLOOM[k]} thiếu ${r} câu`);
+    for (const [id, n] of give) if (n > 0) cells.set(valKey(id, k), n);
+  }
+  return { cells, short, N, sum, target };
+}
+
+// tính lại ô từ tổng, tỷ lệ và chương đã chọn (bỏ qua khi đã chốt)
+function pctRecalc(card) {
+  if (card._locked) return;
+  const { cells, short, N, sum } = allocPercent(card);
+  card._vals = cells;
+  renderCard(card);
+  updateShort();
+  const total = [...cells.values()].reduce((a, b) => a + b, 0);
+  card.querySelector(".pc-sum").innerHTML = `Tổng tỷ lệ: <span class="${sum === 100 ? "ok" : "bad"}">${sum}%</span> (cần 100%)`;
+  const msg = !N ? "Nhập tổng số câu."
+    : !card._picked.size ? "Tick chọn ít nhất một chương."
+    : short.length ? `Không đủ câu: ${short.join("; ")}.`
+    : `Đã phân bổ ${total}/${N} câu.`;
+  card.querySelector(".pc-msg").innerHTML = (short.length || !N || !card._picked.size) ? `<span class="err">${esc(msg)}</span>` : esc(msg);
+}
+function pctInput(el) { pctRecalc(el.closest(".sec")); }
+function pickChapter(el) {
+  const card = el.closest(".sec"), id = +el.value;
+  if (el.checked) card._picked.add(id); else card._picked.delete(id);
+  pctRecalc(card);
+}
+
+// chuyển chế độ: nhập tay hoặc theo tỷ lệ (lần đầu chọn mọi chương có câu của dạng)
+function setMode(card, mode) {
+  if (card._locked) { card.querySelector(".smode").value = card.classList.contains("pct") ? "pct" : "manual"; return; }
+  card.querySelector(".smode").value = mode;
+  card.classList.toggle("pct", mode === "pct");
+  if (mode === "pct") {
+    if (!card._picked.size) {
+      const qtype = card.querySelector(".sq").value;
+      for (const c of CHMAP.values()) if (BLOOMS.some(k => haveOf(c, k, qtype) > 0)) card._picked.add(c.id);
+    }
+    pctRecalc(card);
+  } else {
+    renderCard(card); updateShort();
+  }
+}
+
+// khóa / mở khóa phần đã chốt: khi khóa, mọi ô, tỷ lệ, chương và chế độ đều không sửa được
+function pctLock(card) {
+  if (card._locked) { card._locked = false; applyLockUI(card); pctRecalc(card); return; }
+  const { short, N, sum } = allocPercent(card);
+  if (sum !== 100) { toast(`Tổng tỷ lệ phải bằng 100% (hiện ${sum}%) mới chốt được.`, true); return; }
+  if (!N) { toast("Nhập tổng số câu trước khi chốt.", true); return; }
+  if (!card._picked.size) { toast("Tick chọn ít nhất một chương.", true); return; }
+  if (short.length) { toast("Không đủ câu: " + short.join("; "), true); return; }
+  card._locked = true;
+  applyLockUI(card);
+  pctRecalc(card);
+  toast("Đã chốt phần. Muốn sửa thì bấm “Mở khóa”.");
+}
+function applyLockUI(card) {
+  const on = card._locked;
+  card.classList.toggle("locked", on);
+  card.querySelectorAll(".pc-total, .pc-p, .pchk").forEach(x => { x.disabled = on; });
+  card.querySelector(".smode").disabled = on;
+  card.querySelector(".pc-lock").textContent = on ? "Mở khóa để sửa" : "Chốt";
+  renderCard(card);
+}
+
 // điền nhanh: đặt số cho mọi ô của các dòng đang hiện (không vượt số câu có sẵn)
 function fillVisible(card) {
+  if (card.classList.contains("pct")) { toast("Phần theo tỷ lệ không điền nhanh; đổi sang “Nhập tay từng ô” để dùng.", true); return; }
   const b = card.querySelector(".fb-b").value;
   const n = Math.max(0, parseInt(card.querySelector(".fb-n").value, 10) || 0);
   const qtype = card.querySelector(".sq").value;
@@ -1660,6 +1847,9 @@ function validateStep(n) {
     }
     const short = shortCount();
     if (short) { toast(`Còn ${short} ô thiếu câu hỏi (tô đỏ).`, true); return false; }
+    for (const card of document.querySelectorAll(".sec.pct")) {
+      if (!card._locked) { toast(`Phần “${card.querySelector(".st").value || "(chưa đặt tên)"}” theo tỷ lệ: tổng 100% rồi bấm Chốt trước khi qua bước tiếp.`, true); return false; }
+    }
     return true;
   }
   if (n === 3) {  // thông tin đề: chỉ hỏi khi thiếu, người dùng có thể đi tiếp
@@ -1778,6 +1968,7 @@ async function doExportInner() {
     prefix: $("#prefix").value,
     answer_key: $("#answerKey").checked, key_separate: $("#keySeparate").checked,
     record_usage: $("#recordUsage").checked, save_history: $("#saveHistory").checked,
+    seed: $("#seedIn").value.trim(),
   };
   $("#exportMsg").textContent = "Đang tạo...";
   try {
@@ -1789,12 +1980,13 @@ async function doExportInner() {
     const a = Object.assign(document.createElement("a"), { href: url, download: fm ? decodeURIComponent(fm[1]) : "de_thi.zip" });
     a.click(); URL.revokeObjectURL(url);
     const reused = +r.headers.get("X-Reused") || 0;
+    const seed = r.headers.get("X-Seed") || "";
     toast("Đã tải xuống file đề.");
     // xuất xong: bỏ bản xem trước và ô xác nhận để lần sau không dùng lại đúng các câu cũ
     PREVIEW = null; renderPreview(); setPreviewStatus();
     $("#confirmChk").checked = false;
     loadHistory();
-    $("#exportMsg").textContent = "Đã tải xuống. " + (reused
+    $("#exportMsg").textContent = `Đã tải xuống (seed ${seed}; nhập lại seed này để chọn lại đúng các câu nếu lịch sử dùng chưa đổi). ` + (reused
       ? `Ưu tiên câu chưa dùng, còn ${reused} câu đã dùng trước đó phải chọn lại (ngân hàng thiếu câu mới).`
       : "Tất cả câu được chọn đều chưa dùng trong các đề trước.");
   } catch (e) { $("#exportMsg").innerHTML = `<span class="err">${esc(e.message)}</span>`; }
