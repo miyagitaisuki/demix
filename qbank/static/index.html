@@ -671,18 +671,17 @@ async function loadDifficulty() {
       : `<span class="msg">Chưa có câu nào bất thường.</span>`}`;
 }
 // nhận "mã,tỷ lệ", "mã<Tab>tỷ lệ" (dán từ Excel) hoặc "mã;tỷ lệ"
-async function saveResults(replace = false) {
+async function saveResults() {
   const rows = $("#resRows").value.split("\n").map(s => s.trim()).filter(Boolean).map(line => {
     const m = /^(.+?)\s*[\t;,]\s*(\S.*)$/.exec(line);
     return m ? { code: m[1].trim(), pct: m[2].trim() } : { code: line, pct: "" };
   });
   if (!rows.length) { $("#resMsg").innerHTML = `<span class="err">Nhập ít nhất một dòng.</span>`; return; }
   try {
-    const r = await postJson("/api/results", { exam_code: $("#resExam").value, rows, replace });
+    const r = await postJson("/api/results", { exam_code: $("#resExam").value, rows });
     $("#resMsg").innerHTML = `Đã ghi ${r.added} dòng.` + (r.errors.length ? ` <span class="err">${esc(r.errors.join(" | "))}</span>` : "");
     if (r.added) { $("#resRows").value = ""; loadDifficulty(); }
   } catch (e) {
-    if (e.confirm && confirm(e.message + "\n\nBấm Hủy để giữ kết quả cũ và chỉnh lại mã đề.")) return saveResults(true);
     $("#resMsg").innerHTML = `<span class="err">${esc(e.message)}</span>`;
   }
 }

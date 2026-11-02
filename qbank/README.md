@@ -197,7 +197,7 @@ Chi tiết từng lỗi và cách tái hiện: `docs/bao_cao_kiem_thu_2026-11-02
 
 ### Trạng thái sửa
 - **Đã sửa (đợt 1):** B01–B05, B07–B13, B15–B20, B23–B25, B16, B17, B18.
-- **Đã sửa (đợt 2):** B14 (ô số trang trong bước 3), B21 (xóa chương dọn đoạn văn mồ côi), B26 (dán kết quả từ Excel; hỏi trước khi thay kết quả của mã đề đã có), B27 (cảnh báo đoạn văn gần giống khi nhập Word), B28 (mở một câu không tải cả ngân hàng), B30 (nháp wizard giữ trên trình duyệt sau F5), B31 (giữ tối đa 100 bản xuất), B32 (nút đang xử lý bị khóa).
+- **Đã sửa (đợt 2):** B14 (ô số trang trong bước 3), B21 (xóa chương dọn đoạn văn mồ côi), B26 (dán kết quả từ Excel; kết quả cũ của mã đề được giữ, chỉ thêm dòng mới), B27 (cảnh báo đoạn văn gần giống khi nhập Word), B28 (mở một câu không tải cả ngân hàng), B30 (nháp wizard giữ trên trình duyệt sau F5), B31 (quá 100 bản xuất thì reset lịch sử về 0 trước khi lưu bản mới), B32 (nút đang xử lý bị khóa).
 - **Sửa một phần:** B06 (tìm câu gần giống: 8 giây với 3.000 câu, trước đây 42 giây; vẫn tăng theo số cặp, cần chỉ mục chạy nền khi quy mô lớn hơn). B29 (màn hình 375px giảm từ 608px xuống 468px, vẫn cuộn ngang).
 - **Chưa sửa:** B22 (đổi chương giữ mã cũ; cần quyết định: mã có nên đổi khi chuyển chương hay không, vì kết quả thi tham chiếu mã câu).
 - **Chưa làm:** toàn bộ mục tính năng mới trong danh sách trên.

@@ -1186,15 +1186,12 @@ def make_sample_templates():
 
 
 # ---------------------------------------------------------------- stats & backup
-def record_results(exam_code, rows, replace=False):
-    """rows: [(mã câu, tỷ lệ đúng %)]. Mã đề đã có kết quả thì hỏi trước khi thay thế (replace=True)."""
+def record_results(exam_code, rows):
+    """rows: [(mã câu, tỷ lệ đúng %)]. Chỉ thêm dòng mới; kết quả cũ của mã đề được giữ nguyên."""
     exam_code = str(exam_code).strip()
     if not exam_code:
         raise ValueError("Thiếu mã đề")
-    if q("SELECT 1 FROM question_results WHERE exam_code=? LIMIT 1", (exam_code,), True):
-        if not replace:
-            raise NeedConfirm(f"Mã đề {exam_code} đã có kết quả. Bấm OK để thay thế toàn bộ kết quả cũ của mã đề này.")
-        q("DELETE FROM question_results WHERE exam_code=?", (exam_code,))
+
     now = datetime.now().isoformat(timespec="seconds")
     added, errors, to_insert = 0, [], []
     for n, (code, pct) in enumerate(rows, 1):
@@ -1720,7 +1717,7 @@ class Handler(BaseHTTPRequestHandler):
         if p == "/api/results":  # nhập tỷ lệ đúng của câu sau kỳ thi
             b = self._json_body()
             rows = [(line.get("code", ""), line.get("pct", "")) for line in b.get("rows", [])]
-            return self._json(200, record_results(b.get("exam_code", ""), rows, bool(b.get("replace"))))
+            return self._json(200, record_results(b.get("exam_code", ""), rows))
         if p == "/api/questions/bulk":  # đổi chương/mức Bloom cho nhiều câu
             b = self._json_body()
             return self._json(200, bulk_update(b.get("ids", []), b.get("chapter_id") or None, b.get("bloom") or None))
@@ -1946,11 +1943,13 @@ class Handler(BaseHTTPRequestHandler):
         record_usage(usage_rows)
         data = out.getvalue()
         if body.get("save_history", True):  # lưu bản xuất để tải lại hoặc in lại đáp án
+            if q("SELECT COUNT(*) AS n FROM exam_exports", fetch=True)[0]["n"] > 100:
+                q("DELETE FROM exam_exports")  # quá 100 bản: reset lịch sử về 0, coi như chưa xuất lần nào
             q("INSERT INTO exam_exports(created_at, name, codes, config, data) VALUES(?,?,?,?,?)",
               (now, exam_name, ", ".join(codes),
                json.dumps({"meta": body.get("meta", {}), "variants": variants, "start": start,
                            "prefix": prefix, "template": tpl}, ensure_ascii=False), data))
-            q("DELETE FROM exam_exports WHERE id NOT IN (SELECT id FROM exam_exports ORDER BY id DESC LIMIT 100)")
+
         fname = export_filename(meta.get("ma_hp"), codes_all, now)
         self._send(200, data, "application/zip",
                    {"X-Reused": str(reused), "X-Variants": str(variants),
