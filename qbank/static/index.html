@@ -30,6 +30,9 @@
   .err { color:#b91c1c; }
   .opts { color:var(--mut); white-space:pre-line; }
   input.n { width:70px; text-align:right; }
+  .pager { display:flex; align-items:center; justify-content:flex-end; gap:4px; color:var(--mut); font-size:13px; margin-bottom:6px; }
+  .pager button { padding:2px 10px; font-size:18px; line-height:1.2; }
+  .pager button:disabled { opacity:.35; cursor:default; }
   label { color:var(--mut); font-size:13px; }
   .tree ul { list-style:none; padding-left:18px; margin:4px 0; }
   .tree > ul { padding-left:0; }
@@ -128,11 +131,11 @@
     <button class="g" onclick="selectShown()">Chọn các câu đang hiện</button>
     <button class="g" onclick="clearSel()">Bỏ chọn</button>
   </div>
+  <div class="pager" id="qPager"></div>
   <table>
     <thead><tr><th style="width:28px"></th><th>Mã câu</th><th>Học phần / Giáo trình / Chương</th><th>Bloom</th><th>Loại</th><th>Nội dung</th><th>Đáp án</th><th></th></tr></thead>
     <tbody id="qBody"></tbody>
   </table>
-  <div class="row" id="qPager" style="margin-top:8px"></div>
 </div>
 </div>
 </section>
@@ -406,7 +409,7 @@ async function bulkApply() {
 }
 
 // bảng ngân hàng hiện từng trang; đổi bộ lọc thì về trang đầu
-const QPER = 100;
+const QPER = 50;
 let QPAGE = 0;
 async function loadQuestions(page = 0) {
   await loadTree();
@@ -436,13 +439,13 @@ async function loadQuestions(page = 0) {
     </tr>`).join("") || `<tr><td colspan="8" class="msg">Chưa có câu hỏi nào. Nhấn “+ Câu mới” hoặc nhập từ .docx.</td></tr>`;
 }
 
+// thanh phân trang kiểu Gmail: "1–50 của 17981" và hai nút ‹ ›
 function renderQPager(total) {
-  const pages = Math.max(1, Math.ceil(total / QPER));
   const from = total ? QPAGE * QPER + 1 : 0, to = Math.min(total, (QPAGE + 1) * QPER);
-  $("#qPager").innerHTML = `<span class="sub">${from}–${to} / ${total} câu</span>
-    <button class="g" ${QPAGE <= 0 ? "disabled" : ""} onclick="loadQuestions(${QPAGE - 1})">‹ Trước</button>
-    <span class="sub">Trang ${QPAGE + 1}/${pages}</span>
-    <button class="g" ${QPAGE + 1 >= pages ? "disabled" : ""} onclick="loadQuestions(${QPAGE + 1})">Sau ›</button>`;
+  const last = (QPAGE + 1) * QPER >= total;
+  $("#qPager").innerHTML = `<span>${from}–${to} của ${total}</span>
+    <button class="g" title="Trang trước" aria-label="Trang trước" ${QPAGE <= 0 ? "disabled" : ""} onclick="loadQuestions(${QPAGE - 1})">‹</button>
+    <button class="g" title="Trang sau" aria-label="Trang sau" ${last ? "disabled" : ""} onclick="loadQuestions(${QPAGE + 1})">›</button>`;
 }
 
 // cây học phần / giáo trình / chương ở bên trái; bấm để lọc

@@ -1514,7 +1514,7 @@ class Handler(BaseHTTPRequestHandler):
                 args += [f"%{kw}%"] * 5
             sql += " ORDER BY co.name, t.name, ch.code, qs.bloom, qs.id"
             if "page" in qs:  # bảng ngân hàng: trả từng trang và tổng số câu khớp
-                per = min(max(int(arg("per") or 100), 1), 500)
+                per = min(max(int(arg("per") or 50), 1), 50)  # tối đa 50 câu mỗi trang
                 page_no = max(int(arg("page") or 0), 0)
                 total = q(f"SELECT COUNT(*) AS n FROM ({sql})", args, fetch=True)[0]["n"]
                 rows = q(sql + " LIMIT ? OFFSET ?", args + [per, page_no * per], fetch=True)
