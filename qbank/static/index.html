@@ -188,6 +188,47 @@
   .pager button { padding:4px 10px; }
   .tblwrap { border-radius:8px; }
   .ctab, .fillbar { font-size:13px; }
+  /* thống kê và cấu trúc */
+  .kpis { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:12px; margin-bottom:16px; }
+  .kpi { background:#fff; border:1px solid var(--line); border-radius:12px; padding:14px 16px; box-shadow:0 1px 2px rgba(15,23,42,.04); }
+  .kpi span { display:block; font-size:11.5px; font-weight:600; color:var(--mut); text-transform:uppercase; letter-spacing:.05em; }
+  .kpi b { display:block; margin-top:4px; font-size:24px; font-weight:700; letter-spacing:-.02em; font-variant-numeric:tabular-nums; }
+  .kpi.total b { color:var(--b); }
+  .panel { background:#fff; border:1px solid var(--line); border-radius:12px; padding:16px; margin-bottom:16px; box-shadow:0 1px 2px rgba(15,23,42,.04); }
+  .panel > .ph { margin:0 0 4px; font-size:14px; font-weight:700; color:var(--ink); }
+  .panel > .ps { display:block; margin-bottom:12px; }
+  .panel .tblwrap { border:1px solid var(--line); border-radius:10px; max-height:460px; }
+  .panel .tblwrap thead th { position:sticky; top:0; background:#f8fafc; z-index:2; }
+  .panel table.qtable { font-size:13px; }
+  .panel .row { margin-bottom:8px; }
+  #stats table.qtable th, #struct table.qtable th, #stats .panel table th { background:#f8fafc; font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:#64748b; padding:9px 12px; border-bottom:1px solid var(--line); }
+  #stats .panel td, #stats table td { padding:9px 12px; border-bottom:1px solid #f1f5f9; }
+  #stats table tfoot th { background:#f8fafc; color:var(--ink); font-size:12px; text-transform:none; letter-spacing:0; }
+  #statTable { border-collapse:separate; border-spacing:0; }
+  #statTable tbody tr:hover td, #unusedTable tbody tr:hover td { background:#fafcff; }
+  .tree-list #treeBox { max-height:560px; overflow:auto; padding-right:4px; }
+  .tree-list .car { width:18px; height:18px; flex:none; padding:0; border-radius:5px; border:1px solid #cbd5e1; background:#fff; color:#64748b; font-size:13px; line-height:1; display:inline-flex; align-items:center; justify-content:center; }
+  .tree-list .car:hover { border-color:var(--b); color:var(--b); }
+  .tree-list .car.none { visibility:hidden; border:0; background:none; }
+  .tree-list ul { list-style:none; margin:0; padding:0; }
+  .tree-list > ul { padding:0; }
+  .tree-list ul ul { margin-left:18px; padding-left:12px; border-left:1px solid #e2e8f0; }
+  .tree-list li { margin:0; }
+  .tree-list .trow { display:flex; align-items:center; gap:8px; padding:6px 8px; border-radius:8px; }
+  .tree-list .trow:hover { background:#f8fafc; }
+  .tree-list .trow .name { flex:1; min-width:0; }
+  .tree-list .trow .name > b { font-weight:600; }
+  .tree-list .trow button { padding:3px 9px; font-size:12px; }
+  .tree-list .trow.edit { background:#f8fafc; }
+  .tree-list .typ { display:inline-block; font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; padding:1px 7px; border-radius:999px; margin-right:6px; vertical-align:1px; }
+  .typ.c { background:#fef3c7; color:#92400e; }
+  .typ.t { background:#eff6ff; color:#1d4ed8; }
+  .typ.ch { background:#f1f5f9; color:#475569; }
+  .struct-forms { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; margin-bottom:16px; }
+  .struct-forms .panel { margin:0; }
+  .struct-forms .row { margin:8px 0 0; }
+  .struct-forms input, .struct-forms select { min-width:0; }
+  @media (max-width:1100px) { .kpis { grid-template-columns:repeat(3,minmax(0,1fr)); } .struct-forms { grid-template-columns:1fr; } }
   @media (max-width:1100px) { .filters { grid-template-columns:repeat(3,minmax(0,1fr)); } }
   @media (max-width:640px) { .filters { grid-template-columns:repeat(2,minmax(0,1fr)); } }
 </style>
@@ -288,42 +329,48 @@
 
 <!-- ============ CẤU TRÚC ============ -->
 <section id="struct">
-  <div class="card tree" id="treeBox"></div>
-  <div class="row">
-    <div class="card" style="flex:1;min-width:240px">
-      <b>Thêm học phần</b>
+  <div class="panel tree-list"><h3 class="ph">Cấu trúc học phần</h3><span class="sub ps">Học phần → giáo trình → chương. Mục chỉ xóa được khi không còn câu bên trong.</span><div id="treeBox"></div></div>
+  <div class="struct-forms">
+    <div class="panel">
+      <h3 class="ph">Thêm học phần</h3>
       <div class="row"><input id="newCourse" placeholder="VD: Tiếng Nhật N5" style="flex:1"><input id="newCourseCode" placeholder="Mã (N5)" style="width:90px"><button class="p" onclick="addCourse()">Thêm</button></div>
     </div>
-    <div class="card" style="flex:1;min-width:240px">
-      <b>Thêm giáo trình</b>
+    <div class="panel">
+      <h3 class="ph">Thêm giáo trình</h3>
       <div class="row"><select id="newTbCourse" style="flex:1"></select></div>
       <div class="row"><input id="newTb" placeholder="VD: Minna no Nihongo 1" style="flex:1"><input id="newTbCode" placeholder="Mã (MN1)" style="width:90px"><button class="p" onclick="addTextbook()">Thêm</button></div>
     </div>
-    <div class="card" style="flex:1;min-width:240px">
-      <b>Thêm chương</b>
+    <div class="panel">
+      <h3 class="ph">Thêm chương</h3>
       <div class="row"><select id="newChTb" style="flex:1"></select></div>
       <div class="row"><input id="newChCode" placeholder="Mã, VD: B03" style="width:100px"><input id="newChTitle" placeholder="Tên chương" style="flex:1"><button class="p" onclick="addChapter()">Thêm</button></div>
     </div>
   </div>
   <div id="structMsg" class="msg"></div>
-  <div class="card" style="margin-top:16px">
-    <b>Đoạn văn</b> <span class="sub">Mỗi đoạn có mã riêng. Câu cùng đoạn được xuất liền nhau. Thêm đoạn bằng cách nhập đoạn trong form câu hỏi.</span>
+  <div class="panel">
+    <h3 class="ph">Đoạn văn</h3><span class="sub ps">Mỗi đoạn có mã riêng. Câu cùng đoạn được xuất liền nhau. Thêm đoạn bằng cách nhập đoạn trong form câu hỏi.</span>
     <div id="passBox"></div>
   </div>
 </section>
 
 <!-- ============ THỐNG KÊ ============ -->
 <section id="stats">
-  <div id="statTotals" class="row"></div>
-  <table id="statTable"></table>
-  <div class="card" style="margin-top:16px">
-    <b>Chưa từng ra đề</b> <span class="sub">Câu đã duyệt, không thuộc đoạn văn, chưa có trong lịch sử dùng. Đây là số câu còn có thể chọn không trùng.</span>
-    <div class="row" style="margin-top:8px"><label>Dạng câu:</label>
-      <select id="unusedType" onchange="renderUnused()"><option value="">Mọi dạng</option><option value="TN">Trắc nghiệm</option><option value="DS">Đúng/sai</option><option value="DT">Điền từ</option><option value="TL">Tự luận</option></select></div>
-    <div class="tblwrap"><table id="unusedTable"></table></div>
+  <div id="statTotals" class="kpis"></div>
+  <div class="panel">
+    <h3 class="ph">Số câu theo chương</h3>
+    <span class="sub ps">Số câu đã duyệt và nháp, theo chương và mức Bloom.</span>
+    <div class="tblwrap"><table id="statTable" class="qtable"></table></div>
   </div>
-  <div class="card" style="margin-top:16px">
-    <b>Độ khó thực tế</b> <span class="sub">Nhập tỷ lệ đúng (%) của từng câu sau kỳ thi. Mỗi dòng: mã câu, tỷ lệ. Nhập nhiều lần cho cùng câu thì lấy trung bình.</span>
+  <div class="panel">
+    <h3 class="ph">Chưa từng ra đề</h3>
+    <span class="sub ps">Câu đã duyệt, không thuộc đoạn văn, chưa có trong lịch sử dùng. Đây là số câu còn có thể chọn không trùng.</span>
+    <div class="row"><label>Dạng câu:</label>
+      <select id="unusedType" onchange="renderUnused()"><option value="">Mọi dạng</option><option value="TN">Trắc nghiệm</option><option value="DS">Đúng/sai</option><option value="DT">Điền từ</option><option value="TL">Tự luận</option></select></div>
+    <div class="tblwrap"><table id="unusedTable" class="qtable"></table></div>
+  </div>
+  <div class="panel">
+    <h3 class="ph">Độ khó thực tế</h3>
+    <span class="sub ps">Nhập tỷ lệ đúng (%) của từng câu sau kỳ thi. Mỗi dòng: mã câu, tỷ lệ. Nhập nhiều lần cho cùng câu thì lấy trung bình.</span>
     <div class="row" style="margin-top:8px">
       <label>Mã đề:</label><input id="resExam" class="n" style="width:110px" placeholder="GK-2026">
     </div>
@@ -331,8 +378,9 @@
     <div class="row"><button class="g" onclick="saveResults()">Ghi kết quả</button><span id="resMsg" class="msg"></span></div>
     <div id="diffBox"></div>
   </div>
-  <div class="card" style="margin-top:16px">
-    <b>Phân tích câu hỏi từ bảng điểm</b> <span class="sub">Mỗi dòng một sinh viên; cột đầu là tên hoặc mã sinh viên; tiêu đề các cột sau là mã câu; ô điểm là 1 (đúng), 0 (sai) hoặc tỷ lệ điểm từ 0 đến 1. Nhập file .csv hoặc .xlsx.</span>
+  <div class="panel">
+    <h3 class="ph">Phân tích câu hỏi từ bảng điểm</h3>
+    <span class="sub ps">Mỗi dòng một sinh viên; cột đầu là tên hoặc mã sinh viên; tiêu đề các cột sau là mã câu; ô điểm là 1 (đúng), 0 (sai) hoặc tỷ lệ điểm từ 0 đến 1. Nhập file .csv hoặc .xlsx.</span>
     <div class="row" style="margin-top:8px">
       <input type="file" id="scoreFile" accept=".csv,.xlsx,.txt">
       <label><input type="checkbox" id="scoreRecord"> Ghi tỷ lệ đúng vào kết quả của mã đề (mã đề nhập ở trên)</label>
@@ -1183,17 +1231,41 @@ async function renderStruct() {
   // mục đang sửa tại chỗ thì thay dòng hiển thị bằng form; các mục khác giữ nguyên nút Sửa/Xóa
   const actions = (kind, id) => EDIT_NODE && EDIT_NODE.kind === kind && EDIT_NODE.id === id ? "" :
     ` <button class="g" onclick="renameNode('${kind}',${id})">Sửa</button> <button class="d" onclick="delNode('${kind}',${id})">Xóa</button>`;
-  const label = (kind, id, html) => EDIT_NODE && EDIT_NODE.kind === kind && EDIT_NODE.id === id ? nodeEditForm(kind, id) : html + actions(kind, id);
-  $("#treeBox").innerHTML = TREE.courses.length ? `<ul>` + TREE.courses.map(c => `
-    <li>${label("courses", c.id, `<b>${esc(c.name)}</b>${c.code ? ` <span class="sub">${esc(c.code)}</span>` : ""}`)}
-      <ul>${byCourse(c.id).map(t => `
-        <li>${label("textbooks", t.id, `${esc(t.name)}${t.code ? ` <span class="sub">${esc(t.code)}</span>` : ""}`)}
-          <ul>${byTb(t.id).map(ch => `
-            <li>${label("chapters", ch.id, `${esc(ch.code)}${ch.title ? " - " + esc(ch.title) : ""} <span class="sub">(${ch.count} câu)</span>`)}</li>`).join("")}</ul>
-        </li>`).join("")}</ul>
-    </li>`).join("") + `</ul>` : `<span class="msg">Chưa có học phần nào.</span>`;
+  const label = (kind, id, html) => EDIT_NODE && EDIT_NODE.kind === kind && EDIT_NODE.id === id
+    ? `<div class="trow edit">${nodeEditForm(kind, id)}</div>`
+    : `<div class="trow"><span class="name">${html}</span>${actions(kind, id)}</div>`;
+  const SOPEN = STRUCT_OPEN;
+  const car = (key, has, open) => has ? `<button class="car" onclick="toggleStruct('${key}')" title="${open ? "Thu gọn" : "Mở rộng"}">${open ? "−" : "+"}</button>` : `<span class="car none"></span>`;
+  const tbOf = id => byCourse(id);
+  let html = "";
+  for (const c of TREE.courses) {
+    const tbs = tbOf(c.id), cOpen = SOPEN.has("c" + c.id);
+    html += `<li>${label("courses", c.id, car("c" + c.id, tbs.length, cOpen) + `<span class="typ c">Học phần</span><b>${esc(c.name)}</b>${c.code ? ` <span class="sub">${esc(c.code)}</span>` : ""}`)}`;
+    if (cOpen) {
+      html += `<ul>`;
+      for (const t of tbs) {
+        const chs = byTb(t.id), tOpen = SOPEN.has("t" + t.id);
+        html += `<li>${label("textbooks", t.id, car("t" + t.id, chs.length, tOpen) + `<span class="typ t">Giáo trình</span>${esc(t.name)}${t.code ? ` <span class="sub">${esc(t.code)}</span>` : ""} <span class="sub">${chs.length} chương</span>`)}`;
+        if (tOpen) html += `<ul>` + chs.map(ch => `<li>${label("chapters", ch.id, `<span class="car none"></span><span class="typ ch">Chương</span>${esc(ch.code)}${ch.title ? " - " + esc(ch.title) : ""} <span class="sub">(${ch.count} câu)</span>`)}</li>`).join("") + `</ul>`;
+        html += `</li>`;
+      }
+      html += `</ul>`;
+    }
+    html += `</li>`;
+  }
+  $("#treeBox").innerHTML = TREE.courses.length ? `<ul>${html}</ul>` : `<span class="msg">Chưa có học phần nào.</span>`;
   $("#newTbCourse").innerHTML = TREE.courses.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join("");
   $("#newChTb").innerHTML = TREE.textbooks.map(t => `<option value="${t.id}">${esc(courseName(t.course_id))} / ${esc(t.name)}</option>`).join("");
+}
+
+// cấu trúc: học phần và giáo trình thu gọn như tab Ngân hàng; trạng thái nhớ trên máy
+const STRUCT_KEY = "qbank_struct_open";
+let STRUCT_OPEN = new Set();
+try { STRUCT_OPEN = new Set(JSON.parse(localStorage.getItem(STRUCT_KEY) || "[]")); } catch (e) { STRUCT_OPEN = new Set(); }
+function toggleStruct(key) {
+  STRUCT_OPEN.has(key) ? STRUCT_OPEN.delete(key) : STRUCT_OPEN.add(key);
+  try { localStorage.setItem(STRUCT_KEY, JSON.stringify([...STRUCT_OPEN])); } catch (e) {}
+  renderStruct();
 }
 
 async function loadHistory() {
@@ -1271,9 +1343,9 @@ const delNode = (kind, id) => structAction(async () => {
 // ---------- thống kê
 async function loadStats() {
   const s = await api("/api/stats");
-  $("#statTotals").innerHTML = `<span class="tag">Tổng: ${s.total}</span>
-     <span class="tag">Trắc nghiệm: ${s.by_type.TN || 0}</span><span class="tag">Đúng/sai: ${s.by_type.DS || 0}</span>
-     <span class="tag">Điền từ: ${s.by_type.DT || 0}</span><span class="tag">Tự luận: ${s.by_type.TL || 0}</span>`;
+  $("#statTotals").innerHTML = `<div class="kpi total"><span>Tổng câu</span><b>${s.total}</b></div>
+     <div class="kpi"><span>Trắc nghiệm</span><b>${s.by_type.TN || 0}</b></div><div class="kpi"><span>Đúng/sai</span><b>${s.by_type.DS || 0}</b></div>
+     <div class="kpi"><span>Điền từ</span><b>${s.by_type.DT || 0}</b></div><div class="kpi"><span>Tự luận</span><b>${s.by_type.TL || 0}</b></div>`;
   const head = `<tr><th>Học phần</th><th>Giáo trình</th><th>Chương</th>${Object.entries(BLOOM).map(([k,v])=>`<th class="num">${k}. ${v}</th>`).join("")}<th class="num">Cộng</th></tr>`;
   const rows = s.chapters.map(c => `<tr><td>${esc(c.course)}</td><td>${esc(c.textbook)}</td><td>${esc(c.code)}${c.title ? " - " + esc(c.title) : ""}</td>
       ${Object.keys(BLOOM).map(k=>`<td class="num">${c.counts[k]||0}</td>`).join("")}<td class="num"><b>${c.total}</b></td></tr>`).join("");
