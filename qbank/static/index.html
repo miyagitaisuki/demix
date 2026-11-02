@@ -132,6 +132,7 @@
     <thead><tr><th style="width:28px"></th><th>Mã câu</th><th>Học phần / Giáo trình / Chương</th><th>Bloom</th><th>Loại</th><th>Nội dung</th><th>Đáp án</th><th></th></tr></thead>
     <tbody id="qBody"></tbody>
   </table>
+  <div class="row" id="qPager" style="margin-top:8px"></div>
 </div>
 </div>
 </section>
@@ -404,13 +405,20 @@ async function bulkApply() {
   } catch (e) { toast(e.message, true); }
 }
 
-async function loadQuestions() {
+// bảng ngân hàng hiện từng trang; đổi bộ lọc thì về trang đầu
+const QPER = 100;
+let QPAGE = 0;
+async function loadQuestions(page = 0) {
   await loadTree();
+  QPAGE = Math.max(0, page);
   const p = new URLSearchParams();
   const pairs = {course_id:"#fCourse", textbook_id:"#fTextbook", chapter_id:"#fChapter", bloom:"#fBloom", qtype:"#fType"};
   for (const [k, sel] of Object.entries(pairs)) if ($(sel).value) p.set(k, $(sel).value);
   if ($("#fSearch").value.trim()) p.set("q", $("#fSearch").value.trim());
-  const list = await api("/api/questions?" + p);
+  p.set("page", QPAGE); p.set("per", QPER);
+  const res = await api("/api/questions?" + p);
+  const list = res.items;
+  renderQPager(res.total);
   $("#bulkChap").innerHTML = `<option value="">Giữ chương</option>` + chapterOptions("");
   QMAP = Object.fromEntries(list.map(x => [x.id, x]));
   renderBankTree();
@@ -426,6 +434,15 @@ async function loadQuestions() {
       <td style="white-space:nowrap"><button class="g" onclick="editQ(${q.id})">Sửa</button>
           <button class="d" onclick="delQ(${q.id})">Xóa</button></td>
     </tr>`).join("") || `<tr><td colspan="8" class="msg">Chưa có câu hỏi nào. Nhấn “+ Câu mới” hoặc nhập từ .docx.</td></tr>`;
+}
+
+function renderQPager(total) {
+  const pages = Math.max(1, Math.ceil(total / QPER));
+  const from = total ? QPAGE * QPER + 1 : 0, to = Math.min(total, (QPAGE + 1) * QPER);
+  $("#qPager").innerHTML = `<span class="sub">${from}–${to} / ${total} câu</span>
+    <button class="g" ${QPAGE <= 0 ? "disabled" : ""} onclick="loadQuestions(${QPAGE - 1})">‹ Trước</button>
+    <span class="sub">Trang ${QPAGE + 1}/${pages}</span>
+    <button class="g" ${QPAGE + 1 >= pages ? "disabled" : ""} onclick="loadQuestions(${QPAGE + 1})">Sau ›</button>`;
 }
 
 // cây học phần / giáo trình / chương ở bên trái; bấm để lọc
