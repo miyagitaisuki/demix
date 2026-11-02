@@ -236,6 +236,18 @@
   .struct-forms .row { margin:8px 0 0; }
   .struct-forms input, .struct-forms select { min-width:0; }
   @media (max-width:1100px) { .kpis { grid-template-columns:repeat(3,minmax(0,1fr)); } .struct-forms { grid-template-columns:1fr; } }
+  /* đổi độ rộng cột và ẩn/hiện cột */
+  .tbar { position:relative; display:flex; justify-content:flex-end; margin:0 0 6px; }
+  .cbtn { padding:3px 10px; font-size:12px; }
+  .cpop { position:absolute; right:0; top:100%; z-index:40; background:#fff; border:1px solid var(--line); border-radius:10px; box-shadow:0 8px 24px rgba(15,23,42,.15); padding:8px 10px; min-width:200px; max-height:360px; overflow:auto; }
+  .cpop[hidden] { display:none; }
+  .cpop label { display:flex; align-items:center; gap:8px; color:var(--ink); font-size:13px; padding:4px 0; }
+  .cpop-foot { display:flex; gap:6px; justify-content:space-between; margin-top:8px; border-top:1px solid var(--line); padding-top:8px; }
+  .cpop-foot button { font-size:12px; padding:3px 8px; }
+  .rz { position:absolute; right:-4px; top:0; bottom:0; width:9px; cursor:col-resize; z-index:5; touch-action:none; }
+  .rz:hover { background:linear-gradient(90deg, transparent 4px, #93c5fd 4px, #93c5fd 5px, transparent 5px); }
+  th.rzh { position:relative; }
+  table.rz-on { table-layout:fixed; }
   @media (max-width:1100px) { .filters { grid-template-columns:repeat(3,minmax(0,1fr)); } }
   @media (max-width:640px) { .filters { grid-template-columns:repeat(2,minmax(0,1fr)); } }
 </style>
@@ -2289,6 +2301,115 @@ async function doExportInner() {
 }
 
 loadQuestions();
+
+// ---------- bảng có cột: kéo tay nắm để đổi độ rộng; nút "Cột" để ẩn/hiện từng cột; nhớ trên máy này
+const COLS_PREFIX = "qbank_cols_";
+function colsKey(t) {
+  if (t.dataset.colsKey) return t.dataset.colsKey;
+  const box = t.parentElement && t.parentElement.closest("[id]");
+  const idx = box ? [...box.querySelectorAll("table")].indexOf(t) : 0;
+  return (t.id ? t.id : ((box && box.id) || "x") + "-" + idx).replace(/[^\w-]/g, "_");
+}
+function colsGet(key) { try { return JSON.parse(localStorage.getItem(COLS_PREFIX + key) || "{}"); } catch (e) { return {}; } }
+function colsSave(key, prefs) { try { localStorage.setItem(COLS_PREFIX + key, JSON.stringify(prefs)); } catch (e) {} }
+const colsHeaders = t => [...t.querySelectorAll(":scope > thead > tr > th")];
+function colsApplyHidden(t, hidden) {
+  let st = document.getElementById("cs_" + t.id);
+  if (!st) { st = document.createElement("style"); st.id = "cs_" + t.id; document.head.appendChild(st); }
+  st.textContent = hidden.map(i => `#${t.id} > thead > tr > th:nth-child(${i + 1}), #${t.id} > tbody > tr > td:nth-child(${i + 1}):not([colspan]) { display:none }`).join("\n");
+}
+// đóng băng độ rộng hiện tại của mọi cột đang hiện (để kéo không làm bảng nhảy)
+function colsFreeze(t) {
+  colsHeaders(t).forEach(th => { const w = th.getBoundingClientRect().width; if (w) th.style.width = w + "px"; });
+  t.classList.add("rz-on");
+}
+function colsApply(t) {
+  const prefs = colsGet(t.dataset.colsKey), ths = colsHeaders(t);
+  if (prefs.widths && prefs.widths.length === ths.length) {
+    t.classList.add("rz-on");
+    ths.forEach((th, i) => { if (prefs.widths[i]) th.style.width = prefs.widths[i] + "px"; });
+  }
+  colsApplyHidden(t, (prefs.hidden || []).filter(i => i < ths.length));
+}
+function colsReset(t) {
+  colsSave(t.dataset.colsKey, {});
+  colsHeaders(t).forEach(th => { th.style.width = ""; });
+  t.classList.remove("rz-on");
+  colsApplyHidden(t, []);
+}
+function colsDrag(e, t, th) {
+  e.preventDefault(); e.stopPropagation();
+  colsFreeze(t);
+  const startX = e.clientX, startW = th.getBoundingClientRect().width;
+  const move = ev => { th.style.width = Math.max(48, startW + ev.clientX - startX) + "px"; };
+  const up = () => {
+    window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up);
+    const prefs = colsGet(t.dataset.colsKey);
+    prefs.widths = colsHeaders(t).map(h => Math.round(h.getBoundingClientRect().width) || (prefs.widths || [])[colsHeaders(t).indexOf(h)] || 0);
+    colsSave(t.dataset.colsKey, prefs);
+  };
+  window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
+}
+function colsPopRender(t, pop) {
+  const hidden = new Set(colsGet(t.dataset.colsKey).hidden || []);
+  pop.innerHTML = colsHeaders(t).map((th, i) => {
+    const label = th.textContent.trim() || `Cột ${i + 1}`;
+    return `<label><input type="checkbox" data-i="${i}" ${hidden.has(i) ? "" : "checked"}> ${esc(label)}</label>`;
+  }).join("") + `<div class="cpop-foot"><button class="g" data-act="all">Hiện tất cả</button><button class="g" data-act="reset">Đặt lại</button></div>`;
+}
+function colsEnhance(t) {
+  if (t.dataset.colsKey || t.classList.contains("ctab") || !colsHeaders(t).length) return;
+  t.dataset.colsKey = colsKey(t);
+  if (!t.id) t.id = "ct_" + t.dataset.colsKey;
+  const bar = document.createElement("div");
+  bar.className = "tbar";
+  bar.innerHTML = `<button class="g cbtn" type="button"><i class="fa-solid fa-table-columns"></i> Cột</button><div class="cpop" hidden></div>`;
+  t.parentNode.insertBefore(bar, t);
+  const pop = bar.querySelector(".cpop");
+  bar.querySelector(".cbtn").onclick = e => {
+    e.stopPropagation();
+    document.querySelectorAll(".cpop").forEach(p => { if (p !== pop) p.hidden = true; });
+    if (!pop.hidden) { pop.hidden = true; return; }
+    colsPopRender(t, pop); pop.hidden = false;
+  };
+  pop.onchange = e => {
+    if (e.target.dataset.i === undefined) return;
+    const i = +e.target.dataset.i, prefs = colsGet(t.dataset.colsKey);
+    const hid = new Set(prefs.hidden || []);
+    if (e.target.checked) hid.delete(i);
+    else {
+      if (colsHeaders(t).length - hid.size <= 1) { e.target.checked = true; toast("Phải giữ ít nhất một cột.", true); return; }
+      hid.add(i);
+    }
+    prefs.hidden = [...hid]; colsSave(t.dataset.colsKey, prefs); colsApplyHidden(t, prefs.hidden);
+  };
+  pop.onclick = e => {
+    const act = e.target.dataset.act;
+    if (act === "all") { const prefs = colsGet(t.dataset.colsKey); prefs.hidden = []; colsSave(t.dataset.colsKey, prefs); colsApplyHidden(t, []); }
+    if (act === "reset") colsReset(t);
+    if (act) colsPopRender(t, pop);
+  };
+  colsHeaders(t).forEach(th => {
+    th.classList.add("rzh");
+    const h = document.createElement("span");
+    h.className = "rz";
+    h.title = "Kéo để đổi độ rộng; nhấp đúp để về mặc định";
+    h.onpointerdown = e => colsDrag(e, t, th);
+    h.ondblclick = e => { e.stopPropagation(); colsReset(t); };
+    th.appendChild(h);
+  });
+  colsApply(t);
+}
+document.addEventListener("click", e => { if (!e.target.closest(".tbar")) document.querySelectorAll(".cpop").forEach(p => { p.hidden = true; }); });
+function colsScan(root) {
+  if (root.nodeType !== 1) return;
+  if (root.matches("table")) colsEnhance(root);
+  root.querySelectorAll("table").forEach(colsEnhance);
+}
+document.addEventListener("DOMContentLoaded", () => {
+  colsScan(document.body);
+  new MutationObserver(list => list.forEach(m => m.addedNodes.forEach(n => colsScan(n)))).observe(document.body, { childList: true, subtree: true });
+});
 </script>
 </body>
 </html>
