@@ -537,8 +537,36 @@ def map_import_header(cells):
     return (m, missing)
 
 
+def _xlsx_text(v):
+    if v is None:
+        return ""
+    if isinstance(v, float):
+        return str(int(v)) if v.is_integer() else ("%g" % v)
+    return str(v)
+
+
+def read_xlsx(raw: bytes):
+    """Sheet đầu tiên của file .xlsx thành danh sách dòng (chuỗi). Ô trống thành chuỗi rỗng."""
+    import openpyxl
+    try:
+        wb = openpyxl.load_workbook(io.BytesIO(raw), read_only=True, data_only=True)
+    except Exception:
+        raise ValueError("Không đọc được file .xlsx (hãy lưu lại từ Excel rồi thử lại)")
+    ws = wb.worksheets[0]
+    rows = []
+    for row in ws.iter_rows(values_only=True):
+        cells = [_xlsx_text(v) for v in row]
+        while cells and cells[-1] == "":
+            cells.pop()
+        rows.append(cells)
+    wb.close()
+    return rows
+
+
 def read_table_text(raw: bytes):
-    """CSV hoặc dữ liệu dán từ Excel (TSV). Tự nhận dấu phân cách và bảng mã (UTF-8, UTF-16, Windows-1258)."""
+    """CSV, dữ liệu dán từ Excel (TSV) hoặc .xlsx. Tự nhận dấu phân cách và bảng mã (UTF-8, UTF-16, Windows-1258)."""
+    if raw[:2] == b"PK":  # .xlsx là file zip
+        return read_xlsx(raw)
     if raw[:2] in (b"\xff\xfe", b"\xfe\xff"):
         text = raw.decode("utf-16")
     else:
@@ -1808,6 +1836,7 @@ class Handler(BaseHTTPRequestHandler):
                 raise ValueError("Chọn giáo trình trước khi nhập")
             dry = parse_qs(u.query).get("dry_run", ["0"])[0] == "1"
             rows = read_table_text(self._raw())
+            rows = [r for r in rows if any(str(c).strip() for c in r)]
             if not rows:
                 raise ValueError("Không có dữ liệu để nhập")
             return self._json(200, parse_rows([rows], textbook_id, dry_run=dry, docx=False))

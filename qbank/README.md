@@ -4,7 +4,7 @@
 
 ## Chạy
 ```
-pip install python-docx        # chỉ cần một lần
+pip install python-docx openpyxl pykakasi   # chỉ cần một lần (pykakasi tùy chọn, cho furigana tự động)
 python3 app.py                 # rồi mở http://127.0.0.1:8765
 ```
 
