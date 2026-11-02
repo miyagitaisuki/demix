@@ -360,6 +360,20 @@ def tags_list(stored):
     return [t for t in (stored or "").split(",") if t]
 
 
+# Câu đối đáp (từ hai người trở lên, ví dụ "A: ... / B: ..."): mặc định CLO3 (nghe hiểu, phát âm)
+SPEAKER_LINE = re.compile(r"(?m)^\s*([^\n:：]{1,12})\s*[:：]")
+
+
+def is_dialogue(*texts):
+    labels = set()
+    for t in texts:
+        for m in SPEAKER_LINE.finditer(t or ""):
+            lab = m.group(1).strip().lower()
+            if lab and not re.match(r"^(câu|bài|đáp|phần|\d)", lab):
+                labels.add(lab)
+    return len(labels) >= 2
+
+
 def clean_question(data):
     try:
         chapter_id = int(data.get("chapter_id", 0))
@@ -403,6 +417,8 @@ def clean_question(data):
         options = []
     passage = str(data.get("passage", "")).strip()
     clo = str(data.get("clo", "")).strip()[:20]
+    if not clo and is_dialogue(content, passage):  # câu đối đáp mặc định là CLO3
+        clo = "CLO3"
     tags = norm_tags(data.get("tags", ""))
     media = norm_media(data.get("media") or [])
     status = str(data.get("status") or "nhap")
