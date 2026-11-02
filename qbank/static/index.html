@@ -118,10 +118,12 @@
     <span class="sub">Rà soát dữ liệu:</span>
     <button class="g" onclick="showDuplicates()">Kiểm tra trùng</button>
     <button class="g" onclick="withBusy(this, showSimilar)">Tìm câu gần giống</button>
+    <button class="g" onclick="toggleTrash()">Thùng rác</button>
   </div>
   <div id="importMsg" class="msg"></div>
   <div id="importPreview" class="card" style="display:none"></div>
   <div id="dupBox" class="card" style="display:none"></div>
+  <div id="trashBox" class="card" style="display:none"></div>
   <div id="editor" class="card" style="display:none"></div>
   <div class="row" id="bulkBar">
     <span class="sub">Đã chọn <span id="selCount">0</span> câu.</span>
@@ -416,7 +418,7 @@ async function bulkApply() {
 // xóa các câu đã chọn; có nút hoàn tác như khi xóa một câu
 async function bulkDelete() {
   if (!SEL.size) { toast("Chưa chọn câu nào.", true); return; }
-  if (!confirm(`Xóa ${SEL.size} câu đã chọn? Lịch sử dùng và kết quả thi của các câu này cũng bị xóa.`)) return;
+  if (!confirm(`Chuyển ${SEL.size} câu đã chọn vào thùng rác? Có thể khôi phục trong mục Thùng rác.`)) return;
   try {
     const ids = [...SEL];
     const r = await postJson("/api/questions/bulk-delete", { ids });
@@ -424,7 +426,7 @@ async function bulkDelete() {
     if (openId && ids.includes(+openId.value)) $("#editor").style.display = "none";  // form đang mở của câu vừa xóa
     clearSel();
     loadQuestions();
-    showUndo(r.items, `Đã xóa ${r.deleted} câu.`);
+    showUndo(r.items, `Đã chuyển ${r.deleted} câu vào thùng rác.`, false, r.trash_ids);
   } catch (e) { toast(e.message, true); }
 }
 
@@ -446,6 +448,7 @@ async function loadQuestions(page = 0) {
   $("#bulkChap").innerHTML = `<option value="">Giữ chương</option>` + chapterOptions("");
   QMAP = Object.fromEntries(list.map(x => [x.id, x]));
   renderBankTree();
+  if (TRASH_OPEN) loadTrash();  // thùng rác đang mở: làm mới sau mỗi thay đổi
   $("#qBody").innerHTML = list.map(q => `
     <tr>
       <td><input type="checkbox" class="qsel" value="${q.id}" ${SEL.has(q.id) ? "checked" : ""} onchange="toggleSel(${q.id}, this.checked)"></td>
@@ -454,7 +457,7 @@ async function loadQuestions(page = 0) {
       <td><span class="tag">${q.bloom}. ${BLOOM[q.bloom]}</span></td>
       <td>${q.qtype}</td>
       <td>${esc(q.content)}<div class="opts">${esc(q.options.map((o,k)=>(q.qtype==="DS"?"abcdefgh"[k]+") ":"ABCDEFGH"[k]+". ")+o).join("\n"))}</div></td>
-      <td>${esc(q.qtype === "DS" ? q.answer.replace(/D/g, "Đ") : q.answer)}<div class="sub">${q.used_count ? "đã dùng " + q.used_count + " lần" : "chưa dùng"}</div></td>
+      <td>${esc(q.qtype === "DS" ? q.answer.replace(/D/g, "Đ") : q.answer)}<div class="sub">${q.points != null ? q.points + " điểm · " : ""}${q.used_count ? "đã dùng " + q.used_count + " lần" : "chưa dùng"}</div></td>
       <td style="white-space:nowrap"><button class="g" onclick="editQ(${q.id})">Sửa</button>
           <button class="d" onclick="delQ(${q.id})">Xóa</button></td>
     </tr>`).join("") || `<tr><td colspan="8" class="msg">Chưa có câu hỏi nào. Nhấn “+ Câu mới” hoặc nhập từ .docx.</td></tr>`;
@@ -526,6 +529,7 @@ async function editQ(id) {
     <div class="row">
       <label>Chương</label><select id="eChap">${chapterOptions(q.chapter_id)}</select>
       <label>Bloom</label><select id="eBloom">${Object.entries(BLOOM).map(([k,v])=>`<option value="${k}" ${k==q.bloom?"selected":""}>${k}. ${v}</option>`).join("")}</select>
+      <label>Điểm</label><input id="ePoints" class="n" style="width:70px" placeholder="—" value="${q.points ?? ""}">
       <label>Loại</label><select id="eType">${["TN","DS","DT","TL"].map(t=>`<option value="${t}" ${q.qtype==t?"selected":""}>${t==="TN"?"Trắc nghiệm":t==="DS"?"Đúng/sai":t==="DT"?"Điền từ":"Tự luận"}</option>`).join("")}</select>
     </div>
     <div class="row"><label>Đoạn văn (tùy chọn). Chọn đoạn có sẵn trong chương, hoặc nhập đoạn mới; đoạn giống hệt trong chương sẽ được dùng chung.</label></div>
@@ -535,13 +539,48 @@ async function editQ(id) {
     <div class="row"><textarea id="eContent" rows="3" placeholder="Nội dung câu hỏi">${esc(q.content)}</textarea></div>
     <div class="row"><label>Phương án (TN: mỗi dòng một phương án, # đầu dòng = cố định vị trí; ĐS: mỗi dòng một ý; ĐT/TL: để trống)</label></div>
     <div class="row"><textarea id="eOpts" rows="4">${esc(q.options.join("\n"))}</textarea></div>
-    <div class="row"><label>Đáp án (TN: A/B/C…; ĐS: Đ S Đ…; ĐT: đáp án, nhiều đáp án cách nhau bằng |; TL: để trống)</label><input id="eAns" value="${esc(q.answer)}">
+    <div class="row"><label>Đáp án (TN: A/B/C…; ĐS: Đ S Đ…; ĐT: đáp án, nhiều đáp án cách nhau bằng |; TL: hướng dẫn chấm, in ở cuối đề)</label><input id="eAns" value="${esc(q.answer)}">
       <label>Lời giải</label><input id="eSol" style="flex:1" value="${esc(q.solution)}"></div>
     <div class="row"><button class="p" onclick="saveQ()">Lưu</button><button class="g" onclick="$('#editor').style.display='none'">Đóng</button><span id="eMsg" class="err"></span></div>`;
   fillPassPick(q.passage_id);
   $("#eChap").onchange = () => fillPassPick(null);
   // form nằm phía trên bảng: cuộn tới để người dùng thấy ngay khi bấm Sửa ở dòng dưới
   $("#editor").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+// ---------- thùng rác: câu đã xóa, khôi phục hoặc xóa hẳn
+let TRASH_OPEN = false;
+function toggleTrash() { TRASH_OPEN = !TRASH_OPEN; $("#trashBox").style.display = TRASH_OPEN ? "block" : "none"; if (TRASH_OPEN) loadTrash(); }
+async function loadTrash() {
+  const rows = await api("/api/trash");
+  const box = $("#trashBox");
+  box.innerHTML = `<div class="row"><b>Thùng rác: ${rows.length} câu</b>
+      <span class="sub">Câu trong thùng rác không dùng để ra đề. Khôi phục sẽ trả lại lịch sử dùng và kết quả thi.</span>
+      <button class="g" ${rows.length ? "" : "disabled"} onclick="restoreTrash(${JSON.stringify(rows.map(r => r.id))})">Khôi phục tất cả</button>
+      <button class="d" ${rows.length ? "" : "disabled"} onclick="emptyTrash()">Xóa hẳn tất cả</button>
+      <button class="g" onclick="toggleTrash()">Đóng</button></div>` +
+    (rows.length ? `<table><thead><tr><th>Mã câu</th><th>Vị trí</th><th>Loại</th><th>Nội dung</th><th>Đã chuyển lúc</th><th></th></tr></thead><tbody>` +
+      rows.map(r => `<tr><td>${esc(r.code)}</td><td>${esc(r.chapter)}</td><td>${esc(r.qtype)}</td><td>${esc(r.content)}</td>
+        <td>${esc(r.deleted_at.replace("T", " "))}</td>
+        <td style="white-space:nowrap"><button class="g" onclick="restoreTrash([${r.id}])">Khôi phục</button>
+        <button class="d" onclick="purgeTrash(${r.id})">Xóa hẳn</button></td></tr>`).join("") + `</tbody></table>`
+      : `<span class="msg">Thùng rác trống.</span>`);
+}
+async function restoreTrash(ids) {
+  try {
+    const r = await postJson("/api/trash/restore", { ids });
+    toast(r.restored ? `Đã khôi phục ${r.restored} câu.` : (r.errors.join("; ") || "Không khôi phục được."), !r.restored);
+    if (r.errors.length && r.restored) toast(`Khôi phục ${r.restored} câu; còn ${r.errors.length} câu không khôi phục được: ${r.errors.join("; ")}`, true);
+  } catch (e) { toast(e.message, true); }
+  loadTrash(); loadQuestions();
+}
+async function purgeTrash(id) {
+  if (!confirm("Xóa hẳn câu này? Không thể khôi phục.")) return;
+  await api(`/api/trash/${id}`, { method: "DELETE" }); loadTrash();
+}
+async function emptyTrash() {
+  if (!confirm("Xóa hẳn tất cả câu trong thùng rác? Không thể khôi phục.")) return;
+  await postJson("/api/trash/empty", {}); loadTrash(); toast("Đã làm trống thùng rác.");
 }
 
 // ---------- đoạn văn
@@ -600,7 +639,7 @@ async function saveQ(confirmPassage = false) {
   const id = $("#eId").value;
   const body = {
     chapter_id: $("#eChap").value, bloom: $("#eBloom").value, qtype: $("#eType").value,
-    content: $("#eContent").value, answer: $("#eAns").value, solution: $("#eSol").value,
+    content: $("#eContent").value, answer: $("#eAns").value, solution: $("#eSol").value, points: $("#ePoints").value,
     passage: $("#ePassage").value,
     options: $("#eOpts").value.split("\n").map(s => s.trim()).filter(Boolean).map(s => s.replace(/^[A-Ha-h][\.\)]\s*/, "")),
   };
@@ -623,12 +662,12 @@ async function saveQ(confirmPassage = false) {
 let QMAP = {};  // câu đang hiển thị, để hoàn tác khi xóa
 async function delQ(id) {
   const q = QMAP[id];
-  if (!confirm(`Xóa câu ${q ? q.code : "này"}?`)) return;
+  if (!confirm(`Chuyển câu ${q ? q.code : "này"} vào thùng rác?`)) return;
   try {
-    await api(`/api/questions/${id}`, { method: "DELETE" });
+    const r = await api(`/api/questions/${id}`, { method: "DELETE" });
     loadQuestions();
-    if (q) showUndo([toItem(q)], `Đã xóa câu ${q.code}.`);
-    else toast("Đã xóa câu.");
+    if (q) showUndo([toItem(q)], `Đã chuyển câu ${q.code} vào thùng rác.`, false, r.trash_ids);
+    else toast("Đã chuyển câu vào thùng rác.");
   } catch (e) { toast(e.message, true); }
 }
 // hoàn tác: khôi phục câu từ dữ liệu đã có (lịch sử dùng và kết quả thi của câu đã xóa không khôi phục được)
@@ -637,7 +676,7 @@ const toItem = q => ({ code: q.code, course: q.course, textbook: q.textbook, cha
                        chapter_title: q.chapter_title, bloom: q.bloom, qtype: q.qtype, content: q.content,
                        options: q.options, answer: q.answer, solution: q.solution, passage: q.passage });
 // items: câu đã xóa/gộp; allowDup: cho phép khôi phục câu trùng (dùng khi hoàn tác gộp)
-function showUndo(items, msg, allowDup = false) {
+function showUndo(items, msg, allowDup = false, trashIds = null) {
   const t = document.getElementById("toast");
   t.innerHTML = `${esc(msg)} <button class="g" id="undoBtn" style="margin-left:8px">Hoàn tác</button>`;
   t.className = ""; t.style.display = "block";
@@ -645,6 +684,13 @@ function showUndo(items, msg, allowDup = false) {
   undoTimer = setTimeout(() => t.style.display = "none", 8000);
   document.getElementById("undoBtn").onclick = async () => {
     try {
+      if (trashIds) {  // câu đang ở thùng rác: khôi phục từ đó
+        const r = await postJson("/api/trash/restore", { ids: trashIds });
+        toast(r.restored ? `Đã khôi phục ${r.restored} câu.` : (r.errors.join("; ") || "Không khôi phục được."), !r.restored);
+        loadQuestions(); if (TRASH_OPEN) loadTrash();
+        t.style.display = "none";
+        return;
+      }
       const r = await api("/api/restore", { method: "POST", headers: {"Content-Type":"application/json"},
                                             body: JSON.stringify({ questions: items, allow_dup: allowDup }) });
       if (r.added) toast(`Đã khôi phục ${r.added} câu.`); else toast(r.errors.join("; ") || "Không khôi phục được.", true);

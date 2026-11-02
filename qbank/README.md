@@ -197,7 +197,10 @@ Chi tiết từng lỗi và cách tái hiện: `docs/bao_cao_kiem_thu_2026-11-02
 
 ### Trạng thái sửa
 - **Đã sửa (đợt 1):** B01–B05, B07–B13, B15–B20, B23–B25, B16, B17, B18.
-- **Đã sửa (đợt 2):** B14 (ô số trang trong bước 3), B21 (xóa chương dọn đoạn văn mồ côi), B26 (dán kết quả từ Excel; kết quả cũ của mã đề được giữ, chỉ thêm dòng mới), B27 (cảnh báo đoạn văn gần giống khi nhập Word), B28 (mở một câu không tải cả ngân hàng), B30 (nháp wizard giữ trên trình duyệt sau F5), B31 (quá 100 bản xuất thì reset lịch sử về 0 trước khi lưu bản mới), B32 (nút đang xử lý bị khóa).
-- **Sửa một phần:** B06 (tìm câu gần giống: 8 giây với 3.000 câu, trước đây 42 giây; vẫn tăng theo số cặp, cần chỉ mục chạy nền khi quy mô lớn hơn). B29 (màn hình 375px giảm từ 608px xuống 468px, vẫn cuộn ngang).
-- **Chưa sửa:** B22 (đổi chương giữ mã cũ; cần quyết định: mã có nên đổi khi chuyển chương hay không, vì kết quả thi tham chiếu mã câu).
-- **Chưa làm:** toàn bộ mục tính năng mới trong danh sách trên.
+- **Đã sửa (đợt 2):** B14, B21, B26 (kết quả cũ của mã đề được giữ, chỉ thêm dòng mới), B27, B28, B30, B31 (quá 100 bản xuất thì reset lịch sử về 0 trước khi lưu bản mới), B32.
+- **Đã sửa (đợt 3):**
+  - **Thùng rác (B-tính năng mới):** xóa câu chuyển vào thùng rác, không xóa hẳn. Khôi phục trả lại câu cùng lịch sử dùng và kết quả thi. Có thể khôi phục từng câu hoặc tất cả, xóa hẳn từng câu hoặc làm trống. Câu không khôi phục được (ví dụ trùng nội dung) vẫn nằm lại trong thùng rác. Thùng rác không tự xóa theo thời gian.
+  - **Điểm và hướng dẫn chấm:** mỗi câu có thể có điểm (0–10, không bắt buộc), in kèm câu trong đề. Với câu tự luận, ô "Đáp án" là hướng dẫn chấm, được in ở cuối đề và trong file đáp án, kèm tổng điểm. Mã câu không còn bị cấp lại sau khi xóa.
+- **Sửa một phần:** B06 (tìm câu gần giống: 8 giây với 3.000 câu, trước đây 42 giây; vẫn tăng theo số cặp). B29 (màn hình 375px giảm từ 608px xuống 468px, vẫn cuộn ngang).
+- **Chưa sửa:** B22 (đổi chương giữ mã cũ; cần quyết định về mã khi chuyển chương).
+- **Chưa làm (tính năng mới):** xem trước bản in; bảng đặc tả đề; nhập Excel/CSV và dán; hình ảnh và âm thanh trong câu; thẻ (tag); phân tích câu hỏi từ bảng điểm; trạng thái duyệt câu; xuất Moodle/QTI; dùng chung qua mạng nội bộ; cấu hình tên trường và khoa.

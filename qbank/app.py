@@ -122,6 +122,12 @@ def init_storage():
     ensure_column("textbooks", "code", "TEXT NOT NULL DEFAULT ''")
     ensure_column("questions", "code", "TEXT")
     ensure_column("questions", "passage", "TEXT NOT NULL DEFAULT ''")
+    ensure_column("questions", "points", "REAL")  # điểm câu hỏi, không bắt buộc
+    q("""CREATE TABLE IF NOT EXISTS trash(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            deleted_at TEXT NOT NULL,
+            code TEXT NOT NULL DEFAULT '',
+            item TEXT NOT NULL)""")
     migrate_passages()
     q("CREATE UNIQUE INDEX IF NOT EXISTS idx_questions_code ON questions(code)")
     for r in q("SELECT id FROM questions WHERE code IS NULL OR code=''", fetch=True):
@@ -343,13 +349,22 @@ def clean_question(data):
     else:  # TL: giữ đáp án/gợi ý chấm nếu có
         options = []
     passage = str(data.get("passage", "")).strip()
+    raw = data.get("points")
+    points = None
+    if raw not in (None, ""):
+        try:
+            points = float(str(raw).replace(",", "."))
+        except ValueError:
+            raise ValueError("Điểm phải là số, ví dụ 0,5 hoặc 2")
+        if not 0 < points <= 10:
+            raise ValueError("Điểm của câu phải từ 0 đến 10")
     return dict(chapter_id=chapter_id, bloom=bloom, qtype=qtype, content=content,
                 options=json.dumps(options, ensure_ascii=False), answer=answer, solution=solution,
-                passage=passage)
+                passage=passage, points=points)
 
 
-INSERT_Q = """INSERT INTO questions(code,chapter_id,bloom,qtype,content,options,answer,solution,passage,passage_id)
-              VALUES(:code,:chapter_id,:bloom,:qtype,:content,:options,:answer,:solution,:passage,:passage_id)"""
+INSERT_Q = """INSERT INTO questions(code,chapter_id,bloom,qtype,content,options,answer,solution,passage,passage_id,points)
+              VALUES(:code,:chapter_id,:bloom,:qtype,:content,:options,:answer,:solution,:passage,:passage_id,:points)"""
 
 
 def row_to_api(r):
@@ -369,8 +384,11 @@ def make_code(question_id_or_none, chapter_id=None):
     hp = r["ccode"] or f"HP{r['cid']}"
     gt = r["tcode"] or f"GT{r['tid']}"
     prefix = re.sub(r"\s+", "_", f"{hp}-{gt}-{r['chcode']}")
-    n = q("SELECT COUNT(*) AS n FROM questions WHERE chapter_id=? AND code IS NOT NULL AND code <> ''",
-          (chapter_id,), True)[0]["n"] + 1
+    # số kế tiếp sau số lớn nhất đã dùng (cả câu trong thùng rác), để mã đã cấp không bị cấp lại
+    taken = [r["code"] for r in q("SELECT code FROM questions WHERE code LIKE ?", (prefix + "-%",), True)]
+    taken += [r["code"] for r in q("SELECT code FROM trash WHERE code LIKE ?", (prefix + "-%",), True)]
+    nums = [int(c[len(prefix) + 1:]) for c in taken if c[len(prefix) + 1:].isdigit()]
+    n = max(nums, default=0) + 1
     while True:
         code = f"{prefix}-{n:03d}"
         if not q("SELECT 1 FROM questions WHERE code=?", (code,), True):
@@ -956,6 +974,8 @@ def emit_question(doc, marker, n, it, mode="ruby"):
     p = marker.insert_paragraph_before("")
     p.add_run(f"Câu {n}. ").bold = True
     add_rich(p, it["content"], mode=mode)
+    if it.get("points") is not None:
+        p.add_run(f" ({fmt_points(it['points'])} điểm)").italic = True
     if it["qtype"] == "TN":
         emit_options(doc, marker, it["options"], mode)
     elif it["qtype"] == "DS":
@@ -1018,6 +1038,8 @@ def render_docx(template_path, meta, exam, code, answer_key, mode="ruby"):
         doc.add_paragraph("")
         doc.add_paragraph(f"ĐÁP ÁN MÃ {code}").runs[0].bold = True
         doc.add_paragraph("   ".join(f"{n}-{answer_text(it)}" for n, _, it in flat))
+        for line in rubric_lines(flat):
+            doc.add_paragraph(line)
     buf = io.BytesIO()
     doc.save(buf)
     return buf.getvalue()
@@ -1041,6 +1063,8 @@ def render_key_doc(template_path, meta, code, exam):
         for j, (n, a) in enumerate(g):
             r1.cells[j + 1].text, r2.cells[j + 1].text = str(n), a
     marker._p.addprevious(tbl._tbl)
+    for line in rubric_lines(flat):
+        marker.insert_paragraph_before(line)
     _set_text(marker, "")
     buf = io.BytesIO()
     doc.save(buf)
@@ -1067,7 +1091,23 @@ def answer_text(it):
         return "".join("Đ" if c == "D" else "S" for c in it["answer"])
     if it["qtype"] == "DT":
         return it["answer"].replace("|", " / ")
-    return it["answer"] or "TL"
+    return "TL"
+
+
+def fmt_points(x):
+    return ("%g" % x).replace(".", ",")
+
+
+def rubric_lines(flat):
+    """Hướng dẫn chấm tự luận và tổng điểm, in dưới bảng đáp án."""
+    lines = [f"Câu {n}: {it['answer']}" + (f" ({fmt_points(it['points'])} điểm)" if it.get("points") is not None else "")
+             for n, _, it in flat if it["qtype"] == "TL" and it["answer"]]
+    pts = [it["points"] for _, _, it in flat if it.get("points") is not None]
+    if pts:
+        lines.append(f"Tổng điểm: {fmt_points(sum(pts))}")
+    if lines:
+        lines.insert(0, "HƯỚNG DẪN CHẤM TỰ LUẬN")
+    return lines
 
 
 
@@ -1290,10 +1330,9 @@ def stats():
             "total": sum(by_type.values()), "tree": tree}
 
 
-def backup_payload():
-    """Bản sao lưu đầy đủ (phiên bản 3): câu hỏi kèm mã, mã học phần/giáo trình, thông tin đề,
-    lịch sử dùng, kết quả thi, và cấu trúc đề đã lưu. Không gồm file .zip đã xuất."""
-    rows = q(QUESTION_SQL + " ORDER BY qs.id", fetch=True)
+def build_items(rows):
+    """Các câu (đã có mã, lịch sử dùng, kết quả thi, mã học phần/giáo trình, điểm) theo định dạng sao lưu v3."""
+    rows = [row_to_api(r) for r in rows]
     usage, results = {}, {}
     for u in q("""SELECT qs.code AS code, u.exam_code, u.exam_name, u.used_at FROM exam_usage u
                   JOIN questions qs ON qs.id = u.question_id""", fetch=True):
@@ -1304,7 +1343,6 @@ def backup_payload():
     courses = {c["name"]: c for c in q("SELECT name, code, exam_meta FROM courses", fetch=True)}
     items = []
     for r in rows:
-        r = row_to_api(r)
         c = courses.get(r["course"], {})
         items.append({"code": r["code"], "course": r["course"], "course_code": c.get("code", ""),
                       "course_exam_meta": json.loads(c.get("exam_meta") or "{}"),
@@ -1312,7 +1350,15 @@ def backup_payload():
                       "chapter_code": r["chapter_code"], "chapter_title": r["chapter_title"],
                       "bloom": r["bloom"], "qtype": r["qtype"], "content": r["content"], "options": r["options"],
                       "answer": r["answer"], "solution": r["solution"], "passage": r["passage"],
+                      "points": r.get("points"),
                       "used": usage.get(r["code"], []), "results": results.get(r["code"], [])})
+    return items
+
+
+def backup_payload():
+    """Bản sao lưu đầy đủ (phiên bản 3): câu hỏi kèm mã, mã học phần/giáo trình, thông tin đề,
+    lịch sử dùng, kết quả thi, cấu trúc đề đã lưu. Không gồm file .zip đã xuất và thùng rác."""
+    items = build_items(q(QUESTION_SQL + " ORDER BY qs.id", fetch=True))
     configs = [{"name": c["name"], "config": json.loads(c["config"] or "{}"), "updated_at": c["updated_at"]}
                for c in q("SELECT name, config, updated_at FROM exam_configs", fetch=True)]
     return {"app": "QBank", "version": 3, "questions": items, "configs": configs}
@@ -1432,9 +1478,9 @@ def bulk_update(ids, chapter_id=None, bloom=None):
     return {"updated": len(ids)}
 
 
-def bulk_delete(ids):
-    """Xóa nhiều câu cùng lúc, kèm lịch sử dùng và kết quả thi. Có id không tồn tại thì không xóa câu nào.
-    Trả về bản sao lưu của các câu đã xóa (cùng định dạng file sao lưu) để hoàn tác."""
+def trash_questions(ids):
+    """Chuyển câu vào thùng rác (không xóa hẳn): lưu đủ dữ liệu, kể cả lịch sử dùng và kết quả thi.
+    Có id không tồn tại thì không chuyển câu nào."""
     ids = sorted({int(i) for i in ids})
     if not ids:
         raise ValueError("Chưa chọn câu nào")
@@ -1442,16 +1488,49 @@ def bulk_delete(ids):
     rows = q(QUESTION_SQL + f" WHERE qs.id IN ({ph}) ORDER BY qs.id", ids, fetch=True)
     if len(rows) != len(ids):
         raise ValueError("Có câu không còn trong ngân hàng, hãy tải lại trang")
-    undo = [{k: r[k] for k in ("code", "course", "textbook", "chapter_code", "chapter_title", "bloom",
-                               "qtype", "content", "options", "answer", "solution", "passage")}
-            for r in map(row_to_api, rows)]
+    items = build_items(rows)
+    now = datetime.now().isoformat(timespec="seconds")
+    trash_ids = []
     with closing(sqlite3.connect(DB_PATH)) as conn:
         conn.execute("PRAGMA foreign_keys = ON")
+        for it in items:
+            cur = conn.execute("INSERT INTO trash(deleted_at, code, item) VALUES(?,?,?)",
+                               (now, it["code"], json.dumps(it, ensure_ascii=False)))
+            trash_ids.append(cur.lastrowid)
         conn.execute(f"DELETE FROM exam_usage WHERE question_id IN ({ph})", ids)
         conn.execute(f"DELETE FROM question_results WHERE question_id IN ({ph})", ids)
         conn.execute(f"DELETE FROM questions WHERE id IN ({ph})", ids)
         conn.commit()
-    return {"deleted": len(ids), "items": undo}
+    return {"deleted": len(ids), "trash_ids": trash_ids, "items": items}
+
+
+def list_trash():
+    out = []
+    for r in q("SELECT id, deleted_at, code, item FROM trash ORDER BY id DESC", fetch=True):
+        it = json.loads(r["item"])
+        out.append({"id": r["id"], "deleted_at": r["deleted_at"], "code": r["code"],
+                    "chapter": f"{it.get('course', '')} / {it.get('textbook', '')} / {it.get('chapter_code', '')}",
+                    "qtype": it.get("qtype", ""), "content": (it.get("content") or "")[:160]})
+    return out
+
+
+def restore_from_trash(ids):
+    """Khôi phục câu từ thùng rác. Câu nào không khôi phục được (ví dụ trùng nội dung) thì giữ nguyên trong thùng rác."""
+    index = dup_index()
+    restored, errors = 0, []
+    for tid in ids:
+        rows = q("SELECT id, item FROM trash WHERE id=?", (int(tid),), fetch=True)
+        if not rows:
+            continue
+        item = json.loads(rows[0]["item"])
+        try:
+            restore_item(item, index)
+        except Exception as e:
+            errors.append(f"{item.get('code', '')}: {e}")
+            continue
+        q("DELETE FROM trash WHERE id=?", (int(tid),))
+        restored += 1
+    return {"restored": restored, "errors": errors}
 
 
 def restore_item(item, index, allow_dup=False):
@@ -1621,6 +1700,8 @@ class Handler(BaseHTTPRequestHandler):
             if not rows:
                 return self._json(404, {"error": "Câu này không còn trong ngân hàng"})
             return self._json(200, row_to_api(rows[0]))
+        if p == "/api/trash":
+            return self._json(200, list_trash())
         if p == "/api/tree":
             return self._json(200, get_tree())
         if p == "/api/similar":  # cặp câu gần giống (>= 90%), để rà soát
@@ -1722,7 +1803,12 @@ class Handler(BaseHTTPRequestHandler):
             b = self._json_body()
             return self._json(200, bulk_update(b.get("ids", []), b.get("chapter_id") or None, b.get("bloom") or None))
         if p == "/api/questions/bulk-delete":  # xóa nhiều câu đã chọn (trả về bản sao lưu để hoàn tác)
-            return self._json(200, bulk_delete(self._json_body().get("ids", [])))
+            return self._json(200, trash_questions(self._json_body().get("ids", [])))
+        if p == "/api/trash/restore":
+            return self._json(200, restore_from_trash(self._json_body().get("ids", [])))
+        if p == "/api/trash/empty":
+            q("DELETE FROM trash")
+            return self._json(200, {"ok": True})
         if p == "/api/duplicates/merge":  # giữ một câu, xóa các câu trùng đã chọn (lịch sử chuyển sang câu giữ)
             b = self._json_body()
             keep = int(b.get("keep", 0))
@@ -1827,8 +1913,8 @@ class Handler(BaseHTTPRequestHandler):
         with closing(sqlite3.connect(DB_PATH)) as conn:
             conn.execute("PRAGMA foreign_keys = ON")
             cur = conn.execute("""UPDATE questions SET chapter_id=:chapter_id, bloom=:bloom, qtype=:qtype, content=:content,
-                 options=:options, answer=:answer, solution=:solution, passage=:passage, passage_id=:passage_id
-                 WHERE id=:id""", payload)
+                 options=:options, answer=:answer, solution=:solution, passage=:passage, passage_id=:passage_id,
+                 points=:points WHERE id=:id""", payload)
             conn.commit()
             updated = cur.rowcount
         if not updated:
@@ -1846,6 +1932,10 @@ class Handler(BaseHTTPRequestHandler):
         if cfg:
             q("DELETE FROM exam_configs WHERE id=?", (int(cfg.group(1)),))
             return self._json(200, {"ok": True})
+        tr = re.fullmatch(r"/api/trash/(\d+)", path)
+        if tr:
+            q("DELETE FROM trash WHERE id=?", (int(tr.group(1)),))
+            return self._json(200, {"ok": True})
         ex = re.fullmatch(r"/api/exports/(\d+)", path)
         if ex:
             q("DELETE FROM exam_exports WHERE id=?", (int(ex.group(1)),))
@@ -1858,10 +1948,10 @@ class Handler(BaseHTTPRequestHandler):
               (int(m.group(2)),))
         table = {"questions": "questions", "courses": "courses",
                  "textbooks": "textbooks", "chapters": "chapters"}[m.group(1)]
+        if table == "questions":  # câu hỏi vào thùng rác thay vì xóa hẳn
+            self._json(200, trash_questions([int(m.group(2))]))
+            return
         try:
-            if table == "questions":
-                q("DELETE FROM exam_usage WHERE question_id=?", (int(m.group(2)),))
-                q("DELETE FROM question_results WHERE question_id=?", (int(m.group(2)),))
             q(f"DELETE FROM {table} WHERE id=?", (int(m.group(2)),))
         except sqlite3.IntegrityError:
             raise ValueError("Còn dữ liệu bên trong (câu hỏi, giáo trình hoặc chương), không thể xóa")
