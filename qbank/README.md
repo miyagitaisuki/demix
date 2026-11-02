@@ -22,6 +22,16 @@ python3 app.py                 # rồi mở http://127.0.0.1:8765
 - **Lịch sử dùng:** mỗi lần xuất đề ghi lại câu nào đã vào mã đề nào. Khi xuất, app ưu tiên câu chưa dùng, rồi đến câu dùng lâu nhất. Bảng ngân hàng hiện số lần đã dùng. Bỏ tick "Ghi lịch sử dùng câu" ở tab Xuất đề nếu không muốn ghi lại lần xuất đó.
 - Xóa một câu sẽ xóa luôn lịch sử dùng của câu đó.
 
+## Xuất đề theo tỷ lệ mức Bloom
+- Ở bước "Số câu và đoạn", đổi phần sang **Theo tỷ lệ %**, nhập **tổng số câu**, chọn tỷ lệ (0–100%, bước 10%) cho từng mức Biết → Đánh giá, rồi tick các chương muốn lấy câu.
+- Tổng tỷ lệ phải bằng 100% và đủ câu cho từng mức thì mới bấm **Chốt** được; chưa chốt không qua bước tiếp. Số câu được chia đều cho các chương đã tick (phần dư chia cho chương còn câu).
+- Chọn câu: ưu tiên câu chưa ra đề lần nào, rồi đến câu ra đề ít lần nhất. Câu thuộc đoạn văn không được chọn lẻ.
+- **Seed:** mỗi lần xuất có một seed (hiện trên thông báo sau khi tải). Lưu trong lịch sử xuất cùng danh sách câu đã chọn. Nhập lại seed cùng lịch sử dùng để chọn lại đúng các câu.
+- Thống kê → "Chưa từng ra đề" cho biết số câu còn có thể chọn không trùng, theo chương × mức Bloom và dạng câu.
+
+## Reset tình trạng ra đề
+Tab Ngân hàng, mục "Công cụ" (nút "Nhập, xuất, rà soát"), dòng "Reset tình trạng ra đề": reset câu đang tick, chương đang lọc, hoặc toàn bộ CSDL (phải gõ `RESET`). Reset chỉ xóa số lần đã ra đề, không xóa câu hay file đề đã xuất. Trước khi xóa, app ghi bản sao lưu vào thư mục `data/backup` (`truoc_reset_<thời điểm>.json` chứa lịch sử bị xóa; khi reset toàn bộ còn có `qbank_<ngày>.json`).
+
 ## Định dạng file nhập (chuẩn)
 Tải mẫu bằng nút **Tải mẫu nhập** (tab Ngân hàng). File là .docx, mỗi bảng là một nhóm câu:
 - **Dòng 1 là tiêu đề cột**, thứ tự cột tùy ý. Cột bắt buộc: `Mã chương`, `Nội dung`, `Đáp án`, `Loại`, `Mức`.

@@ -4,6 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>QBank - Ngân hàng câu hỏi</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <style>
   :root { --b:#2563eb; --line:#e5e7eb; --bg:#f8fafc; --mut:#64748b; }
   * { box-sizing: border-box; }
@@ -49,6 +52,11 @@
   .sec-title { display:none; }
   #pane2 .sec-title { display:block; margin-bottom:6px; }
   .pane { display:none; } .pane.on { display:block; }
+  .pc { width:34px; text-align:center; }
+  .sec:not(.pct) .pc, .sec:not(.pct) .pctbar { display:none; }
+  .pctbar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:8px; }
+  .pctbar label { white-space:nowrap; }
+  .pctbar .ok { color:#16a34a; font-weight:600; } .pctbar .bad { color:#b91c1c; font-weight:600; }
   .wiznav { margin-top:14px; padding-top:10px; border-top:1px solid var(--line); }
   .twocol { display:flex; gap:16px; align-items:flex-start; }
   .side { width:250px; flex:0 0 250px; border-right:1px solid var(--line); padding-right:12px; max-height:82vh; overflow:auto; position:sticky; top:8px; }
@@ -75,11 +83,159 @@
   .sec-total { margin-left:auto; font-weight:600; }
   #toast { position:fixed; bottom:16px; right:16px; background:#0f172a; color:#fff; padding:10px 14px; border-radius:8px; display:none; max-width:420px; z-index:10; box-shadow:0 4px 12px rgba(0,0,0,.2); }
   #toast.err { background:#b91c1c; }
+
+  /* ===== giao diện theo mẫu (chỉ sáng) ===== */
+  :root { --b:#2563eb; --line:#e2e8f0; --bg:#f8fafc; --mut:#64748b; --ink:#0f172a; }
+  body { font-family:Inter,system-ui,"Segoe UI",Roboto,sans-serif; font-size:13.5px; color:var(--ink); background:#f1f5f9; }
+  main { max-width:1320px; padding:20px; }
+  header.topbar { display:flex; align-items:center; gap:0; height:56px; padding:0 20px; background:#fff; border-bottom:1px solid var(--line); position:sticky; top:0; z-index:20; }
+  .brand { display:flex; align-items:center; gap:10px; }
+  .logo { width:30px; height:30px; border-radius:9px; background:linear-gradient(135deg,#2563eb,#6366f1); color:#fff; display:flex; align-items:center; justify-content:center; font-weight:700; }
+  .bn { font-weight:700; font-size:16px; letter-spacing:-.01em; }
+  header.topbar nav { display:flex; height:100%; margin-left:28px; gap:4px; }
+  header.topbar nav button { height:100%; padding:0 12px; border:0; border-radius:0; border-bottom:2px solid transparent; background:none; color:var(--mut); font-weight:500; }
+  header.topbar nav button.on { color:var(--b); border-bottom-color:var(--b); font-weight:600; }
+  section > h2 { display:none; }
+  button { border-radius:8px; border:1px solid #cbd5e1; background:#fff; color:#334155; padding:6px 12px; font-weight:500; font-size:13px; cursor:pointer; transition:background .15s; }
+  button:hover { background:#f8fafc; }
+  button:disabled { opacity:.45; cursor:default; }
+  button.p { background:var(--b); border-color:var(--b); color:#fff; box-shadow:0 1px 2px rgba(37,99,235,.3); }
+  button.p:hover { background:#1d4ed8; }
+  button.d { color:#b91c1c; border-color:#fecaca; }
+  button.d:hover { background:#fef2f2; }
+  input, select, textarea { border-radius:8px; border:1px solid #cbd5e1; background:#fff; color:var(--ink); padding:6px 9px; font-size:13px; }
+  input:focus, select:focus, textarea:focus { outline:none; border-color:var(--b); box-shadow:0 0 0 3px rgba(37,99,235,.15); }
+  label { font-size:12px; color:var(--mut); }
+  .card { background:#fff; border:1px solid var(--line); border-radius:12px; padding:14px; margin-bottom:12px; box-shadow:0 1px 2px rgba(15,23,42,.04); }
+  .sub { color:var(--mut); font-size:12px; }
+  .msg { color:var(--mut); }
+
+  /* cây học phần */
+  .side { width:272px; flex:0 0 272px; display:flex; flex-direction:column; overflow:hidden; background:#fff; border:1px solid var(--line); border-radius:12px; padding:0; max-height:calc(100vh - 110px); position:sticky; top:72px; box-shadow:0 1px 2px rgba(15,23,42,.04); }
+  .side-head { padding:12px; border-bottom:1px solid var(--line); }
+  .side-title { font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--mut); margin-bottom:8px; }
+  .side-tools { display:flex; gap:6px; align-items:center; }
+  .side-tools input { flex:1; min-width:0; padding:5px 8px; font-size:12.5px; }
+  .side-tools button { padding:3px 9px; font-size:15px; line-height:1.2; }
+  #bankTree { overflow:auto; padding:6px; flex:1; }
+  .tn { display:flex; align-items:center; gap:6px; padding:5px 8px; margin:1px 0; border-radius:7px; cursor:pointer; color:#334155; font-size:13px; }
+  .tn:hover { background:#f1f5f9; }
+  .tn.on { background:#eff6ff; color:var(--b); font-weight:600; }
+  .tn .nm { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .tn .cnt { color:#94a3b8; font-size:11.5px; font-variant-numeric:tabular-nums; }
+  .tn.l1 { font-weight:600; }
+  .tn.l2 { padding-left:26px; }
+  .tn.l3 { padding-left:44px; font-size:12.5px; color:#475569; }
+  .tn .car { width:18px; height:18px; flex:none; padding:0; border-radius:5px; border:1px solid #cbd5e1; background:#fff; color:#64748b; font-size:13px; line-height:1; display:inline-flex; align-items:center; justify-content:center; }
+  .tn .car:hover { border-color:var(--b); color:var(--b); }
+  .tn .car.none { border:0; background:none; visibility:hidden; }
+  .twocol { gap:16px; }
+  .main-col { min-width:0; }
+
+  /* bộ lọc */
+  .filters { display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:10px; margin-bottom:10px; }
+  .f { display:flex; flex-direction:column; gap:4px; min-width:0; }
+  .f select { width:100%; }
+  .filterbar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:12px; }
+  .search { position:relative; flex:1; min-width:240px; }
+  .search i { position:absolute; left:10px; top:50%; transform:translateY(-50%); color:#94a3b8; font-size:12px; }
+  .search input { width:100%; padding-left:30px; }
+  .sp { flex:1; }
+  details.tools { background:#fff; border:1px solid var(--line); border-radius:12px; padding:10px 14px; margin-bottom:12px; }
+  details.tools > summary { cursor:pointer; color:var(--mut); font-weight:600; font-size:13px; }
+  details.tools > .row { margin:10px 0 0; }
+
+  /* thanh hàng loạt */
+  .bulkbar { display:none; align-items:center; gap:8px; flex-wrap:wrap; background:#0f172a; color:#e2e8f0; border-radius:12px; padding:10px 14px; margin-bottom:12px; box-shadow:0 8px 20px rgba(15,23,42,.25); }
+  .bulkbar button { background:#1e293b; border-color:#334155; color:#e2e8f0; }
+  .bulkbar button:hover { background:#334155; }
+  .bulkbar button.d { background:#7f1d1d; border-color:#7f1d1d; color:#fff; }
+  .bulkbar select { background:#1e293b; border-color:#334155; color:#e2e8f0; }
+  .bulkbar label, .bulkbar .sub { color:#cbd5e1; }
+
+  /* bảng câu hỏi */
+  .tcard { background:#fff; border:1px solid var(--line); border-radius:12px; overflow:hidden; box-shadow:0 1px 2px rgba(15,23,42,.04); }
+  .qtable { border-collapse:separate; border-spacing:0; }
+  .qtable th { position:static; background:#f8fafc; color:#64748b; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; padding:10px 12px; border-bottom:1px solid var(--line); box-shadow:none; }
+  .qtable td { padding:12px; border-bottom:1px solid #f1f5f9; vertical-align:top; font-size:13px; }
+  .qtable tbody tr:hover td { background:#fafcff; }
+  .qtable td.ck { width:36px; }
+  .qtable td.acts { white-space:nowrap; text-align:right; width:80px; }
+  .code { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-weight:600; font-size:12px; color:var(--b); white-space:nowrap; }
+  .stem { font-size:13.5px; font-weight:500; line-height:1.5; white-space:pre-wrap; color:var(--ink); }
+  .opts-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:3px 12px; margin-top:8px; padding:8px; background:#f8fafc; border:1px solid #f1f5f9; border-radius:8px; }
+  .opt { font-size:12.5px; color:#475569; padding:2px 6px; border-radius:5px; }
+  .opt b { color:#334155; margin-right:4px; }
+  .opt.ok { background:#dcfce7; color:#14532d; font-weight:600; }
+  .opt.ok b { color:#15803d; }
+  .ans-line { margin-top:6px; font-size:12px; color:#334155; }
+  .ans-line b { color:#15803d; }
+  .badge { display:inline-flex; align-items:center; padding:2px 8px; border-radius:999px; font-size:11px; font-weight:600; border:1px solid transparent; white-space:nowrap; }
+  .bl1 { background:#eff6ff; color:#1d4ed8; border-color:#bfdbfe; }
+  .bl2 { background:#ecfdf5; color:#047857; border-color:#a7f3d0; }
+  .bl3 { background:#fffbeb; color:#b45309; border-color:#fde68a; }
+  .bl4 { background:#f5f3ff; color:#6d28d9; border-color:#ddd6fe; }
+  .bl5 { background:#fff1f2; color:#be123c; border-color:#fecdd3; }
+  .st-nhap { background:#fef3c7; color:#92400e; border-color:#fde68a; }
+  .st-da_duyet { background:#dcfce7; color:#166534; border-color:#bbf7d0; }
+  .st-ngung { background:#f1f5f9; color:#475569; border-color:#e2e8f0; }
+  .qt { display:inline-block; padding:1px 7px; border-radius:6px; background:#f1f5f9; color:#334155; font:600 11px ui-monospace,SFMono-Regular,Menlo,monospace; }
+  .ib { border:0; background:none; padding:6px; border-radius:6px; color:#64748b; }
+  .ib:hover { background:#f1f5f9; color:var(--b); }
+  .ib.del:hover { background:#fef2f2; color:#b91c1c; }
+  .tfoot { display:flex; justify-content:space-between; align-items:center; gap:8px; padding:10px 12px; border-top:1px solid var(--line); background:#fafbfc; }
+  .tfoot .pager { margin:0; }
+  .pager button { padding:4px 10px; }
+  .tblwrap { border-radius:8px; }
+  .ctab, .fillbar { font-size:13px; }
+  /* thống kê và cấu trúc */
+  .kpis { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:12px; margin-bottom:16px; }
+  .kpi { background:#fff; border:1px solid var(--line); border-radius:12px; padding:14px 16px; box-shadow:0 1px 2px rgba(15,23,42,.04); }
+  .kpi span { display:block; font-size:11.5px; font-weight:600; color:var(--mut); text-transform:uppercase; letter-spacing:.05em; }
+  .kpi b { display:block; margin-top:4px; font-size:24px; font-weight:700; letter-spacing:-.02em; font-variant-numeric:tabular-nums; }
+  .kpi.total b { color:var(--b); }
+  .panel { background:#fff; border:1px solid var(--line); border-radius:12px; padding:16px; margin-bottom:16px; box-shadow:0 1px 2px rgba(15,23,42,.04); }
+  .panel > .ph { margin:0 0 4px; font-size:14px; font-weight:700; color:var(--ink); }
+  .panel > .ps { display:block; margin-bottom:12px; }
+  .panel .tblwrap { border:1px solid var(--line); border-radius:10px; max-height:460px; }
+  .panel .tblwrap thead th { position:sticky; top:0; background:#f8fafc; z-index:2; }
+  .panel table.qtable { font-size:13px; }
+  .panel .row { margin-bottom:8px; }
+  #stats table.qtable th, #struct table.qtable th, #stats .panel table th { background:#f8fafc; font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:#64748b; padding:9px 12px; border-bottom:1px solid var(--line); }
+  #stats .panel td, #stats table td { padding:9px 12px; border-bottom:1px solid #f1f5f9; }
+  #stats table tfoot th { background:#f8fafc; color:var(--ink); font-size:12px; text-transform:none; letter-spacing:0; }
+  #statTable { border-collapse:separate; border-spacing:0; }
+  #statTable tbody tr:hover td, #unusedTable tbody tr:hover td { background:#fafcff; }
+  .tree-list #treeBox { max-height:560px; overflow:auto; padding-right:4px; }
+  .tree-list .car { width:18px; height:18px; flex:none; padding:0; border-radius:5px; border:1px solid #cbd5e1; background:#fff; color:#64748b; font-size:13px; line-height:1; display:inline-flex; align-items:center; justify-content:center; }
+  .tree-list .car:hover { border-color:var(--b); color:var(--b); }
+  .tree-list .car.none { visibility:hidden; border:0; background:none; }
+  .tree-list ul { list-style:none; margin:0; padding:0; }
+  .tree-list > ul { padding:0; }
+  .tree-list ul ul { margin-left:18px; padding-left:12px; border-left:1px solid #e2e8f0; }
+  .tree-list li { margin:0; }
+  .tree-list .trow { display:flex; align-items:center; gap:8px; padding:6px 8px; border-radius:8px; }
+  .tree-list .trow:hover { background:#f8fafc; }
+  .tree-list .trow .name { flex:1; min-width:0; }
+  .tree-list .trow .name > b { font-weight:600; }
+  .tree-list .trow button { padding:3px 9px; font-size:12px; }
+  .tree-list .trow.edit { background:#f8fafc; }
+  .tree-list .typ { display:inline-block; font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; padding:1px 7px; border-radius:999px; margin-right:6px; vertical-align:1px; }
+  .typ.c { background:#fef3c7; color:#92400e; }
+  .typ.t { background:#eff6ff; color:#1d4ed8; }
+  .typ.ch { background:#f1f5f9; color:#475569; }
+  .struct-forms { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; margin-bottom:16px; }
+  .struct-forms .panel { margin:0; }
+  .struct-forms .row { margin:8px 0 0; }
+  .struct-forms input, .struct-forms select { min-width:0; }
+  @media (max-width:1100px) { .kpis { grid-template-columns:repeat(3,minmax(0,1fr)); } .struct-forms { grid-template-columns:1fr; } }
+  @media (max-width:1100px) { .filters { grid-template-columns:repeat(3,minmax(0,1fr)); } }
+  @media (max-width:640px) { .filters { grid-template-columns:repeat(2,minmax(0,1fr)); } }
 </style>
 </head>
 <body>
-<header>
-  <b>QBank</b>
+<header class="topbar">
+  <div class="brand"><span class="logo">Q</span><span class="bn">QBank</span></div>
   <nav>
     <button data-tab="bank" class="on">Ngân hàng</button>
     <button data-tab="struct">Cấu trúc</button>
@@ -92,99 +248,129 @@
 <!-- ============ NGÂN HÀNG ============ -->
 <section id="bank" class="on">
 <div class="twocol">
-<aside class="side" id="bankTree"></aside>
+<aside class="side">
+  <div class="side-head">
+    <div class="side-title">Danh mục học phần</div>
+    <div class="side-tools">
+      <input id="treeSearch" placeholder="Lọc danh mục..." oninput="TREE_QUERY=this.value;renderBankTree()">
+      <button class="g" onclick="setAllTree(true)" title="Mở tất cả">+</button>
+      <button class="g" onclick="setAllTree(false)" title="Thu gọn tất cả">−</button>
+    </div>
+  </div>
+  <div id="bankTree"></div>
+</aside>
 <div class="main-col">
-  <div class="row">
-    <select id="fCourse" title="Học phần"></select>
-    <select id="fTextbook" title="Giáo trình"></select>
-    <select id="fChapter" title="Chương"></select>
-    <select id="fBloom"><option value="">Mọi mức</option></select>
-    <select id="fType"><option value="">Mọi loại</option><option value="TN">Trắc nghiệm</option><option value="DS">Đúng/sai</option><option value="DT">Điền từ</option><option value="TL">Tự luận</option></select>
-    <select id="fStatus" title="Trạng thái"><option value="">Mọi trạng thái</option><option value="nhap">Nháp</option><option value="da_duyet">Đã duyệt</option><option value="ngung">Ngưng dùng</option></select>
-    <input id="fTag" list="tagList" placeholder="Thẻ" style="width:110px" title="Lọc theo thẻ (ngữ pháp, trợ từ…)"><datalist id="tagList"></datalist>
-    <input id="fSearch" placeholder="Tìm nội dung hoặc mã câu" style="width:190px">
+  <div class="filters">
+    <div class="f"><label>Học phần</label><select id="fCourse"></select></div>
+    <div class="f"><label>Giáo trình</label><select id="fTextbook"></select></div>
+    <div class="f"><label>Chương</label><select id="fChapter"></select></div>
+    <div class="f"><label>Mức Bloom</label><select id="fBloom"><option value="">Mọi mức</option></select></div>
+    <div class="f"><label>Loại câu</label><select id="fType"><option value="">Mọi loại</option><option value="TN">Trắc nghiệm</option><option value="DS">Đúng/sai</option><option value="DT">Điền từ</option><option value="TL">Tự luận</option></select></div>
+    <div class="f"><label>Trạng thái</label><select id="fStatus" title="Trạng thái"><option value="">Mọi trạng thái</option><option value="nhap">Nháp</option><option value="da_duyet">Đã duyệt</option><option value="ngung">Ngưng dùng</option></select></div>
+  </div>
+  <div class="filterbar">
+    <div class="search"><i class="fa-solid fa-magnifying-glass"></i><input id="fSearch" placeholder="Tìm nội dung hoặc mã câu"></div>
+    <input id="fTag" list="tagList" placeholder="Thẻ" style="width:120px" title="Lọc theo thẻ (ngữ pháp, trợ từ…)"><datalist id="tagList"></datalist>
     <button class="g" onclick="loadQuestions()">Lọc</button>
+    <span class="sp"></span>
+    <button class="g" onclick="document.getElementById('toolsBox').open=!document.getElementById('toolsBox').open"><i class="fa-solid fa-file-import"></i> Nhập, xuất, rà soát</button>
+    <button class="p" onclick="editQ(null)"><i class="fa-solid fa-plus"></i> Câu mới</button>
   </div>
-  <div class="row">
-    <button class="g" onclick="editQ(null)">+ Câu mới</button>
-    <span class="sub">Nhập/xuất file:</span>
-    <label for="importFile">Nhập từ .docx hoặc .csv vào:</label>
-    <span id="importTarget" class="sub"></span>
-    <input type="file" id="importFile" accept=".docx,.csv,.txt" onchange="importDocx(this)">
-    <a href="/api/import-template" download><button class="g">Tải mẫu nhập</button></a>
-    <a href="/api/backup" download><button class="g">Sao lưu</button></a>
-    <label for="restoreFile">Khôi phục từ .json:</label>
-    <input type="file" id="restoreFile" accept=".json" onchange="restoreJson(this)">
-  </div>
-  <details class="row"><summary class="sub">Dán từ Excel</summary>
-    <textarea id="pasteBox" rows="4" style="flex:1" placeholder="Chọn các ô trong Excel (kèm dòng tiêu đề), Ctrl+C rồi dán vào đây"></textarea>
-    <button class="g" onclick="importPaste()">Xem trước dữ liệu dán</button>
+  <details class="tools" id="toolsBox">
+    <summary>Công cụ: nhập và xuất file, sao lưu, rà soát trùng, thùng rác, reset tình trạng ra đề</summary>
+    <div class="row"><label>Nhập từ .docx hoặc .csv vào:</label><span id="importTarget" class="sub"></span>
+      <input type="file" id="importFile" accept=".docx,.csv,.txt" onchange="importDocx(this)">
+      <a href="/api/import-template" download><button class="g">Tải mẫu nhập</button></a></div>
+    <div class="row"><a href="/api/backup" download><button class="g">Sao lưu .json</button></a>
+      <label for="restoreFile">Khôi phục từ .json:</label>
+      <input type="file" id="restoreFile" accept=".json" onchange="restoreJson(this)"></div>
+    <details class="row"><summary class="sub">Dán từ Excel</summary>
+      <textarea id="pasteBox" rows="4" style="flex:1" placeholder="Chọn các ô trong Excel (kèm dòng tiêu đề), Ctrl+C rồi dán vào đây"></textarea>
+      <button class="g" onclick="importPaste()">Xem trước dữ liệu dán</button>
+    </details>
+    <div class="row"><label>Rà soát:</label>
+      <button class="g" onclick="showDuplicates()">Kiểm tra trùng</button>
+      <button class="g" onclick="withBusy(this, showSimilar)">Tìm câu gần giống</button>
+      <button class="g" onclick="toggleTrash()">Thùng rác</button></div>
+    <div class="row"><label>Reset tình trạng ra đề:</label>
+      <button class="d" onclick="resetUsage('questions')">Câu đang tick</button>
+      <button class="d" onclick="resetUsage('chapters')">Chương đang lọc</button>
+      <button class="d" onclick="resetUsage('all')">Toàn bộ CSDL</button>
+      <span class="sub">Chỉ xóa số lần đã ra đề, không xóa câu.</span></div>
   </details>
-  <div class="row">
-    <span class="sub">Rà soát dữ liệu:</span>
-    <button class="g" onclick="showDuplicates()">Kiểm tra trùng</button>
-    <button class="g" onclick="withBusy(this, showSimilar)">Tìm câu gần giống</button>
-    <button class="g" onclick="toggleTrash()">Thùng rác</button>
-  </div>
   <div id="importMsg" class="msg"></div>
   <div id="importPreview" class="card" style="display:none"></div>
   <div id="dupBox" class="card" style="display:none"></div>
   <div id="trashBox" class="card" style="display:none"></div>
   <div id="editor" class="card" style="display:none"></div>
-  <div class="row" id="bulkBar">
-    <span class="sub">Đã chọn <span id="selCount">0</span> câu.</span>
+  <div class="bulkbar" id="bulkBar">
+    <span><b id="selCount">0</b> câu đã chọn</span>
     <select id="bulkChap"></select>
     <select id="bulkBloom"><option value="">Giữ mức Bloom</option><option value="1">1. Biết</option><option value="2">2. Hiểu</option><option value="3">3. Vận dụng</option><option value="4">4. Phân tích</option><option value="5">5. Đánh giá</option></select>
-    <button class="g" onclick="bulkApply()">Áp dụng cho câu đã chọn</button>
-    <button class="d" onclick="bulkDelete()">Xóa các câu đã chọn</button>
-    <button class="g" onclick="setStatus('da_duyet')">Duyệt đã chọn</button>
-    <button class="g" onclick="setStatus('nhap')">Đưa về Nháp</button>
-    <button class="g" onclick="setStatus('ngung')">Ngưng dùng</button>
-    <button class="g" onclick="exportMoodle()">Xuất Moodle XML</button>
-    <button class="g" onclick="selectShown()">Chọn các câu đang hiện</button>
-    <button class="g" onclick="clearSel()">Bỏ chọn</button>
+    <button onclick="bulkApply()">Áp dụng</button>
+    <button onclick="setStatus('da_duyet')">Duyệt</button>
+    <button onclick="setStatus('nhap')">Đưa về Nháp</button>
+    <button onclick="setStatus('ngung')">Ngưng dùng</button>
+    <button onclick="exportMoodle()">Xuất Moodle XML</button>
+    <button onclick="selectShown()">Chọn các câu đang hiện</button>
+    <button onclick="clearSel()">Bỏ chọn</button>
+    <button class="d" onclick="bulkDelete()">Xóa</button>
   </div>
-  <div class="pager" id="qPager"></div>
-  <div style="overflow-x:auto"><table>
-    <thead><tr><th style="width:28px"></th><th>Mã câu</th><th>Học phần / Giáo trình / Chương</th><th>Bloom</th><th>Loại</th><th>Nội dung</th><th>Đáp án</th><th></th></tr></thead>
-    <tbody id="qBody"></tbody>
-  </table></div>
+  <div class="tcard">
+    <div style="overflow-x:auto"><table class="qtable">
+      <thead><tr><th></th><th style="width:160px">Mã câu</th><th style="width:230px">Học phần / Giáo trình / Chương</th><th style="width:130px">Bloom</th><th style="width:70px">Loại</th><th>Nội dung và đáp án</th><th style="width:150px">Trạng thái</th><th></th></tr></thead>
+      <tbody id="qBody"></tbody>
+    </table></div>
+    <div class="tfoot"><span></span><div class="pager" id="qPager"></div></div>
+  </div>
 </div>
 </div>
 </section>
 
 <!-- ============ CẤU TRÚC ============ -->
 <section id="struct">
-  <div class="card tree" id="treeBox"></div>
-  <div class="row">
-    <div class="card" style="flex:1;min-width:240px">
-      <b>Thêm học phần</b>
+  <div class="panel tree-list"><h3 class="ph">Cấu trúc học phần</h3><span class="sub ps">Học phần → giáo trình → chương. Mục chỉ xóa được khi không còn câu bên trong.</span><div id="treeBox"></div></div>
+  <div class="struct-forms">
+    <div class="panel">
+      <h3 class="ph">Thêm học phần</h3>
       <div class="row"><input id="newCourse" placeholder="VD: Tiếng Nhật N5" style="flex:1"><input id="newCourseCode" placeholder="Mã (N5)" style="width:90px"><button class="p" onclick="addCourse()">Thêm</button></div>
     </div>
-    <div class="card" style="flex:1;min-width:240px">
-      <b>Thêm giáo trình</b>
+    <div class="panel">
+      <h3 class="ph">Thêm giáo trình</h3>
       <div class="row"><select id="newTbCourse" style="flex:1"></select></div>
       <div class="row"><input id="newTb" placeholder="VD: Minna no Nihongo 1" style="flex:1"><input id="newTbCode" placeholder="Mã (MN1)" style="width:90px"><button class="p" onclick="addTextbook()">Thêm</button></div>
     </div>
-    <div class="card" style="flex:1;min-width:240px">
-      <b>Thêm chương</b>
+    <div class="panel">
+      <h3 class="ph">Thêm chương</h3>
       <div class="row"><select id="newChTb" style="flex:1"></select></div>
       <div class="row"><input id="newChCode" placeholder="Mã, VD: B03" style="width:100px"><input id="newChTitle" placeholder="Tên chương" style="flex:1"><button class="p" onclick="addChapter()">Thêm</button></div>
     </div>
   </div>
   <div id="structMsg" class="msg"></div>
-  <div class="card" style="margin-top:16px">
-    <b>Đoạn văn</b> <span class="sub">Mỗi đoạn có mã riêng. Câu cùng đoạn được xuất liền nhau. Thêm đoạn bằng cách nhập đoạn trong form câu hỏi.</span>
+  <div class="panel">
+    <h3 class="ph">Đoạn văn</h3><span class="sub ps">Mỗi đoạn có mã riêng. Câu cùng đoạn được xuất liền nhau. Thêm đoạn bằng cách nhập đoạn trong form câu hỏi.</span>
     <div id="passBox"></div>
   </div>
 </section>
 
 <!-- ============ THỐNG KÊ ============ -->
 <section id="stats">
-  <div id="statTotals" class="row"></div>
-  <table id="statTable"></table>
-  <div class="card" style="margin-top:16px">
-    <b>Độ khó thực tế</b> <span class="sub">Nhập tỷ lệ đúng (%) của từng câu sau kỳ thi. Mỗi dòng: mã câu, tỷ lệ. Nhập nhiều lần cho cùng câu thì lấy trung bình.</span>
+  <div id="statTotals" class="kpis"></div>
+  <div class="panel">
+    <h3 class="ph">Số câu theo chương</h3>
+    <span class="sub ps">Số câu đã duyệt và nháp, theo chương và mức Bloom.</span>
+    <div class="tblwrap"><table id="statTable" class="qtable"></table></div>
+  </div>
+  <div class="panel">
+    <h3 class="ph">Chưa từng ra đề</h3>
+    <span class="sub ps">Câu đã duyệt, không thuộc đoạn văn, chưa có trong lịch sử dùng. Đây là số câu còn có thể chọn không trùng.</span>
+    <div class="row"><label>Dạng câu:</label>
+      <select id="unusedType" onchange="renderUnused()"><option value="">Mọi dạng</option><option value="TN">Trắc nghiệm</option><option value="DS">Đúng/sai</option><option value="DT">Điền từ</option><option value="TL">Tự luận</option></select></div>
+    <div class="tblwrap"><table id="unusedTable" class="qtable"></table></div>
+  </div>
+  <div class="panel">
+    <h3 class="ph">Độ khó thực tế</h3>
+    <span class="sub ps">Nhập tỷ lệ đúng (%) của từng câu sau kỳ thi. Mỗi dòng: mã câu, tỷ lệ. Nhập nhiều lần cho cùng câu thì lấy trung bình.</span>
     <div class="row" style="margin-top:8px">
       <label>Mã đề:</label><input id="resExam" class="n" style="width:110px" placeholder="GK-2026">
     </div>
@@ -192,8 +378,9 @@
     <div class="row"><button class="g" onclick="saveResults()">Ghi kết quả</button><span id="resMsg" class="msg"></span></div>
     <div id="diffBox"></div>
   </div>
-  <div class="card" style="margin-top:16px">
-    <b>Phân tích câu hỏi từ bảng điểm</b> <span class="sub">Mỗi dòng một sinh viên; cột đầu là tên hoặc mã sinh viên; tiêu đề các cột sau là mã câu; ô điểm là 1 (đúng), 0 (sai) hoặc tỷ lệ điểm từ 0 đến 1. Nhập file .csv hoặc .xlsx.</span>
+  <div class="panel">
+    <h3 class="ph">Phân tích câu hỏi từ bảng điểm</h3>
+    <span class="sub ps">Mỗi dòng một sinh viên; cột đầu là tên hoặc mã sinh viên; tiêu đề các cột sau là mã câu; ô điểm là 1 (đúng), 0 (sai) hoặc tỷ lệ điểm từ 0 đến 1. Nhập file .csv hoặc .xlsx.</span>
     <div class="row" style="margin-top:8px">
       <input type="file" id="scoreFile" accept=".csv,.xlsx,.txt">
       <label><input type="checkbox" id="scoreRecord"> Ghi tỷ lệ đúng vào kết quả của mã đề (mã đề nhập ở trên)</label>
@@ -311,6 +498,7 @@
     <div class="card">
       <div class="row"><b>Tóm tắt trước khi xuất</b></div>
       <div id="sumBox"></div>
+      <div class="row" style="margin-top:10px"><label>Seed chọn câu (để trống = ngẫu nhiên): <input id="seedIn" class="n" style="width:140px"></label></div>
       <div class="row" style="margin-top:10px"><label><input type="checkbox" id="confirmChk"> Tôi đã kiểm tra thông tin trên và muốn xuất đề</label></div>
     </div>
     <div class="row"><button class="p" id="btnExport" onclick="withBusy(this, doExport)">Xuất .zip các file .docx</button><button class="g" onclick="printPreview()">Xem bản in</button><span id="exportMsg" class="msg"></span><span id="shortMsg" class="err"></span></div>
@@ -422,10 +610,7 @@ async function loadTagList() {
 // ---------- ngân hàng
 // ---------- trạng thái duyệt: Nháp, Đã duyệt (được ra đề), Ngưng dùng
 const STATUS_LABEL = {nhap: "Nháp", da_duyet: "Đã duyệt", ngung: "Ngưng dùng"};
-const statusBadge = st => {
-  const color = {nhap: ["#fef3c7", "#92400e"], da_duyet: ["#dcfce7", "#166534"], ngung: ["#e5e7eb", "#374151"]}[st] || ["#e5e7eb", "#374151"];
-  return `<span class="tag" style="background:${color[0]};color:${color[1]}">${STATUS_LABEL[st] || st}</span>`;
-};
+const statusBadge = st => `<span class="badge st-${st}">${STATUS_LABEL[st] || st}</span>`;
 async function setStatus(status) {
   if (!SEL.size) { toast("Chưa chọn câu nào.", true); return; }
   try {
@@ -449,8 +634,11 @@ async function exportMoodle() {
 
 // ---------- chọn nhiều câu để sửa hàng loạt
 const SEL = new Set();
+const PCT_OPTS = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
+let UNUSED_STATS = null;  // thống kê gần nhất (có số câu chưa từng ra đề)
 function updateSelBar() {
   $("#selCount").textContent = SEL.size;
+  $("#bulkBar").style.display = SEL.size ? "flex" : "none";
 }
 function toggleSel(id, on) { on ? SEL.add(id) : SEL.delete(id); updateSelBar(); }
 function selectShown() { document.querySelectorAll(".qsel").forEach(c => { c.checked = true; SEL.add(+c.value); }); updateSelBar(); }
@@ -503,18 +691,32 @@ async function loadQuestions(page = 0) {
   renderBankTree();
   loadTagList();
   if (TRASH_OPEN) loadTrash();  // thùng rác đang mở: làm mới sau mỗi thay đổi
-  $("#qBody").innerHTML = list.map(q => `
-    <tr>
-      <td><input type="checkbox" class="qsel" value="${q.id}" ${SEL.has(q.id) ? "checked" : ""} onchange="toggleSel(${q.id}, this.checked)"></td>
-      <td>${esc(q.code)}</td>
-      <td>${esc(q.course)} / ${esc(q.textbook)}<div class="sub">${esc(q.chapter_code)}${q.chapter_title ? " - " + esc(q.chapter_title) : ""}</div>${q.tags && q.tags.length ? `<div class="sub">🏷 ${esc(q.tags.join(", "))}</div>` : ""}</td>
-      <td><span class="tag">${q.bloom}. ${BLOOM[q.bloom]}</span> ${statusBadge(q.status)}${q.clo ? `<div class="sub">${esc(q.clo)}</div>` : ""}</td>
-      <td>${q.qtype}</td>
-      <td>${esc(q.content)}${mediaHtml(q.media)}<div class="opts">${esc(q.options.map((o,k)=>(q.qtype==="DS"?"abcdefgh"[k]+") ":"ABCDEFGH"[k]+". ")+o).join("\n"))}</div></td>
-      <td>${esc(q.qtype === "DS" ? q.answer.replace(/D/g, "Đ") : q.answer)}<div class="sub">${q.points != null ? q.points + " điểm · " : ""}${q.used_count ? "đã dùng " + q.used_count + " lần" : "chưa dùng"}</div></td>
-      <td style="white-space:nowrap"><button class="g" onclick="editQ(${q.id})">Sửa</button>
-          <button class="d" onclick="delQ(${q.id})">Xóa</button></td>
-    </tr>`).join("") || `<tr><td colspan="8" class="msg">Chưa có câu hỏi nào. Nhấn “+ Câu mới” hoặc nhập từ .docx.</td></tr>`;
+  $("#qBody").innerHTML = list.map(qRowHtml).join("") || `<tr><td colspan="8" class="msg" style="padding:24px;text-align:center">Chưa có câu hỏi nào. Nhấn “Câu mới” hoặc nhập từ .docx trong mục Công cụ.</td></tr>`;
+}
+
+const OPT_L = "ABCDEFGH";
+const BLOOM_CLS = {1: "bl1", 2: "bl2", 3: "bl3", 4: "bl4", 5: "bl5"};
+// một dòng bảng: đáp án đúng được tô xanh ngay trong danh sách phương án
+function qRowHtml(q) {
+  const marks = q.qtype === "TN" ? q.options.map((_, k) => q.answer === OPT_L[k])
+              : q.qtype === "DS" ? q.options.map((_, k) => q.answer[k] === "D") : [];
+  const opts = q.options.length ? `<div class="opts-grid">${q.options.map((o, k) => {
+      const lab = q.qtype === "DS" ? "abcdefgh"[k].toUpperCase() : OPT_L[k];
+      return `<div class="opt ${marks[k] ? "ok" : ""}"><b>${lab}.</b>${esc(o)}</div>`; }).join("")}</div>` : "";
+  const ans = (q.qtype === "TN" || q.qtype === "DS") ? "" : `<div class="ans-line">Đáp án: <b>${esc(q.answer)}</b></div>`;
+  const chap = `${esc(q.chapter_code)}${q.chapter_title ? " - " + esc(q.chapter_title) : ""}`;
+  const tags = q.tags && q.tags.length ? `<div class="sub">🏷 ${esc(q.tags.join(", "))}</div>` : "";
+  const used = q.used_count ? `Đã dùng ${q.used_count} lần` : "Chưa dùng";
+  return `<tr>
+    <td class="ck"><input type="checkbox" class="qsel" value="${q.id}" ${SEL.has(q.id) ? "checked" : ""} onchange="toggleSel(${q.id}, this.checked)"></td>
+    <td><div class="code">${esc(q.code)}</div></td>
+    <td><div style="font-weight:600">${esc(q.course)}</div><div class="sub">${esc(q.textbook)}</div><div class="sub">${chap}</div>${tags}</td>
+    <td><span class="badge ${BLOOM_CLS[q.bloom]}">${q.bloom}. ${BLOOM[q.bloom]}</span>${q.clo ? `<div class="sub" style="margin-top:4px">${esc(q.clo)}</div>` : ""}</td>
+    <td><span class="qt">${q.qtype}</span></td>
+    <td><div class="stem">${esc(q.content)}</div>${mediaHtml(q.media)}${opts}${ans}</td>
+    <td>${statusBadge(q.status)}<div class="sub" style="margin-top:4px">${q.points != null ? q.points + " điểm · " : ""}${used}</div></td>
+    <td class="acts"><button class="ib" title="Sửa" onclick="editQ(${q.id})"><i class="fa-solid fa-pen-to-square"></i></button><button class="ib del" title="Xóa" onclick="delQ(${q.id})"><i class="fa-solid fa-trash-can"></i></button></td>
+  </tr>`;
 }
 
 // thanh phân trang kiểu Gmail: "1–50 của 17981" và hai nút ‹ ›
@@ -526,28 +728,81 @@ function renderQPager(total) {
     <button class="g" title="Trang sau" aria-label="Trang sau" ${last ? "disabled" : ""} onclick="loadQuestions(${QPAGE + 1})">›</button>`;
 }
 
-// cây học phần / giáo trình / chương ở bên trái; bấm để lọc
+// ---------- cây học phần: nút + / − để mở, thu gọn; nhớ trạng thái trên máy này
+const TREE_KEY = "qbank_tree_open";
+let TREE_OPEN = new Set();
+try { TREE_OPEN = new Set(JSON.parse(localStorage.getItem(TREE_KEY) || "[]")); } catch (e) { TREE_OPEN = new Set(); }
+let TREE_QUERY = "";
+const treeChLabel = ch => `${ch.code}${ch.title ? " - " + ch.title : ""}`;
+function saveTreeOpen() { try { localStorage.setItem(TREE_KEY, JSON.stringify([...TREE_OPEN])); } catch (e) {} }
+function toggleNode(key, ev) {
+  if (ev) ev.stopPropagation();
+  TREE_OPEN.has(key) ? TREE_OPEN.delete(key) : TREE_OPEN.add(key);
+  saveTreeOpen(); renderBankTree();
+}
+function setAllTree(open) {
+  TREE_OPEN.clear();
+  if (open) { TREE.courses.forEach(c => TREE_OPEN.add("c" + c.id)); TREE.textbooks.forEach(t => TREE_OPEN.add("t" + t.id)); }
+  saveTreeOpen(); renderBankTree();
+}
+// khi chọn một mục trong cây, mở sẵn các nhánh cha để thấy mục đó
+function openForPick(kind, id) {
+  if (kind === "all") return;
+  let t = null;
+  if (kind === "course") TREE_OPEN.add("c" + id);
+  else if (kind === "textbook") t = TREE.textbooks.find(x => x.id == id);
+  else { const ch = TREE.chapters.find(x => x.id == id); t = ch && TREE.textbooks.find(x => x.id == ch.textbook_id); }
+  if (t) { TREE_OPEN.add("c" + t.course_id); TREE_OPEN.add("t" + t.id); }
+  saveTreeOpen();
+}
 function renderBankTree() {
   const cId = $("#fCourse").value, tId = $("#fTextbook").value, chId = $("#fChapter").value;
-  const total = (ids) => TREE.chapters.filter(c => ids(c)).reduce((a, c) => a + c.count, 0);
-  const row = (cls, label, cnt, action) =>
-    `<div class="tn ${cls}" onclick="${action}"><span>${label}</span> <span class="cnt">${cnt}</span></div>`;
-  let html = row(!cId ? "on" : "", "Tất cả học phần", total(() => true), "pickNav('all')");
+  const q = fold(TREE_QUERY.trim());
+  const match = s => !q || fold(s).includes(q);
+  const chByTb = new Map(), cntTb = new Map(), tbByCo = new Map(), cntCo = new Map();
+  let all = 0;
+  for (const ch of TREE.chapters) {  // bảng tra trước: không quét lại danh sách cho từng dòng
+    if (!chByTb.has(ch.textbook_id)) chByTb.set(ch.textbook_id, []);
+    chByTb.get(ch.textbook_id).push(ch);
+    cntTb.set(ch.textbook_id, (cntTb.get(ch.textbook_id) || 0) + ch.count);
+    all += ch.count;
+  }
+  for (const t of TREE.textbooks) {
+    if (!tbByCo.has(t.course_id)) tbByCo.set(t.course_id, []);
+    tbByCo.get(t.course_id).push(t);
+    cntCo.set(t.course_id, (cntCo.get(t.course_id) || 0) + (cntTb.get(t.id) || 0));
+  }
+  // đang tìm: các nhánh có kết quả được mở sẵn (không ghi vào trạng thái đã lưu)
+  const forced = new Set();
+  if (q) for (const ch of TREE.chapters) {
+    const t = TREE.textbooks.find(x => x.id == ch.textbook_id);
+    if (t && (match(treeChLabel(ch)) || match(t.name))) { forced.add("t" + t.id); forced.add("c" + t.course_id); }
+  }
+  const isOpen = k => TREE_OPEN.has(k) || forced.has(k);
+  const row = (cls, key, open, label, cnt, action) => `<div class="tn ${cls}" onclick="${action}">`
+    + (key ? `<button class="car" onclick="toggleNode('${key}', event)" title="${open ? "Thu gọn" : "Mở rộng"}">${open ? "−" : "+"}</button>` : `<span class="car none"></span>`)
+    + `<span class="nm">${label}</span><span class="cnt">${cnt}</span></div>`;
+  let html = `<div class="tn ${!cId && !tId && !chId ? "on" : ""}" onclick="pickNav('all')"><span class="car none"></span><span class="nm">Tất cả học phần</span><span class="cnt">${all}</span></div>`;
   for (const c of TREE.courses) {
-    html += row(`l1 ${c.id == cId && !tId && !chId ? "on" : ""}`, `<b>${esc(c.name)}</b>`,
-                total(ch => TREE.textbooks.some(t => t.id == ch.textbook_id && t.course_id == c.id)), `pickNav('course',${c.id})`);
-    for (const t of TREE.textbooks.filter(t => t.course_id == c.id)) {
-      html += row(`l2 ${t.id == tId && !chId ? "on" : ""}`, esc(t.name),
-                  total(ch => ch.textbook_id == t.id), `pickNav('textbook',${t.id})`);
-      for (const ch of TREE.chapters.filter(ch => ch.textbook_id == t.id)) {
-        html += row(`l3 ${ch.id == chId ? "on" : ""}`, `${esc(ch.code)}${ch.title ? " - " + esc(ch.title) : ""}`,
-                    ch.count, `pickNav('chapter',${ch.id})`);
-      }
+    const tbs = (tbByCo.get(c.id) || []).filter(t => !q || match(t.name) || (chByTb.get(t.id) || []).some(ch => match(treeChLabel(ch))));
+    if (q && !tbs.length && !match(c.name)) continue;
+    const ck = "c" + c.id, cOpen = isOpen(ck);
+    html += row(`l1 ${!tId && !chId && cId == c.id ? "on" : ""}`, (tbByCo.get(c.id) || []).length ? ck : null, cOpen,
+                esc(c.name), cntCo.get(c.id) || 0, `pickNav('course',${c.id})`);
+    if (!cOpen) continue;
+    for (const t of tbs) {
+      const tk = "t" + t.id, tOpen = isOpen(tk);
+      const chs = (chByTb.get(t.id) || []).filter(ch => !q || match(treeChLabel(ch)) || match(t.name));
+      html += row(`l2 ${tId == t.id && !chId ? "on" : ""}`, chs.length ? tk : null, tOpen,
+                  esc(t.name), cntTb.get(t.id) || 0, `pickNav('textbook',${t.id})`);
+      if (!tOpen) continue;
+      for (const ch of chs) html += row(`l3 ${ch.id == chId ? "on" : ""}`, null, false, esc(treeChLabel(ch)), ch.count, `pickNav('chapter',${ch.id})`);
     }
   }
   $("#bankTree").innerHTML = html;
 }
 function pickNav(kind, id) {
+  openForPick(kind, id);
   if (kind === "all") { $("#fCourse").value = ""; fillTextbookFilter(); $("#fTextbook").value = ""; fillChapterFilter(); }
   else if (kind === "course") { $("#fCourse").value = id; fillTextbookFilter(); $("#fTextbook").value = ""; fillChapterFilter(); }
   else if (kind === "textbook") {
@@ -976,17 +1231,41 @@ async function renderStruct() {
   // mục đang sửa tại chỗ thì thay dòng hiển thị bằng form; các mục khác giữ nguyên nút Sửa/Xóa
   const actions = (kind, id) => EDIT_NODE && EDIT_NODE.kind === kind && EDIT_NODE.id === id ? "" :
     ` <button class="g" onclick="renameNode('${kind}',${id})">Sửa</button> <button class="d" onclick="delNode('${kind}',${id})">Xóa</button>`;
-  const label = (kind, id, html) => EDIT_NODE && EDIT_NODE.kind === kind && EDIT_NODE.id === id ? nodeEditForm(kind, id) : html + actions(kind, id);
-  $("#treeBox").innerHTML = TREE.courses.length ? `<ul>` + TREE.courses.map(c => `
-    <li>${label("courses", c.id, `<b>${esc(c.name)}</b>${c.code ? ` <span class="sub">${esc(c.code)}</span>` : ""}`)}
-      <ul>${byCourse(c.id).map(t => `
-        <li>${label("textbooks", t.id, `${esc(t.name)}${t.code ? ` <span class="sub">${esc(t.code)}</span>` : ""}`)}
-          <ul>${byTb(t.id).map(ch => `
-            <li>${label("chapters", ch.id, `${esc(ch.code)}${ch.title ? " - " + esc(ch.title) : ""} <span class="sub">(${ch.count} câu)</span>`)}</li>`).join("")}</ul>
-        </li>`).join("")}</ul>
-    </li>`).join("") + `</ul>` : `<span class="msg">Chưa có học phần nào.</span>`;
+  const label = (kind, id, html) => EDIT_NODE && EDIT_NODE.kind === kind && EDIT_NODE.id === id
+    ? `<div class="trow edit">${nodeEditForm(kind, id)}</div>`
+    : `<div class="trow"><span class="name">${html}</span>${actions(kind, id)}</div>`;
+  const SOPEN = STRUCT_OPEN;
+  const car = (key, has, open) => has ? `<button class="car" onclick="toggleStruct('${key}')" title="${open ? "Thu gọn" : "Mở rộng"}">${open ? "−" : "+"}</button>` : `<span class="car none"></span>`;
+  const tbOf = id => byCourse(id);
+  let html = "";
+  for (const c of TREE.courses) {
+    const tbs = tbOf(c.id), cOpen = SOPEN.has("c" + c.id);
+    html += `<li>${label("courses", c.id, car("c" + c.id, tbs.length, cOpen) + `<span class="typ c">Học phần</span><b>${esc(c.name)}</b>${c.code ? ` <span class="sub">${esc(c.code)}</span>` : ""}`)}`;
+    if (cOpen) {
+      html += `<ul>`;
+      for (const t of tbs) {
+        const chs = byTb(t.id), tOpen = SOPEN.has("t" + t.id);
+        html += `<li>${label("textbooks", t.id, car("t" + t.id, chs.length, tOpen) + `<span class="typ t">Giáo trình</span>${esc(t.name)}${t.code ? ` <span class="sub">${esc(t.code)}</span>` : ""} <span class="sub">${chs.length} chương</span>`)}`;
+        if (tOpen) html += `<ul>` + chs.map(ch => `<li>${label("chapters", ch.id, `<span class="car none"></span><span class="typ ch">Chương</span>${esc(ch.code)}${ch.title ? " - " + esc(ch.title) : ""} <span class="sub">(${ch.count} câu)</span>`)}</li>`).join("") + `</ul>`;
+        html += `</li>`;
+      }
+      html += `</ul>`;
+    }
+    html += `</li>`;
+  }
+  $("#treeBox").innerHTML = TREE.courses.length ? `<ul>${html}</ul>` : `<span class="msg">Chưa có học phần nào.</span>`;
   $("#newTbCourse").innerHTML = TREE.courses.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join("");
   $("#newChTb").innerHTML = TREE.textbooks.map(t => `<option value="${t.id}">${esc(courseName(t.course_id))} / ${esc(t.name)}</option>`).join("");
+}
+
+// cấu trúc: học phần và giáo trình thu gọn như tab Ngân hàng; trạng thái nhớ trên máy
+const STRUCT_KEY = "qbank_struct_open";
+let STRUCT_OPEN = new Set();
+try { STRUCT_OPEN = new Set(JSON.parse(localStorage.getItem(STRUCT_KEY) || "[]")); } catch (e) { STRUCT_OPEN = new Set(); }
+function toggleStruct(key) {
+  STRUCT_OPEN.has(key) ? STRUCT_OPEN.delete(key) : STRUCT_OPEN.add(key);
+  try { localStorage.setItem(STRUCT_KEY, JSON.stringify([...STRUCT_OPEN])); } catch (e) {}
+  renderStruct();
 }
 
 async function loadHistory() {
@@ -1064,13 +1343,56 @@ const delNode = (kind, id) => structAction(async () => {
 // ---------- thống kê
 async function loadStats() {
   const s = await api("/api/stats");
-  $("#statTotals").innerHTML = `<span class="tag">Tổng: ${s.total}</span>
-     <span class="tag">Trắc nghiệm: ${s.by_type.TN || 0}</span><span class="tag">Đúng/sai: ${s.by_type.DS || 0}</span>
-     <span class="tag">Điền từ: ${s.by_type.DT || 0}</span><span class="tag">Tự luận: ${s.by_type.TL || 0}</span>`;
+  $("#statTotals").innerHTML = `<div class="kpi total"><span>Tổng câu</span><b>${s.total}</b></div>
+     <div class="kpi"><span>Trắc nghiệm</span><b>${s.by_type.TN || 0}</b></div><div class="kpi"><span>Đúng/sai</span><b>${s.by_type.DS || 0}</b></div>
+     <div class="kpi"><span>Điền từ</span><b>${s.by_type.DT || 0}</b></div><div class="kpi"><span>Tự luận</span><b>${s.by_type.TL || 0}</b></div>`;
   const head = `<tr><th>Học phần</th><th>Giáo trình</th><th>Chương</th>${Object.entries(BLOOM).map(([k,v])=>`<th class="num">${k}. ${v}</th>`).join("")}<th class="num">Cộng</th></tr>`;
   const rows = s.chapters.map(c => `<tr><td>${esc(c.course)}</td><td>${esc(c.textbook)}</td><td>${esc(c.code)}${c.title ? " - " + esc(c.title) : ""}</td>
       ${Object.keys(BLOOM).map(k=>`<td class="num">${c.counts[k]||0}</td>`).join("")}<td class="num"><b>${c.total}</b></td></tr>`).join("");
   $("#statTable").innerHTML = `<thead>${head}</thead><tbody>${rows || `<tr><td colspan="9" class="msg">Chưa có chương nào.</td></tr>`}</tbody>`;
+  UNUSED_STATS = s;
+  renderUnused();
+}
+function renderUnused() {
+  const s = UNUSED_STATS;
+  if (!s) return;
+  const qt = $("#unusedType").value;
+  const cnt = (u, k) => qt ? ((u[qt] || {})[k] || 0) : Object.values(u).reduce((a, t) => a + (t[k] || 0), 0);
+  const tot = Object.fromEntries(Object.keys(BLOOM).map(k => [k, 0]));
+  const rows = s.chapters.map(c => {
+    const u = (s.unused || {})[c.id] || {};
+    const vals = Object.keys(BLOOM).map(k => { tot[k] += cnt(u, k); return cnt(u, k); });
+    return `<tr><td>${esc(c.course)}</td><td>${esc(c.textbook)}</td><td>${esc(c.code)}${c.title ? " - " + esc(c.title) : ""}</td>
+      ${vals.map(v => `<td class="num">${v}</td>`).join("")}<td class="num"><b>${vals.reduce((a, b) => a + b, 0)}</b></td></tr>`;
+  }).join("");
+  const head = `<tr><th>Học phần</th><th>Giáo trình</th><th>Chương</th>${Object.entries(BLOOM).map(([k, v]) => `<th class="num">${k}. ${v}</th>`).join("")}<th class="num">Cộng</th></tr>`;
+  const foot = `<tr><th colspan="3">Tổng</th>${Object.keys(BLOOM).map(k => `<th class="num">${tot[k]}</th>`).join("")}<th class="num">${Object.values(tot).reduce((a, b) => a + b, 0)}</th></tr>`;
+  $("#unusedTable").innerHTML = `<thead>${head}</thead><tbody>${rows || `<tr><td colspan="9" class="msg">Chưa có chương nào.</td></tr>`}</tbody><tfoot>${foot}</tfoot>`;
+}
+
+// reset tình trạng ra đề: câu đang tick, chương đang lọc, hoặc toàn bộ (phải gõ RESET)
+async function resetUsage(scope) {
+  const body = { scope };
+  if (scope === "questions") {
+    if (!SEL.size) { toast("Chưa tick câu nào ở bảng.", true); return; }
+    if (!confirm(`Reset lịch sử ra đề của ${SEL.size} câu đã tick? Câu không bị xóa.`)) return;
+    body.ids = [...SEL];
+  } else if (scope === "chapters") {
+    const ch = $("#fChapter").value;
+    if (!ch) { toast("Chọn một chương ở bộ lọc trước.", true); return; }
+    if (!confirm("Reset lịch sử ra đề của toàn bộ câu trong chương đang lọc? Câu không bị xóa.")) return;
+    body.ids = [+ch];
+  } else {
+    const t = prompt("Reset lịch sử ra đề của TOÀN BỘ câu hỏi (câu vẫn giữ nguyên, trước khi reset sẽ có bản sao lưu).\nGõ RESET để xác nhận:");
+    if (t !== "RESET") { if (t !== null) toast("Chưa đúng chữ RESET, chưa reset.", true); return; }
+    body.confirm = "RESET";
+  }
+  try {
+    const r = await postJson("/api/usage/reset", body);
+    toast(`Đã reset ${r.deleted} lượt ra đề. Bản sao lưu: ${r.snapshot}`);
+    loadQuestions();
+    if (UNUSED_STATS) loadStats();
+  } catch (e) { toast(e.message, true); }
 }
 
 // ---------- phân tích câu hỏi từ bảng điểm
@@ -1199,6 +1521,11 @@ function readSections() {
     passages: [...card.querySelectorAll(".prow")]
       .map(r => ({ chapter_id: +r.querySelector(".pch").value, n: +r.querySelector(".pn").value || 0 }))
       .filter(x => x.n > 0 && x.chapter_id),
+    mode: card.classList.contains("pct") ? "pct" : "manual",
+    total: Math.max(0, Math.floor(+card.querySelector(".pc-total").value || 0)),
+    pct: Object.fromEntries([...card.querySelectorAll(".pc-p")].map(sel => [sel.dataset.b, +sel.value])),
+    chapters: [...card._picked].sort((a, b) => a - b),
+    locked: !!card._locked,
   }));
 }
 async function saveConfig() {
@@ -1236,6 +1563,13 @@ function applyCfg(cfg) {
       if (m.n > 0 && haveFor(m.chapter_id, m.bloom, s.qtype || "") > 0) card._vals.set(valKey(m.chapter_id, m.bloom), m.n);
     }
     for (const ps of s.passages || []) addPassRow(card, ps.chapter_id, ps.n);
+    if (s.mode === "pct") {
+      card._picked = new Set((s.chapters || []).map(Number));
+      card.querySelector(".pc-total").value = s.total || "";
+      card.querySelectorAll(".pc-p").forEach(sel => { sel.value = (s.pct || {})[sel.dataset.b] ?? 0; });
+      setMode(card, "pct");
+      if (s.locked) pctLock(card);
+    }
   }
   if (cfg.template) $("#tpl").value = cfg.template;
   if (cfg.key_template) $("#keyTpl").value = cfg.key_template;
@@ -1312,15 +1646,25 @@ function addSection(title = "", qtype = "") {
   div._vals = new Map();  // số câu đã nhập
   div._items = [];        // các mục đang hiển thị (đầu học phần hoặc dòng chương)
   div._sums = {};         // tổng câu theo học phần
+  div._picked = new Set(); // chương được chọn để chia theo tỷ lệ
+  div._locked = false;     // đã chốt (tổng, tỷ lệ, chương): không sửa được cho tới khi mở khóa
   div.innerHTML = `
     <div class="row sh">
       <input class="st" style="width:260px" placeholder="Tiêu đề phần" value="${esc(title)}" oninput="this.closest('.sec').querySelector('.sec-title').textContent=this.value">
       <select class="sq" onchange="refreshSection(this.closest('.sec'))">${Object.entries(QT).map(([k, v]) => `<option value="${k}" ${k === qtype ? "selected" : ""}>${v}</option>`).join("")}</select>
+      <select class="smode" onchange="setMode(this.closest('.sec'), this.value)"><option value="manual">Nhập tay từng ô</option><option value="pct">Theo tỷ lệ %</option></select>
       <label><input type="checkbox" class="ss" checked> Xáo câu & phương án</label>
       <span style="flex:1"></span>
       <button class="d" onclick="this.closest('.sec').remove()">Xóa phần</button>
     </div>
     <div class="sb"><b class="sec-title">${esc(title)}</b>
+      <div class="row pctbar">
+        <label>Tổng số câu: <input class="n pc-total" style="width:70px" placeholder="vd 50" oninput="pctInput(this)"></label>
+        ${Object.entries(BLOOM).map(([k, v]) => `<label>${k}. ${v} <select class="pc-p" data-b="${k}" onchange="pctInput(this)">${PCT_OPTS.map(x => `<option value="${x}" ${x === 20 ? "selected" : ""}>${x}%</option>`).join("")}</select></label>`).join("")}
+        <span class="pc-sum sub"></span>
+        <button class="g pc-lock" onclick="pctLock(this.closest('.sec'))">Chốt</button>
+        <span class="pc-msg sub"></span>
+      </div>
       <div class="row fillbar">
         <label>Điền nhanh các dòng đang hiện:</label>
         <select class="fb-b">${[["", "Mọi mức"], ...Object.entries(BLOOM)].map(([k, v]) => `<option value="${k}">${k ? k + ". " : ""}${v}</option>`).join("")}</select>
@@ -1329,7 +1673,7 @@ function addSection(title = "", qtype = "") {
         <span class="sub sec-total"></span>
       </div>
       <div class="tblwrap"><table class="ctab">
-        <thead><tr><th>Chương</th>${Object.entries(BLOOM).map(([k, v]) => `<th class="num">${k}. ${v}</th>`).join("")}</tr></thead>
+        <thead><tr><th class="pc">Chọn</th><th>Chương</th>${Object.entries(BLOOM).map(([k, v]) => `<th class="num">${k}. ${v}</th>`).join("")}</tr></thead>
         <tbody class="cbody"></tbody>
       </table></div>
       <div class="row pblock" style="margin-top:8px"><b>Theo đoạn văn:</b> <span class="sub">lấy đủ số đoạn của chương, mỗi đoạn lấy mọi câu phù hợp</span>
@@ -1347,11 +1691,12 @@ function haveOf(c, bloom, qtype) {
 }
 
 // ô nhập số câu; ô không có câu nào (theo dạng của phần) bị khóa và làm mờ
-function cellHtml(c, k, qtype, val = 0) {
+function cellHtml(c, k, qtype, val = 0, ro = false) {
   const have = haveOf(c, k, qtype);
   const tip = have > 0 ? `Có ${have} câu` : `Chưa có câu mức ${BLOOM[k]}${qtype ? " dạng " + QT[qtype] : ""}`;
   return `<td class="num"><input class="n cell" data-ch="${c.id}" data-b="${k}" data-have="${have}" value="${have > 0 ? val : 0}"`
-    + (have > 0 ? ` oninput="cellInput(this)"` : ` disabled style="opacity:.35"`) + ` title="${tip}"></td>`;
+    + (have > 0 && !ro ? ` oninput="cellInput(this)"` : "") + (ro || have === 0 ? " disabled" : "")
+    + (have === 0 ? ` style="opacity:.35"` : "") + ` title="${tip}"></td>`;
 }
 
 // các mục hiển thị của một phần: theo dạng, học phần, tìm kiếm, "chỉ dòng đã nhập", thu gọn
@@ -1403,7 +1748,7 @@ function renderWindow(card) {
   const wrap = card.querySelector(".tblwrap");
   const tb = card.querySelector(".cbody");
   const qtype = card.querySelector(".sq").value;
-  const items = card._items, colspan = BLOOMS.length + 1;
+  const items = card._items, colspan = BLOOMS.length + 2;
   if (!items.length) {
     tb.innerHTML = `<tr><td class="msg" colspan="${colspan}">Không có chương nào khớp bộ lọc.</td></tr>`;
     return;
@@ -1427,11 +1772,12 @@ function scheduleWindow(card) {
 function itemHtml(card, it, qtype) {
   if (it.head) {
     const s = card._sums[it.cid] || 0;
-    return `<tr class="ghead" data-course="${it.cid}"><td colspan="${BLOOMS.length + 1}"><span class="garrow">${COLLAPSED.has(it.cid) ? "▸" : "▾"}</span> <b>${esc(courseName(it.cid) || "Không rõ học phần")}</b> <span class="sub">${s ? "· " + s + " câu" : ""}</span></td></tr>`;
+    return `<tr class="ghead" data-course="${it.cid}"><td colspan="${BLOOMS.length + 2}"><span class="garrow">${COLLAPSED.has(it.cid) ? "▸" : "▾"}</span> <b>${esc(courseName(it.cid) || "Không rõ học phần")}</b> <span class="sub">${s ? "· " + s + " câu" : ""}</span></td></tr>`;
   }
   const c = it.c;
-  return `<tr class="crow" data-course="${it.cid}"><td title="${esc(chapterLabel(c))}">${esc(chapterLabel(c))}</td>`
-    + BLOOMS.map(k => cellHtml(c, k, qtype, cellVal(card, c.id, k))).join("") + `</tr>`;
+  const ro = card.classList.contains("pct");
+  return `<tr class="crow" data-course="${it.cid}"><td class="pc"><input type="checkbox" class="pchk" value="${c.id}" ${card._picked.has(c.id) ? "checked" : ""} ${card._locked ? "disabled" : ""} onchange="pickChapter(this)"></td><td title="${esc(chapterLabel(c))}">${esc(chapterLabel(c))}</td>`
+    + BLOOMS.map(k => cellHtml(c, k, qtype, cellVal(card, c.id, k), ro)).join("") + `</tr>`;
 }
 
 // tổng của phần và số câu nằm ở dòng đang bị ẩn (do lọc, tìm kiếm hoặc thu gọn)
@@ -1493,16 +1839,115 @@ function matrixOf(card) {
 // đổi dạng câu của phần: bỏ số đã nhập ở các ô không còn câu dạng này, rồi vẽ lại
 function refreshSection(card) {
   const qtype = card.querySelector(".sq").value;
+  if (card._locked) { card._locked = false; applyLockUI(card); toast("Đã mở khóa phần vì đổi dạng câu; hãy chốt lại."); }
   for (const k of [...card._vals.keys()]) {
     const [ch, b] = k.split(":");
     if (!haveFor(ch, b, qtype)) card._vals.delete(k);
   }
+  if (card.classList.contains("pct")) { pctRecalc(card); return; }
   renderCard(card);
   updateShort();
 }
 
+// ---------- chia theo tỷ lệ %: tổng câu × tỷ lệ từng mức, chia đều cho các chương được chọn
+// làm tròn theo phần dư lớn nhất để tổng đúng bằng số câu; chương nào thiếu câu thì phần dư chia cho chương còn chỗ
+function allocPercent(card) {
+  const qtype = card.querySelector(".sq").value;
+  const N = Math.max(0, Math.floor(+card.querySelector(".pc-total").value || 0));
+  const pct = {};
+  card.querySelectorAll(".pc-p").forEach(sel => { pct[sel.dataset.b] = +sel.value; });
+  const sum = Object.values(pct).reduce((a, b) => a + b, 0);
+  const target = {}, rem = [];
+  let base = 0;
+  for (const k of BLOOMS) {
+    const exact = N * (pct[k] || 0) / 100;
+    target[k] = Math.floor(exact); base += target[k];
+    rem.push([k, exact - Math.floor(exact)]);
+  }
+  rem.sort((a, b) => b[1] - a[1]);
+  for (let i = 0; i < N - base; i++) target[rem[i % rem.length][0]]++;
+  const chs = [...card._picked].map(id => CHMAP.get(id)).filter(Boolean).sort((a, b) => a._ord - b._ord);
+  const cells = new Map(), short = [];
+  for (const k of BLOOMS) {
+    let r = target[k];
+    const give = new Map(chs.map(c => [c.id, 0]));
+    while (r > 0) {
+      let progressed = false;
+      for (const c of chs) {
+        if (r <= 0) break;
+        if (give.get(c.id) < haveOf(c, k, qtype)) { give.set(c.id, give.get(c.id) + 1); r--; progressed = true; }
+      }
+      if (!progressed) break;
+    }
+    if (r > 0) short.push(`${BLOOM[k]} thiếu ${r} câu`);
+    for (const [id, n] of give) if (n > 0) cells.set(valKey(id, k), n);
+  }
+  return { cells, short, N, sum, target };
+}
+
+// tính lại ô từ tổng, tỷ lệ và chương đã chọn (bỏ qua khi đã chốt)
+function pctRecalc(card) {
+  if (card._locked) return;
+  const { cells, short, N, sum } = allocPercent(card);
+  card._vals = cells;
+  renderCard(card);
+  updateShort();
+  const total = [...cells.values()].reduce((a, b) => a + b, 0);
+  card.querySelector(".pc-sum").innerHTML = `Tổng tỷ lệ: <span class="${sum === 100 ? "ok" : "bad"}">${sum}%</span> (cần 100%)`;
+  const msg = !N ? "Nhập tổng số câu."
+    : !card._picked.size ? "Tick chọn ít nhất một chương."
+    : short.length ? `Không đủ câu: ${short.join("; ")}.`
+    : `Đã phân bổ ${total}/${N} câu.`;
+  card.querySelector(".pc-msg").innerHTML = (short.length || !N || !card._picked.size) ? `<span class="err">${esc(msg)}</span>` : esc(msg);
+}
+function pctInput(el) { pctRecalc(el.closest(".sec")); }
+function pickChapter(el) {
+  const card = el.closest(".sec"), id = +el.value;
+  if (el.checked) card._picked.add(id); else card._picked.delete(id);
+  pctRecalc(card);
+}
+
+// chuyển chế độ: nhập tay hoặc theo tỷ lệ (lần đầu chọn mọi chương có câu của dạng)
+function setMode(card, mode) {
+  if (card._locked) { card.querySelector(".smode").value = card.classList.contains("pct") ? "pct" : "manual"; return; }
+  card.querySelector(".smode").value = mode;
+  card.classList.toggle("pct", mode === "pct");
+  if (mode === "pct") {
+    if (!card._picked.size) {
+      const qtype = card.querySelector(".sq").value;
+      for (const c of CHMAP.values()) if (BLOOMS.some(k => haveOf(c, k, qtype) > 0)) card._picked.add(c.id);
+    }
+    pctRecalc(card);
+  } else {
+    renderCard(card); updateShort();
+  }
+}
+
+// khóa / mở khóa phần đã chốt: khi khóa, mọi ô, tỷ lệ, chương và chế độ đều không sửa được
+function pctLock(card) {
+  if (card._locked) { card._locked = false; applyLockUI(card); pctRecalc(card); return; }
+  const { short, N, sum } = allocPercent(card);
+  if (sum !== 100) { toast(`Tổng tỷ lệ phải bằng 100% (hiện ${sum}%) mới chốt được.`, true); return; }
+  if (!N) { toast("Nhập tổng số câu trước khi chốt.", true); return; }
+  if (!card._picked.size) { toast("Tick chọn ít nhất một chương.", true); return; }
+  if (short.length) { toast("Không đủ câu: " + short.join("; "), true); return; }
+  card._locked = true;
+  applyLockUI(card);
+  pctRecalc(card);
+  toast("Đã chốt phần. Muốn sửa thì bấm “Mở khóa”.");
+}
+function applyLockUI(card) {
+  const on = card._locked;
+  card.classList.toggle("locked", on);
+  card.querySelectorAll(".pc-total, .pc-p, .pchk").forEach(x => { x.disabled = on; });
+  card.querySelector(".smode").disabled = on;
+  card.querySelector(".pc-lock").textContent = on ? "Mở khóa để sửa" : "Chốt";
+  renderCard(card);
+}
+
 // điền nhanh: đặt số cho mọi ô của các dòng đang hiện (không vượt số câu có sẵn)
 function fillVisible(card) {
+  if (card.classList.contains("pct")) { toast("Phần theo tỷ lệ không điền nhanh; đổi sang “Nhập tay từng ô” để dùng.", true); return; }
   const b = card.querySelector(".fb-b").value;
   const n = Math.max(0, parseInt(card.querySelector(".fb-n").value, 10) || 0);
   const qtype = card.querySelector(".sq").value;
@@ -1660,6 +2105,9 @@ function validateStep(n) {
     }
     const short = shortCount();
     if (short) { toast(`Còn ${short} ô thiếu câu hỏi (tô đỏ).`, true); return false; }
+    for (const card of document.querySelectorAll(".sec.pct")) {
+      if (!card._locked) { toast(`Phần “${card.querySelector(".st").value || "(chưa đặt tên)"}” theo tỷ lệ: tổng 100% rồi bấm Chốt trước khi qua bước tiếp.`, true); return false; }
+    }
     return true;
   }
   if (n === 3) {  // thông tin đề: chỉ hỏi khi thiếu, người dùng có thể đi tiếp
@@ -1778,6 +2226,7 @@ async function doExportInner() {
     prefix: $("#prefix").value,
     answer_key: $("#answerKey").checked, key_separate: $("#keySeparate").checked,
     record_usage: $("#recordUsage").checked, save_history: $("#saveHistory").checked,
+    seed: $("#seedIn").value.trim(),
   };
   $("#exportMsg").textContent = "Đang tạo...";
   try {
@@ -1789,12 +2238,13 @@ async function doExportInner() {
     const a = Object.assign(document.createElement("a"), { href: url, download: fm ? decodeURIComponent(fm[1]) : "de_thi.zip" });
     a.click(); URL.revokeObjectURL(url);
     const reused = +r.headers.get("X-Reused") || 0;
+    const seed = r.headers.get("X-Seed") || "";
     toast("Đã tải xuống file đề.");
     // xuất xong: bỏ bản xem trước và ô xác nhận để lần sau không dùng lại đúng các câu cũ
     PREVIEW = null; renderPreview(); setPreviewStatus();
     $("#confirmChk").checked = false;
     loadHistory();
-    $("#exportMsg").textContent = "Đã tải xuống. " + (reused
+    $("#exportMsg").textContent = `Đã tải xuống (seed ${seed}; nhập lại seed này để chọn lại đúng các câu nếu lịch sử dùng chưa đổi). ` + (reused
       ? `Ưu tiên câu chưa dùng, còn ${reused} câu đã dùng trước đó phải chọn lại (ngân hàng thiếu câu mới).`
       : "Tất cả câu được chọn đều chưa dùng trong các đề trước.");
   } catch (e) { $("#exportMsg").innerHTML = `<span class="err">${esc(e.message)}</span>`; }
