@@ -7,6 +7,7 @@ Chạy:  python3 app.py   rồi mở http://127.0.0.1:8765
 Phụ thuộc: python-docx (đọc bảng câu hỏi và xuất đề .docx).
 Dữ liệu: data/qbank.db (SQLite). Template Word: templates/*.docx
 """
+import csv
 import io
 import json
 import os
@@ -26,6 +27,7 @@ from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs, quote
 
 from docx import Document
+from html import escape as hesc
 from docx.shared import Pt
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
@@ -123,6 +125,7 @@ def init_storage():
     ensure_column("questions", "code", "TEXT")
     ensure_column("questions", "passage", "TEXT NOT NULL DEFAULT ''")
     ensure_column("questions", "points", "REAL")  # điểm câu hỏi, không bắt buộc
+    ensure_column("questions", "clo", "TEXT NOT NULL DEFAULT ''")  # chuẩn đầu ra học phần, ví dụ CLO1
     q("""CREATE TABLE IF NOT EXISTS trash(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             deleted_at TEXT NOT NULL,
@@ -349,6 +352,7 @@ def clean_question(data):
     else:  # TL: giữ đáp án/gợi ý chấm nếu có
         options = []
     passage = str(data.get("passage", "")).strip()
+    clo = str(data.get("clo", "")).strip()[:20]
     raw = data.get("points")
     points = None
     if raw not in (None, ""):
@@ -360,11 +364,11 @@ def clean_question(data):
             raise ValueError("Điểm của câu phải từ 0 đến 10")
     return dict(chapter_id=chapter_id, bloom=bloom, qtype=qtype, content=content,
                 options=json.dumps(options, ensure_ascii=False), answer=answer, solution=solution,
-                passage=passage, points=points)
+                passage=passage, points=points, clo=clo)
 
 
-INSERT_Q = """INSERT INTO questions(code,chapter_id,bloom,qtype,content,options,answer,solution,passage,passage_id,points)
-              VALUES(:code,:chapter_id,:bloom,:qtype,:content,:options,:answer,:solution,:passage,:passage_id,:points)"""
+INSERT_Q = """INSERT INTO questions(code,chapter_id,bloom,qtype,content,options,answer,solution,passage,passage_id,points,clo)
+              VALUES(:code,:chapter_id,:bloom,:qtype,:content,:options,:answer,:solution,:passage,:passage_id,:points,:clo)"""
 
 
 def row_to_api(r):
@@ -512,6 +516,7 @@ IMPORT_COLUMNS = {
     "muc": ["mức", "muc", "mức tn", "muc tn"],
     "doan_van": ["đoạn văn", "doan van"],
     "loi_giai": ["lời giải", "loi giai"],
+    "clo": ["clo", "chuẩn đầu ra", "chuan dau ra"],
 }
 IMPORT_REQUIRED = ("ma", "noi_dung", "dap_an", "loai", "muc")
 
@@ -532,30 +537,57 @@ def map_import_header(cells):
     return (m, missing)
 
 
+def read_table_text(raw: bytes):
+    """CSV hoặc dữ liệu dán từ Excel (TSV). Tự nhận dấu phân cách và bảng mã (UTF-8, UTF-16, Windows-1258)."""
+    if raw[:2] in (b"\xff\xfe", b"\xfe\xff"):
+        text = raw.decode("utf-16")
+    else:
+        try:
+            text = raw.decode("utf-8-sig")
+        except UnicodeDecodeError:
+            text = raw.decode("cp1258", errors="replace")
+    first = next((ln for ln in text.splitlines() if ln.strip()), "")
+    if "\t" in first:
+        delim = "\t"
+    elif first.count(";") > first.count(","):
+        delim = ";"
+    else:
+        delim = ","
+    return [r for r in csv.reader(io.StringIO(text), delimiter=delim)]
+
+
 def parse_import(data: bytes, textbook_id, dry_run=False):
-    """Nhập câu hỏi từ bảng Word (xem /api/import-template để có mẫu).
+    """Nhập câu hỏi từ bảng Word (xem /api/import-template để có mẫu)."""
+    try:
+        doc = Document(io.BytesIO(data))
+    except Exception:
+        raise ValueError("File không phải .docx hợp lệ (hãy lưu lại bằng Word dưới định dạng .docx)")
+    tables = [[[c.text for c in row.cells] for row in t.rows] for t in doc.tables]
+    return parse_rows(tables, textbook_id, dry_run, docx=True)
+
+
+def parse_rows(tables, textbook_id, dry_run=False, docx=True):
+    """tables: danh sách bảng, mỗi bảng là danh sách dòng (chuỗi). Dòng đầu là tiêu đề cột.
+    Nhận từ bảng Word, CSV hoặc dữ liệu dán (docx=False: không có khái niệm bảng).
     Dòng đầu là tiêu đề cột; cột nhận diện theo tên nên thứ tự cột tùy ý.
     Bắt buộc: Mã chương, Nội dung, Đáp án, Loại, Mức. Tùy chọn: Đoạn văn, Lời giải.
     Mã chương phải đã có trong giáo trình được chọn; không tự tạo chương mới."""
     chapter_by_code = {r["code"]: r["id"] for r in q(
         "SELECT id, code FROM chapters WHERE textbook_id=?", (textbook_id,), True)}
-    try:
-        doc = Document(io.BytesIO(data))
-    except Exception:
-        raise ValueError("File không phải .docx hợp lệ (hãy lưu lại bằng Word dưới định dạng .docx)")
     added, errors, skipped, warnings = 0, [], [], []
     rows_out = []  # xem trước: trạng thái từng dòng
     index = dup_index()
-    for t_idx, table in enumerate(doc.tables, 1):
-        if not table.rows:
+    where = (lambda t, r: f"Bảng {t}, dòng {r}") if docx else (lambda t, r: f"Dòng {r}")
+    for t_idx, table in enumerate(tables, 1):
+        if not table:
             continue
-        cols, missing = map_import_header([c.text for c in table.rows[0].cells])
+        cols, missing = map_import_header(table[0])
         if missing:
             names = {"ma": "Mã chương", "noi_dung": "Nội dung", "dap_an": "Đáp án", "loai": "Loại", "muc": "Mức"}
-            errors.append(f"Bảng {t_idx}: thiếu cột {', '.join(names[k] for k in missing)} (dòng tiêu đề)")
+            errors.append(f"{'Bảng ' + str(t_idx) if docx else 'Dữ liệu'}: thiếu cột {', '.join(names[k] for k in missing)} (dòng tiêu đề)")
             continue
-        for r_idx, row in enumerate(table.rows[1:], 2):
-            cells = [c.text.strip() for c in row.cells]
+        for r_idx, row in enumerate(table[1:], 2):
+            cells = [c.strip() for c in row]
             get = lambda k: cells[cols[k]] if k in cols and cols[k] < len(cells) else ""
             if not any(cells):
                 continue
@@ -597,9 +629,10 @@ def parse_import(data: bytes, textbook_id, dry_run=False):
                     "answer": get("dap_an"),
                     "solution": solution,
                     "passage": get("doan_van"),
+                    "clo": get("clo"),
                 })
                 same, other, key = check_duplicate(index, payload)
-                label = f"Bảng {t_idx}, dòng {r_idx}"
+                label = where(t_idx, r_idx)
                 if payload["passage"] and not dry_run and not q(
                         "SELECT 1 FROM passages WHERE chapter_id=? AND content=?",
                         (payload["chapter_id"], payload["passage"]), True):  # đúng từng chữ thì dùng chung, không cảnh báo
@@ -625,8 +658,8 @@ def parse_import(data: bytes, textbook_id, dry_run=False):
                     warnings.append(f"{label}: {note}")
                 rows_out.append(dict(preview, status="warn" if other else "ok", note=note))
             except Exception as e:
-                errors.append(f"Bảng {t_idx}, dòng {r_idx}: {e}")
-                rows_out.append({"where": f"Bảng {t_idx}, dòng {r_idx}", "code": "", "qtype": "",
+                errors.append(f"{where(t_idx, r_idx)}: {e}")
+                rows_out.append({"where": where(t_idx, r_idx), "code": "", "qtype": "",
                                  "content": "", "status": "error", "note": str(e)})
     return {"added": added, "skipped": skipped, "warnings": warnings, "errors": errors,
             "dry_run": dry_run, "rows": rows_out}
@@ -1350,7 +1383,7 @@ def build_items(rows):
                       "chapter_code": r["chapter_code"], "chapter_title": r["chapter_title"],
                       "bloom": r["bloom"], "qtype": r["qtype"], "content": r["content"], "options": r["options"],
                       "answer": r["answer"], "solution": r["solution"], "passage": r["passage"],
-                      "points": r.get("points"),
+                      "points": r.get("points"), "clo": r.get("clo", ""),
                       "used": usage.get(r["code"], []), "results": results.get(r["code"], [])})
     return items
 
@@ -1769,6 +1802,17 @@ class Handler(BaseHTTPRequestHandler):
             new_id = insert_q(payload)
             warnings = [f"Trùng nội dung với câu {code_of(h[0])} ở chương khác" for h in other[:3]]
             return self._json(201, {"ok": True, "id": new_id, "code": code_of(new_id), "warnings": warnings})
+        if p == "/api/import-text":  # CSV hoặc dữ liệu dán từ Excel
+            textbook_id = int(parse_qs(u.query).get("textbook_id", [""])[0] or 0)
+            if not textbook_id:
+                raise ValueError("Chọn giáo trình trước khi nhập")
+            dry = parse_qs(u.query).get("dry_run", ["0"])[0] == "1"
+            rows = read_table_text(self._raw())
+            if not rows:
+                raise ValueError("Không có dữ liệu để nhập")
+            return self._json(200, parse_rows([rows], textbook_id, dry_run=dry, docx=False))
+        if p == "/api/exam/print":  # bản in xem trước (không ghi lịch sử, không ghi lịch sử dùng)
+            return self._send(200, print_html(self._json_body()).encode("utf-8"), "text/html; charset=utf-8")
         if p == "/api/import":
             textbook_id = int(parse_qs(u.query).get("textbook_id", [""])[0] or 0)
             if not textbook_id:
@@ -1914,7 +1958,7 @@ class Handler(BaseHTTPRequestHandler):
             conn.execute("PRAGMA foreign_keys = ON")
             cur = conn.execute("""UPDATE questions SET chapter_id=:chapter_id, bloom=:bloom, qtype=:qtype, content=:content,
                  options=:options, answer=:answer, solution=:solution, passage=:passage, passage_id=:passage_id,
-                 points=:points WHERE id=:id""", payload)
+                 points=:points, clo=:clo WHERE id=:id""", payload)
             conn.commit()
             updated = cur.rowcount
         if not updated:
@@ -2044,6 +2088,106 @@ class Handler(BaseHTTPRequestHandler):
         self._send(200, data, "application/zip",
                    {"X-Reused": str(reused), "X-Variants": str(variants),
                     "Content-Disposition": attachment_header(fname)})
+
+
+def blueprint(flat):
+    """Bảng đặc tả: CLO × mức Bloom (số câu), kèm điểm từng dòng. flat: [(số thứ tự, phần, câu)]."""
+    rows = {}
+    for _, _, it in flat:
+        key = it.get("clo") or "(chưa gắn CLO)"
+        r = rows.setdefault(key, {"counts": {b: 0 for b in BLOOM}, "n": 0, "points": 0.0})
+        r["counts"][it["bloom"]] += 1
+        r["n"] += 1
+        r["points"] += it.get("points") or 0
+    return rows
+
+
+def blueprint_html(flat):
+    rows = blueprint(flat)
+    if not rows:
+        return ""
+    head = "".join(f"<th>{b}. {v}</th>" for b, v in BLOOM.items())
+    body = "".join(
+        f"<tr><td>{hesc(k)}</td>" + "".join(f"<td>{r['counts'][b] or ''}</td>" for b in BLOOM)
+        + f"<td><b>{r['n']}</b></td><td>{fmt_points(r['points']) if r['points'] else ''}</td></tr>"
+        for k, r in sorted(rows.items()))
+    total = sum(r["n"] for r in rows.values())
+    tot_pts = sum(r["points"] for r in rows.values())
+    return ("<h3>Bảng đặc tả đề</h3><table><thead><tr><th>CLO</th>" + head + "<th>Số câu</th><th>Điểm</th></tr></thead>"
+            f"<tbody>{body}<tr><td><b>Tổng</b></td>" + "".join(
+                f"<td><b>{sum(r['counts'][b] for r in rows.values())}</b></td>" for b in BLOOM)
+            + f"<td><b>{total}</b></td><td><b>{fmt_points(tot_pts) if tot_pts else ''}</b></td></tr></tbody></table>")
+
+
+RUBY_HTML = re.compile(r"\{([^{}|]+)\|([^{}]+)\}")
+
+
+def rich_html(text):
+    """Văn bản câu hỏi sang HTML: escape, furigana {chữ|cách đọc} thành <ruby>, xuống dòng thành <br>."""
+    out = RUBY_HTML.sub(lambda m: f"<ruby>{m.group(1)}<rt>{m.group(2)}</rt></ruby>", hesc(text))
+    return out.replace("\n", "<br>")
+
+
+def print_html(body):
+    """Bản in xem trước của một mã đề, dựng từ cùng cách chọn câu như khi xuất (không ghi gì vào CSDL)."""
+    sections = body.get("sections") or []
+    picked = body.get("picked")
+    usage = usage_map()
+    taken = set()
+    parts = []
+    for idx, s in enumerate(sections):
+        if not section_has_content(s):
+            continue
+        ids = picked[idx] if picked and idx < len(picked) else None
+        base = build_section(s, usage, taken, ids or None)
+        parts.append((str(s.get("title", "")).strip(), base, bool(s.get("shuffle", True))))
+    if not parts:
+        raise ValueError("Chưa có phần nào có số câu")
+    rng = random.Random(1)  # cố định để xem lại cho cùng một bản
+    exam = [(t, make_variant(b, sh, rng)) for t, b, sh in parts]
+    flat = flatten(exam)
+    meta = body.get("meta", {})
+    code = f"{body.get('prefix', '')}{int(body.get('start', 1) or 1):03d}"
+    sec_html = []
+    last_title = None
+    for n, title, it in flat:
+        if title and title != last_title:
+            sec_html.append(f"<h2>{hesc(title)}</h2>")
+            last_title = title
+        pts = f" <i>({fmt_points(it['points'])} điểm)</i>" if it.get("points") is not None else ""
+        lines = [f"<div class='q'><b>Câu {n}.</b> {rich_html(it['content'])}{pts}"]
+        if it["qtype"] == "TN":
+            lines.append("<div class='opts'>" + "".join(
+                f"<span>{LETTERS[k]}. {rich_html(o)}</span>" for k, o in enumerate(it["options"])) + "</div>")
+        elif it["qtype"] == "DS":
+            lines.append("<div class='opts ds'>" + "".join(
+                f"<span>{'abcdefgh'[k]}) {rich_html(o)}</span>" for k, o in enumerate(it["options"])) + "</div>")
+        elif it["qtype"] == "DT":
+            lines.append("<div class='fill'>Đáp án: ……………………………</div>")
+        else:
+            lines.append("<div class='essay'>&nbsp;</div>")
+        sec_html.append("".join(lines) + "</div>")
+    ans = " · ".join(f"{n}-{answer_text(it)}" for n, _, it in flat)
+    rubric = "".join(f"<p>{hesc(line)}</p>" for line in rubric_lines(flat)[1:] if line)
+    head = " · ".join(x for x in [hesc(str(meta.get("ten_hp", ""))), f"Mã HP {hesc(str(meta.get('ma_hp', '')))}",
+                                  f"Thời gian {hesc(str(meta.get('thoi_gian', '')))} phút", f"Mã đề {code}"] if x and not x.endswith(" "))
+    return f"""<!doctype html><html lang="vi"><head><meta charset="utf-8"><title>Bản in {code}</title>
+<style>
+ body {{ font: 15px/1.5 "Times New Roman", serif; max-width: 780px; margin: 24px auto; padding: 0 16px; color:#000; }}
+ h2 {{ font-size: 16px; margin: 18px 0 6px; }} h3 {{ font-size: 15px; margin-top: 24px; }}
+ .q {{ margin: 8px 0 10px; }} .opts {{ display: grid; grid-template-columns: 1fr 1fr; gap: 2px 24px; margin-left: 18px; }}
+ .ds {{ display: block; }} .ds span {{ display: block; }} .fill {{ margin-left: 18px; }} .essay {{ height: 60px; border-bottom: 1px dotted #888; margin: 6px 18px; }}
+ rt {{ font-size: 60%; }} table {{ border-collapse: collapse; font-size: 13px; }} td, th {{ border: 1px solid #999; padding: 3px 8px; text-align: center; }}
+ .note {{ background:#fef9c3; padding:8px 10px; font-size:13px; border-radius:6px; }}
+ @media print {{ .noprint {{ display: none; }} }}
+</style></head><body>
+<div class="noprint note">Bản xem trước này để rà soát nội dung. Bố cục thật theo mẫu Word khi xuất đề có thể khác đôi chút.
+ <button onclick="window.print()">In</button></div>
+<p><b>{head}</b></p>
+{''.join(sec_html)}
+<h3>Đáp án mã {code}</h3><p>{hesc(ans)}</p>{rubric}
+{blueprint_html(flat)}
+</body></html>"""
 
 
 def main():

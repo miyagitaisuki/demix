@@ -106,14 +106,18 @@
   <div class="row">
     <button class="g" onclick="editQ(null)">+ Câu mới</button>
     <span class="sub">Nhập/xuất file:</span>
-    <label for="importFile">Nhập từ .docx vào:</label>
+    <label for="importFile">Nhập từ .docx hoặc .csv vào:</label>
     <span id="importTarget" class="sub"></span>
-    <input type="file" id="importFile" accept=".docx" onchange="importDocx(this)">
+    <input type="file" id="importFile" accept=".docx,.csv,.txt" onchange="importDocx(this)">
     <a href="/api/import-template" download><button class="g">Tải mẫu nhập</button></a>
     <a href="/api/backup" download><button class="g">Sao lưu</button></a>
     <label for="restoreFile">Khôi phục từ .json:</label>
     <input type="file" id="restoreFile" accept=".json" onchange="restoreJson(this)">
   </div>
+  <details class="row"><summary class="sub">Dán từ Excel</summary>
+    <textarea id="pasteBox" rows="4" style="flex:1" placeholder="Chọn các ô trong Excel (kèm dòng tiêu đề), Ctrl+C rồi dán vào đây"></textarea>
+    <button class="g" onclick="importPaste()">Xem trước dữ liệu dán</button>
+  </details>
   <div class="row">
     <span class="sub">Rà soát dữ liệu:</span>
     <button class="g" onclick="showDuplicates()">Kiểm tra trùng</button>
@@ -283,7 +287,7 @@
   <!-- Bước 5: xem trước -->
   <div class="pane" id="pane5">
     <p class="msg">Xem trước chọn câu cụ thể cho từng phần; bấm “Đổi câu” để thay câu khác. Có thể bỏ qua bước này: khi đó đề chọn câu ngẫu nhiên lúc xuất.</p>
-    <div class="row"><button class="g" onclick="previewExam()">Xem trước đề</button><span id="previewStatus" class="msg"></span></div>
+    <div class="row"><button class="g" onclick="previewExam()">Xem trước đề</button><button class="g" onclick="printPreview()">Xem bản in</button><span id="previewStatus" class="msg"></span></div>
     <div id="previewBox"></div>
   </div>
 
@@ -294,7 +298,7 @@
       <div id="sumBox"></div>
       <div class="row" style="margin-top:10px"><label><input type="checkbox" id="confirmChk"> Tôi đã kiểm tra thông tin trên và muốn xuất đề</label></div>
     </div>
-    <div class="row"><button class="p" id="btnExport" onclick="withBusy(this, doExport)">Xuất .zip các file .docx</button><span id="exportMsg" class="msg"></span><span id="shortMsg" class="err"></span></div>
+    <div class="row"><button class="p" id="btnExport" onclick="withBusy(this, doExport)">Xuất .zip các file .docx</button><button class="g" onclick="printPreview()">Xem bản in</button><span id="exportMsg" class="msg"></span><span id="shortMsg" class="err"></span></div>
     <div class="card">
       <div class="row"><b>Lịch sử xuất</b> <span class="sub">(tải lại file .zip gồm đề và đáp án)</span><button class="g" onclick="loadHistory()">Làm mới</button></div>
       <div id="histBox"></div>
@@ -454,7 +458,7 @@ async function loadQuestions(page = 0) {
       <td><input type="checkbox" class="qsel" value="${q.id}" ${SEL.has(q.id) ? "checked" : ""} onchange="toggleSel(${q.id}, this.checked)"></td>
       <td>${esc(q.code)}</td>
       <td>${esc(q.course)} / ${esc(q.textbook)}<div class="sub">${esc(q.chapter_code)}${q.chapter_title ? " - " + esc(q.chapter_title) : ""}</div></td>
-      <td><span class="tag">${q.bloom}. ${BLOOM[q.bloom]}</span></td>
+      <td><span class="tag">${q.bloom}. ${BLOOM[q.bloom]}</span>${q.clo ? `<div class="sub">${esc(q.clo)}</div>` : ""}</td>
       <td>${q.qtype}</td>
       <td>${esc(q.content)}<div class="opts">${esc(q.options.map((o,k)=>(q.qtype==="DS"?"abcdefgh"[k]+") ":"ABCDEFGH"[k]+". ")+o).join("\n"))}</div></td>
       <td>${esc(q.qtype === "DS" ? q.answer.replace(/D/g, "Đ") : q.answer)}<div class="sub">${q.points != null ? q.points + " điểm · " : ""}${q.used_count ? "đã dùng " + q.used_count + " lần" : "chưa dùng"}</div></td>
@@ -529,6 +533,7 @@ async function editQ(id) {
     <div class="row">
       <label>Chương</label><select id="eChap">${chapterOptions(q.chapter_id)}</select>
       <label>Bloom</label><select id="eBloom">${Object.entries(BLOOM).map(([k,v])=>`<option value="${k}" ${k==q.bloom?"selected":""}>${k}. ${v}</option>`).join("")}</select>
+      <label>CLO</label><input id="eClo" style="width:90px" placeholder="CLO1" value="${esc(q.clo || "")}">
       <label>Điểm</label><input id="ePoints" class="n" style="width:70px" placeholder="—" value="${q.points ?? ""}">
       <label>Loại</label><select id="eType">${["TN","DS","DT","TL"].map(t=>`<option value="${t}" ${q.qtype==t?"selected":""}>${t==="TN"?"Trắc nghiệm":t==="DS"?"Đúng/sai":t==="DT"?"Điền từ":"Tự luận"}</option>`).join("")}</select>
     </div>
@@ -640,6 +645,7 @@ async function saveQ(confirmPassage = false) {
   const body = {
     chapter_id: $("#eChap").value, bloom: $("#eBloom").value, qtype: $("#eType").value,
     content: $("#eContent").value, answer: $("#eAns").value, solution: $("#eSol").value, points: $("#ePoints").value,
+    clo: $("#eClo").value,
     passage: $("#ePassage").value,
     options: $("#eOpts").value.split("\n").map(s => s.trim()).filter(Boolean).map(s => s.replace(/^[A-Ha-h][\.\)]\s*/, "")),
   };
@@ -734,19 +740,30 @@ async function saveResults() {
 
 // nhập Word: kiểm tra trước (không ghi), người dùng xác nhận rồi mới nhập
 let PENDING_IMPORT = null;  // {buf, tid, name}
+async function runImportCheck(buf, tid, name, url) {
+  $("#importMsg").textContent = "Đang kiểm tra...";
+  const r = await api(`${url}?textbook_id=${tid}&dry_run=1`, { method: "POST", body: buf });
+  PENDING_IMPORT = { buf, tid, name, url };
+  renderImportPreview(r);
+  $("#importMsg").textContent = "";
+}
+// nhập file: .docx dùng bảng Word, .csv/.txt dùng dòng tiêu đề như bảng; kiểm tra trước, chưa ghi
 async function importDocx(input) {
   const f = input.files[0]; if (!f) return;
   const tid = $("#fTextbook").value;
   input.value = "";
   if (!tid) { $("#importMsg").innerHTML = `<span class="err">Chọn giáo trình ở bộ lọc trước khi nhập.</span>`; return; }
-  $("#importMsg").textContent = "Đang kiểm tra file...";
   try {
-    const buf = await f.arrayBuffer();
-    const r = await api(`/api/import?textbook_id=${tid}&dry_run=1`, { method: "POST", body: buf });
-    PENDING_IMPORT = { buf, tid, name: f.name };
-    renderImportPreview(r);
-    $("#importMsg").textContent = "";
+    await runImportCheck(await f.arrayBuffer(), tid, f.name, /\.docx$/i.test(f.name) ? "/api/import" : "/api/import-text");
   } catch (e) { $("#importMsg").innerHTML = `<span class="err">${esc(e.message)}</span>`; }
+}
+async function importPaste() {
+  const tid = $("#fTextbook").value;
+  const text = $("#pasteBox").value.trim();
+  if (!tid) { $("#importMsg").innerHTML = `<span class="err">Chọn giáo trình ở bộ lọc trước khi nhập.</span>`; return; }
+  if (!text) { $("#importMsg").innerHTML = `<span class="err">Dán dữ liệu (có dòng tiêu đề) vào ô trước.</span>`; return; }
+  try { await runImportCheck(new TextEncoder().encode(text), tid, "Dữ liệu dán", "/api/import-text"); }
+  catch (e) { $("#importMsg").innerHTML = `<span class="err">${esc(e.message)}</span>`; }
 }
 let IMPORT_ROWS = [];  // dòng xem trước của lần kiểm tra gần nhất, để lọc mà không gọi lại server
 function renderImportPreview(r) {
@@ -788,9 +805,9 @@ function renderImportRows() {
 function cancelImport() { PENDING_IMPORT = null; $("#importPreview").style.display = "none"; }
 async function confirmImport() {
   if (!PENDING_IMPORT) return;
-  const { buf, tid } = PENDING_IMPORT;
+  const { buf, tid, url } = PENDING_IMPORT;
   try {
-    const r = await api(`/api/import?textbook_id=${tid}`, { method: "POST", body: buf });
+    const r = await api(`${url}?textbook_id=${tid}`, { method: "POST", body: buf });
     $("#importMsg").innerHTML = importSummary("Đã nhập", r);
     toast(`Đã nhập ${r.added} câu.`);
     cancelImport();
@@ -1464,6 +1481,23 @@ async function previewExam() {
     $("#exportMsg").textContent = "Đang xem trước. Có thể đổi từng câu; xuất sẽ dùng đúng các câu này.";
   } catch (e) { $("#exportMsg").innerHTML = `<span class="err">${esc(e.message)}</span>`; }
 }
+// bảng đặc tả: CLO × mức Bloom, số câu và điểm của các câu đã xem trước
+function blueprintClient(items) {
+  const rows = {};
+  for (const it of items) {
+    const k = it.clo || "(chưa gắn CLO)";
+    const r = rows[k] || (rows[k] = { c: {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}, n: 0, p: 0 });
+    r.c[it.bloom]++; r.n++; r.p += it.points || 0;
+  }
+  const keys = Object.keys(rows).sort();
+  if (!keys.length) return "";
+  const head = Object.entries(BLOOM).map(([k, v]) => `<th class="num">${k}. ${v}</th>`).join("");
+  const body = keys.map(k => `<tr><td>${esc(k)}</td>${[1, 2, 3, 4, 5].map(b => `<td class="num">${rows[k].c[b] || ""}</td>`).join("")}
+    <td class="num"><b>${rows[k].n}</b></td><td class="num">${rows[k].p || ""}</td></tr>`).join("");
+  return `<div class="card"><b>Bảng đặc tả đề</b> <span class="sub">(CLO × mức Bloom, theo các câu đã xem trước)</span>
+    <table style="margin-top:6px"><thead><tr><th>CLO</th>${head}<th class="num">Số câu</th><th class="num">Điểm</th></tr></thead>
+    <tbody>${body}</tbody></table></div>`;
+}
 function renderPreview() {
   if (!PREVIEW) { $("#previewBox").innerHTML = ""; return; }
   const sections = JSON.parse(PREVIEW.sig);
@@ -1481,8 +1515,9 @@ function renderPreview() {
           <button class="g" ${it.passage ? `disabled title="Câu thuộc đoạn văn: không đổi riêng lẻ"` : ""} onclick="swapItem(${si},${ii})">Đổi câu</button>
         </div>`; }).join("") + `</div>`;
   }).join("");
+  const all = PREVIEW.sections.flatMap(s => s.items);
   $("#previewBox").innerHTML = `<div class="row"><b>Xem trước đề</b>
-      <button class="g" onclick="PREVIEW=null;renderPreview();$('#exportMsg').textContent=''">Bỏ xem trước</button></div>` + body;
+      <button class="g" onclick="PREVIEW=null;renderPreview();$('#exportMsg').textContent=''">Bỏ xem trước</button></div>` + blueprintClient(all) + body;
 }
 async function swapItem(si, ii) {
   const cur = PREVIEW.sections[si].items[ii];
@@ -1593,6 +1628,25 @@ function buildSummary() {
       <button class="g" onclick="goStep(1)">Sửa cấu trúc</button></div>`;
 }
 
+// bản in xem trước (HTML) của mã đề đầu tiên, mở trong cửa sổ mới; không ghi lịch sử
+async function printPreview() {
+  const sections = readSections();
+  if (!sections.some(s => s.matrix.length || s.passages.length)) { toast("Chưa nhập số câu hoặc số đoạn cho phần nào.", true); return; }
+  const cur = PREVIEW && PREVIEW.sig === JSON.stringify(sections);
+  const body = {
+    sections, picked: cur ? PREVIEW.sections.map(s => s.items.map(i => i.id)) : undefined,
+    meta: { ten_hp: $("#mon").value, ma_hp: $("#maHp").value, so_tc: $("#soTc").value, khoa_hoc: $("#khoaHoc").value,
+            nam_hoc: $("#namHoc").value, hoc_ky: $("#hocKy").value, thoi_gian: $("#thoiGian").value, so_trang: $("#soTrang").value },
+    prefix: $("#prefix").value, start: parseInt($("#start").value, 10) || 1,
+  };
+  if (!cur) toast("Chưa xem trước đề: bản in sẽ chọn câu khác với lúc xuất. Nên xem trước đề trước.", true);
+  try {
+    const r = await fetch("/api/exam/print", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    if (!r.ok) { const e = await r.json().catch(() => ({})); toast(e.error || "Không tạo được bản in.", true); return; }
+    const url = URL.createObjectURL(new Blob([await r.text()], { type: "text/html" }));
+    if (!window.open(url, "_blank")) toast("Trình duyệt đã chặn cửa sổ mới.", true);
+  } catch (e) { toast(e.message, true); }
+}
 async function doExport() {
   return doExportInner();
 }

@@ -203,4 +203,9 @@ Chi tiết từng lỗi và cách tái hiện: `docs/bao_cao_kiem_thu_2026-11-02
   - **Điểm và hướng dẫn chấm:** mỗi câu có thể có điểm (0–10, không bắt buộc), in kèm câu trong đề. Với câu tự luận, ô "Đáp án" là hướng dẫn chấm, được in ở cuối đề và trong file đáp án, kèm tổng điểm. Mã câu không còn bị cấp lại sau khi xóa.
 - **Sửa một phần:** B06 (tìm câu gần giống: 8 giây với 3.000 câu, trước đây 42 giây; vẫn tăng theo số cặp). B29 (màn hình 375px giảm từ 608px xuống 468px, vẫn cuộn ngang).
 - **Chưa sửa:** B22 (đổi chương giữ mã cũ; cần quyết định về mã khi chuyển chương).
-- **Chưa làm (tính năng mới):** xem trước bản in; bảng đặc tả đề; nhập Excel/CSV và dán; hình ảnh và âm thanh trong câu; thẻ (tag); phân tích câu hỏi từ bảng điểm; trạng thái duyệt câu; xuất Moodle/QTI; dùng chung qua mạng nội bộ; cấu hình tên trường và khoa.
+- **Đã làm (đợt 4):**
+  - **Nhập CSV và dán từ Excel:** chọn file .csv (dấu phẩy hoặc chấm phẩy, UTF-8 hoặc Windows-1258), hoặc dán các ô đã chọn trong Excel (kèm dòng tiêu đề) vào mục "Dán từ Excel". Vẫn kiểm tra trước khi ghi như nhập Word. File .xlsx chưa đọc trực tiếp: lưu lại thành .csv trong Excel.
+  - **CLO:** mỗi câu có thể gắn CLO (ví dụ CLO1). Cột "CLO" trong bảng Word, CSV và dữ liệu dán là tùy chọn.
+  - **Bảng đặc tả:** sau khi xem trước đề, bảng CLO × mức Bloom hiện số câu và điểm của các câu đã chọn.
+  - **Xem bản in:** mở bản xem trước HTML của mã đề đầu tiên (furigana, điểm, hướng dẫn chấm, bảng đặc tả) trong cửa sổ mới, có nút In. Bố cục khác đôi chút so với file Word xuất ra. Không ghi lịch sử dùng câu.
+- **Chưa làm (tính năng mới):** hình ảnh và âm thanh trong câu; thẻ (tag); phân tích câu hỏi từ bảng điểm; trạng thái duyệt câu; xuất Moodle/QTI; dùng chung qua mạng nội bộ; cấu hình tên trường và khoa.
