@@ -7,6 +7,7 @@ Chạy:  python3 app.py   rồi mở http://127.0.0.1:8765
 Phụ thuộc: python-docx (đọc bảng câu hỏi và xuất đề .docx).
 Dữ liệu: data/qbank.db (SQLite). Template Word: templates/*.docx
 """
+import base64
 import csv
 import io
 import statistics
@@ -29,7 +30,7 @@ from urllib.parse import urlparse, parse_qs, quote
 
 from docx import Document
 from html import escape as hesc
-from docx.shared import Pt
+from docx.shared import Pt, Cm
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 
@@ -42,6 +43,11 @@ else:
 DB_PATH = os.path.join(DATA_DIR, "data", "qbank.db")
 TPL_DIR = os.path.join(DATA_DIR, "templates")
 STATIC = os.path.join(RES_DIR, "static")
+MEDIA_DIR = os.path.join(DATA_DIR, "data", "media")  # hình ảnh và âm thanh đính kèm câu hỏi
+MEDIA_EXT = {"png": "image", "jpg": "image", "jpeg": "image", "gif": "image", "webp": "image",
+             "mp3": "audio", "wav": "audio", "ogg": "audio", "m4a": "audio"}
+MEDIA_MAX = {"image": 5 * 1024 * 1024, "audio": 15 * 1024 * 1024}
+MEDIA_NAME = re.compile(r"[a-f0-9]{32}\.(png|jpe?g|gif|webp|mp3|wav|ogg|m4a)")
 BLOOM = {1: "Biết", 2: "Hiểu", 3: "Vận dụng", 4: "Phân tích", 5: "Đánh giá"}
 LETTERS = "ABCDEFGH"
 QTYPES = ("TN", "DS", "DT", "TL")  # trắc nghiệm, đúng/sai, điền từ, tự luận
@@ -128,6 +134,7 @@ def init_storage():
     ensure_column("questions", "points", "REAL")  # điểm câu hỏi, không bắt buộc
     ensure_column("questions", "clo", "TEXT NOT NULL DEFAULT ''")  # chuẩn đầu ra học phần, ví dụ CLO1
     ensure_column("questions", "tags", "TEXT NOT NULL DEFAULT ''")  # thẻ, lưu dạng ",thẻ1,thẻ2,"
+    ensure_column("questions", "media", "TEXT NOT NULL DEFAULT '[]'")  # [{kind, file, name}]
     q("""CREATE TABLE IF NOT EXISTS trash(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             deleted_at TEXT NOT NULL,
@@ -330,6 +337,20 @@ def norm_tags(value):
     return "," + ",".join(out) + "," if out else ""
 
 
+def norm_media(value):
+    """Danh sách file đính kèm câu: chỉ nhận file đã có trong thư mục media."""
+    out = []
+    for m in value or []:
+        f = str((m or {}).get("file", ""))
+        if not MEDIA_NAME.fullmatch(f) or not os.path.isfile(os.path.join(MEDIA_DIR, f)):
+            raise ValueError("File đính kèm không còn tồn tại, hãy tải lên lại")
+        out.append({"kind": MEDIA_EXT[f.rsplit(".", 1)[1]], "file": f,
+                    "name": str(m.get("name", f))[:120]})
+    if len(out) > 4:
+        raise ValueError("Mỗi câu tối đa 4 file đính kèm")
+    return out
+
+
 def tags_list(stored):
     return [t for t in (stored or "").split(",") if t]
 
@@ -378,6 +399,7 @@ def clean_question(data):
     passage = str(data.get("passage", "")).strip()
     clo = str(data.get("clo", "")).strip()[:20]
     tags = norm_tags(data.get("tags", ""))
+    media = norm_media(data.get("media") or [])
     raw = data.get("points")
     points = None
     if raw not in (None, ""):
@@ -389,11 +411,11 @@ def clean_question(data):
             raise ValueError("Điểm của câu phải từ 0 đến 10")
     return dict(chapter_id=chapter_id, bloom=bloom, qtype=qtype, content=content,
                 options=json.dumps(options, ensure_ascii=False), answer=answer, solution=solution,
-                passage=passage, points=points, clo=clo, tags=tags)
+                passage=passage, points=points, clo=clo, tags=tags, media=json.dumps(media, ensure_ascii=False))
 
 
-INSERT_Q = """INSERT INTO questions(code,chapter_id,bloom,qtype,content,options,answer,solution,passage,passage_id,points,clo,tags)
-              VALUES(:code,:chapter_id,:bloom,:qtype,:content,:options,:answer,:solution,:passage,:passage_id,:points,:clo,:tags)"""
+INSERT_Q = """INSERT INTO questions(code,chapter_id,bloom,qtype,content,options,answer,solution,passage,passage_id,points,clo,tags,media)
+              VALUES(:code,:chapter_id,:bloom,:qtype,:content,:options,:answer,:solution,:passage,:passage_id,:points,:clo,:tags,:media)"""
 
 
 def row_to_api(r):
@@ -401,6 +423,8 @@ def row_to_api(r):
     r["options"] = json.loads(r["options"])
     if "tags" in r:
         r["tags"] = tags_list(r["tags"])
+    if "media" in r:
+        r["media"] = json.loads(r["media"] or "[]")
     return r
 
 
@@ -1075,6 +1099,13 @@ def emit_question(doc, marker, n, it, mode="ruby"):
             add_rich(line, opt, mode=mode)
     elif it["qtype"] == "DT":
         marker.insert_paragraph_before("    Đáp án: ……………………………")
+    for m in it.get("media") or []:  # hình ảnh nhúng vào đề; âm thanh ghi tên file (file nằm trong thư mục Am_thanh)
+        if m["kind"] == "image" and os.path.isfile(os.path.join(MEDIA_DIR, m["file"])):
+            pic = doc.add_paragraph()  # đoạn mới có đủ đối tượng cha để chèn hình, rồi chuyển lên trước dấu đánh dấu
+            marker._p.addprevious(pic._p)
+            pic.add_run().add_picture(os.path.join(MEDIA_DIR, m["file"]), width=Cm(7))
+        elif m["kind"] == "audio":
+            marker.insert_paragraph_before(f"    🔊 Nghe: {m['name']}")
 
 
 def meta_values(meta, code, n_questions):
@@ -1441,6 +1472,9 @@ def build_items(rows):
                       "bloom": r["bloom"], "qtype": r["qtype"], "content": r["content"], "options": r["options"],
                       "answer": r["answer"], "solution": r["solution"], "passage": r["passage"],
                       "points": r.get("points"), "clo": r.get("clo", ""), "tags": r.get("tags", []),
+                      "media": r.get("media", []),
+                      "media_files": {m["file"]: base64.b64encode(open(os.path.join(MEDIA_DIR, m["file"]), "rb").read()).decode()
+                                      for m in r.get("media", []) if os.path.isfile(os.path.join(MEDIA_DIR, m["file"]))},
                       "used": usage.get(r["code"], []), "results": results.get(r["code"], [])})
     return items
 
@@ -1630,6 +1664,11 @@ def restore_item(item, index, allow_dup=False):
                                 str(item.get("textbook", DEFAULT_COURSE)).strip() or DEFAULT_COURSE,
                                 str(item.get("chapter_code", "Chung")).strip() or "Chung",
                                 str(item.get("chapter_title", "")))
+    for fname, b64 in (item.get("media_files") or {}).items():  # khôi phục file đính kèm từ bản sao lưu
+        if MEDIA_NAME.fullmatch(str(fname)) and not os.path.exists(os.path.join(MEDIA_DIR, fname)):
+            os.makedirs(MEDIA_DIR, exist_ok=True)
+            with open(os.path.join(MEDIA_DIR, fname), "wb") as f:
+                f.write(base64.b64decode(b64))
     payload = clean_question(dict(item, chapter_id=chapter_id))
     same, _, key = check_duplicate(index, payload)
     if same and not allow_dup:
@@ -1742,6 +1781,15 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         self._fix_path()
+        mm = re.fullmatch(r"/media/([^/]+)", urlparse(self.path).path)
+        if mm:  # file đính kèm: chỉ phục vụ tên đúng định dạng trong thư mục media
+            if not MEDIA_NAME.fullmatch(mm.group(1)) or not os.path.isfile(os.path.join(MEDIA_DIR, mm.group(1))):
+                return self._json(404, {"error": "không tìm thấy file"})
+            ext = mm.group(1).rsplit(".", 1)[1]
+            ctype = {"jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png", "gif": "image/gif", "webp": "image/webp",
+                     "mp3": "audio/mpeg", "wav": "audio/wav", "ogg": "audio/ogg", "m4a": "audio/mp4"}[ext]
+            with open(os.path.join(MEDIA_DIR, mm.group(1)), "rb") as f:
+                return self._send(200, f.read(), ctype)
         self._guard(self._get)
 
     def do_POST(self):
@@ -1886,6 +1934,21 @@ class Handler(BaseHTTPRequestHandler):
             if not rows:
                 raise ValueError("Không có dữ liệu để nhập")
             return self._json(200, parse_rows([rows], textbook_id, dry_run=dry, docx=False))
+        if p == "/api/media":  # tải file đính kèm lên; trả về tên file để gắn vào câu
+            raw = self._raw()
+            name = parse_qs(u.query).get("name", ["file"])[0]
+            ext = name.rsplit(".", 1)[-1].lower() if "." in name else ""
+            if ext not in MEDIA_EXT:
+                raise ValueError("Chỉ nhận ảnh (png, jpg, gif, webp) hoặc âm thanh (mp3, wav, ogg, m4a)")
+            if len(raw) > MEDIA_MAX[MEDIA_EXT[ext]]:
+                raise ValueError("File quá lớn (ảnh tối đa 5 MB, âm thanh tối đa 15 MB)")
+            if not raw:
+                raise ValueError("File rỗng")
+            os.makedirs(MEDIA_DIR, exist_ok=True)
+            fname = f"{os.urandom(16).hex()}.{ext}"
+            with open(os.path.join(MEDIA_DIR, fname), "wb") as f:
+                f.write(raw)
+            return self._json(201, {"file": fname, "kind": MEDIA_EXT[ext], "name": os.path.basename(name)[:120]})
         if p == "/api/item-analysis":  # phân tích câu hỏi từ bảng điểm (file .csv, .xlsx hoặc dữ liệu dán)
             raw = self._raw()
             res = item_analysis([read_table_text(raw)])
@@ -2040,7 +2103,7 @@ class Handler(BaseHTTPRequestHandler):
             conn.execute("PRAGMA foreign_keys = ON")
             cur = conn.execute("""UPDATE questions SET chapter_id=:chapter_id, bloom=:bloom, qtype=:qtype, content=:content,
                  options=:options, answer=:answer, solution=:solution, passage=:passage, passage_id=:passage_id,
-                 points=:points, clo=:clo, tags=:tags WHERE id=:id""", payload)
+                 points=:points, clo=:clo, tags=:tags, media=:media WHERE id=:id""", payload)
             conn.commit()
             updated = cur.rowcount
         if not updated:
@@ -2149,6 +2212,11 @@ class Handler(BaseHTTPRequestHandler):
                 data = render_docx(tpl_path, body.get("meta", {}), exam, code,
                                    answer_key and not key_separate, furigana)
                 z.writestr(f"De_{code}.docx", data)
+                for _, _, it in flatten(exam):  # âm thanh của câu trong đề được đưa vào thư mục Am_thanh
+                    for m in it.get("media") or []:
+                        path = os.path.join(MEDIA_DIR, m["file"])
+                        if m["kind"] == "audio" and os.path.isfile(path) and f"Am_thanh/{m['file']}" not in z.namelist():
+                            z.write(path, f"Am_thanh/{m['file']}")
                 if key_separate:
                     if os.path.isfile(key_tpl_path):
                         z.writestr(f"DapAn_{code}.docx", render_key_doc(key_tpl_path, body.get("meta", {}), code, exam))
@@ -2321,6 +2389,11 @@ def print_html(body):
             last_title = title
         pts = f" <i>({fmt_points(it['points'])} điểm)</i>" if it.get("points") is not None else ""
         lines = [f"<div class='q'><b>Câu {n}.</b> {rich_html(it['content'])}{pts}"]
+        for m in it.get("media") or []:
+            if m["kind"] == "image":
+                lines.append(f"<div><img src='/media/{m['file']}' style='max-width:100%;max-height:260px'></div>")
+            else:
+                lines.append(f"<div><audio controls preload='none' src='/media/{m['file']}'></audio> <small>{hesc(m['name'])}</small></div>")
         if it["qtype"] == "TN":
             lines.append("<div class='opts'>" + "".join(
                 f"<span>{LETTERS[k]}. {rich_html(o)}</span>" for k, o in enumerate(it["options"])) + "</div>")

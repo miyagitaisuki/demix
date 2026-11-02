@@ -477,7 +477,7 @@ async function loadQuestions(page = 0) {
       <td>${esc(q.course)} / ${esc(q.textbook)}<div class="sub">${esc(q.chapter_code)}${q.chapter_title ? " - " + esc(q.chapter_title) : ""}</div>${q.tags && q.tags.length ? `<div class="sub">🏷 ${esc(q.tags.join(", "))}</div>` : ""}</td>
       <td><span class="tag">${q.bloom}. ${BLOOM[q.bloom]}</span>${q.clo ? `<div class="sub">${esc(q.clo)}</div>` : ""}</td>
       <td>${q.qtype}</td>
-      <td>${esc(q.content)}<div class="opts">${esc(q.options.map((o,k)=>(q.qtype==="DS"?"abcdefgh"[k]+") ":"ABCDEFGH"[k]+". ")+o).join("\n"))}</div></td>
+      <td>${esc(q.content)}${mediaHtml(q.media)}<div class="opts">${esc(q.options.map((o,k)=>(q.qtype==="DS"?"abcdefgh"[k]+") ":"ABCDEFGH"[k]+". ")+o).join("\n"))}</div></td>
       <td>${esc(q.qtype === "DS" ? q.answer.replace(/D/g, "Đ") : q.answer)}<div class="sub">${q.points != null ? q.points + " điểm · " : ""}${q.used_count ? "đã dùng " + q.used_count + " lần" : "chưa dùng"}</div></td>
       <td style="white-space:nowrap"><button class="g" onclick="editQ(${q.id})">Sửa</button>
           <button class="d" onclick="delQ(${q.id})">Xóa</button></td>
@@ -564,7 +564,12 @@ async function editQ(id) {
     <div class="row"><textarea id="eOpts" rows="4">${esc(q.options.join("\n"))}</textarea></div>
     <div class="row"><label>Đáp án (TN: A/B/C…; ĐS: Đ S Đ…; ĐT: đáp án, nhiều đáp án cách nhau bằng |; TL: hướng dẫn chấm, in ở cuối đề)</label><input id="eAns" value="${esc(q.answer)}">
       <label>Lời giải</label><input id="eSol" style="flex:1" value="${esc(q.solution)}"></div>
+    <div class="row"><label>Hình ảnh hoặc âm thanh (tùy chọn, tối đa 4 file):</label>
+      <input type="file" accept="image/*,audio/*" onchange="uploadMedia(this)">
+      <span id="eMediaList" class="row" style="gap:6px"></span></div>
     <div class="row"><button class="p" onclick="saveQ()">Lưu</button><button class="g" onclick="$('#editor').style.display='none'">Đóng</button><span id="eMsg" class="err"></span></div>`;
+  EDIT_MEDIA = (q.media || []).slice();
+  renderEditMedia();
   fillPassPick(q.passage_id);
   $("#eChap").onchange = () => fillPassPick(null);
   // form nằm phía trên bảng: cuộn tới để người dùng thấy ngay khi bấm Sửa ở dòng dưới
@@ -604,6 +609,29 @@ async function purgeTrash(id) {
 async function emptyTrash() {
   if (!confirm("Xóa hẳn tất cả câu trong thùng rác? Không thể khôi phục.")) return;
   await postJson("/api/trash/empty", {}); loadTrash(); toast("Đã làm trống thùng rác.");
+}
+
+// ---------- hình ảnh và âm thanh đính kèm câu hỏi
+let EDIT_MEDIA = [];  // file đính kèm của câu đang sửa: {kind, file, name}
+const mediaHtml = list => (list && list.length)
+  ? `<div class="row" style="gap:6px;margin:4px 0">${list.map(m => m.kind === "image"
+      ? `<img src="/media/${esc(m.file)}" alt="${esc(m.name)}" style="height:48px;border:1px solid var(--line);border-radius:4px">`
+      : `<audio controls preload="none" src="/media/${esc(m.file)}" style="height:30px"></audio>`).join("")}</div>` : "";
+function renderEditMedia() {
+  $("#eMediaList").innerHTML = EDIT_MEDIA.map((m, i) => `<span class="tag">${m.kind === "image" ? "🖼" : "🔊"} ${esc(m.name)}
+    <button class="g" style="padding:0 6px;border:0" onclick="EDIT_MEDIA.splice(${i},1);renderEditMedia()">×</button></span>`).join("");
+}
+async function uploadMedia(input) {
+  const f = input.files[0]; input.value = "";
+  if (!f) return;
+  if (EDIT_MEDIA.length >= 4) { toast("Mỗi câu tối đa 4 file đính kèm.", true); return; }
+  try {
+    const r = await fetch(`/api/media?name=${encodeURIComponent(f.name)}`, { method: "POST", body: f });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || "Không tải lên được file.");
+    EDIT_MEDIA.push({ kind: d.kind, file: d.file, name: d.name });
+    renderEditMedia();
+  } catch (e) { toast(e.message, true); }
 }
 
 // ---------- đoạn văn
@@ -663,7 +691,7 @@ async function saveQ(confirmPassage = false) {
   const body = {
     chapter_id: $("#eChap").value, bloom: $("#eBloom").value, qtype: $("#eType").value,
     content: $("#eContent").value, answer: $("#eAns").value, solution: $("#eSol").value, points: $("#ePoints").value,
-    clo: $("#eClo").value, tags: $("#eTags").value,
+    clo: $("#eClo").value, tags: $("#eTags").value, media: EDIT_MEDIA,
     passage: $("#ePassage").value,
     options: $("#eOpts").value.split("\n").map(s => s.trim()).filter(Boolean).map(s => s.replace(/^[A-Ha-h][\.\)]\s*/, "")),
   };

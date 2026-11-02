@@ -208,4 +208,9 @@ Chi tiết từng lỗi và cách tái hiện: `docs/bao_cao_kiem_thu_2026-11-02
   - **CLO:** mỗi câu có thể gắn CLO (ví dụ CLO1). Cột "CLO" trong bảng Word, CSV và dữ liệu dán là tùy chọn.
   - **Bảng đặc tả:** sau khi xem trước đề, bảng CLO × mức Bloom hiện số câu và điểm của các câu đã chọn.
   - **Xem bản in:** mở bản xem trước HTML của mã đề đầu tiên (furigana, điểm, hướng dẫn chấm, bảng đặc tả) trong cửa sổ mới, có nút In. Bố cục khác đôi chút so với file Word xuất ra. Không ghi lịch sử dùng câu.
-- **Chưa làm (tính năng mới):** hình ảnh và âm thanh trong câu; thẻ (tag); phân tích câu hỏi từ bảng điểm; trạng thái duyệt câu; xuất Moodle/QTI; dùng chung qua mạng nội bộ; cấu hình tên trường và khoa.
+- **Đã làm (đợt 5):**
+  - **Excel:** đọc file `.xlsx` khi nhập (cần `openpyxl`). Nếu chưa cài, nhập `.xlsx` sẽ báo lỗi; CSV và dữ liệu dán không cần thư viện này.
+  - **Thẻ (tag):** mỗi câu có thể có nhiều thẻ (ví dụ `ngữ pháp, trợ từ`). Ô "Thẻ" trong thanh lọc ngân hàng lọc theo thẻ và gợi ý thẻ đang dùng. Thẻ đi theo khi sao lưu và nhập. Lọc theo thẻ hiện chỉ có ở ngân hàng, chưa có khi chọn câu để ra đề.
+  - **Phân tích câu hỏi từ bảng điểm** (tab Thống kê): tải bảng điểm (.csv, .xlsx hoặc dữ liệu dán). Mỗi dòng là một sinh viên; cột đầu là tên hoặc mã sinh viên; các cột sau có tiêu đề là mã câu; ô điểm là 1 (đúng), 0 (sai) hoặc tỷ lệ từ 0 đến 1. Kết quả gồm độ khó (% đúng), chỉ số phân biệt D (nhóm 27% cao trừ nhóm 27% thấp), tương quan câu–tổng và KR-20. Có thể ghi tỷ lệ đúng vào kết quả của mã đề. Các cột không phải mã câu được bỏ qua và báo lại.
+  - **Hình ảnh và âm thanh trong câu:** tối đa 4 file mỗi câu. Ảnh (png, jpg, gif, webp) tối đa 5 MB, được nhúng vào đề Word. Âm thanh (mp3, wav, ogg, m4a) tối đa 15 MB, nằm trong thư mục `Am_thanh/` của file zip và được ghi tên trong đề. File lưu trong `data/media/`. Sao lưu JSON nhúng cả file (base64) nên file sao lưu lớn hơn khi có nhiều file đính kèm.
+- **Chưa làm (tính năng mới):** trạng thái duyệt câu (Nháp → Đã duyệt → Ngưng dùng); xuất Moodle XML hoặc QTI; dùng chung qua mạng nội bộ có đăng nhập; cấu hình tên trường và khoa.
