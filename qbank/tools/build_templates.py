@@ -133,8 +133,32 @@ def _is_grid(tbl):
     return texts == "Câu"
 
 
+# Biến thể của đề thi chuẩn: cùng khung, tiêu đề và thông tin trường. Đổi tiêu đề loại đề,
+# và (nếu có) thay dòng ghi chú về tài liệu ở cuối khối tiêu đề.
+VARIANTS = {
+    "kiem_tra_giua_ky.docx": ("ĐỀ KIỂM TRA GIỮA KỲ", None),
+    "kiem_tra_nhanh.docx": ("ĐỀ KIỂM TRA NHANH", None),
+    "bai_tap_ve_nha.docx": ("BÀI TẬP VỀ NHÀ", "(Sinh viên được sử dụng tài liệu khi làm bài)."),
+}
+
+
+def build_variants():
+    src = os.path.join(DST, "de_thi_chuan.docx")
+    for name, (title, note) in VARIANTS.items():
+        doc = Document(src)
+        right = doc.tables[0].rows[0].cells[1]
+        right.paragraphs[0].runs[0].text = title + " "
+        if note:
+            runs = right.paragraphs[7].runs
+            runs[0].text = note
+            for r in runs[1:]:
+                r.text = ""
+        doc.save(os.path.join(DST, name))
+
+
 if __name__ == "__main__":
     os.makedirs(DST, exist_ok=True)
     build_exam()
     build_key()
-    print("Đã dựng: templates/de_thi_chuan.docx, templates/dap_an_chuan.docx")
+    build_variants()
+    print("Đã dựng: templates/de_thi_chuan.docx, dap_an_chuan.docx và các biến thể đề")
