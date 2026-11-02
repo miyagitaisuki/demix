@@ -18,7 +18,7 @@ jobs:
           python-version: "3.12"
 
       - name: Cài thư viện
-        run: python -m pip install --upgrade pip pyinstaller python-docx pykakasi
+        run: python -m pip install --upgrade pip pyinstaller python-docx pykakasi openpyxl
 
       - name: Đóng gói QBank.exe
         working-directory: qbank

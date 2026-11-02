@@ -100,28 +100,36 @@
     <select id="fChapter" title="Chương"></select>
     <select id="fBloom"><option value="">Mọi mức</option></select>
     <select id="fType"><option value="">Mọi loại</option><option value="TN">Trắc nghiệm</option><option value="DS">Đúng/sai</option><option value="DT">Điền từ</option><option value="TL">Tự luận</option></select>
+    <select id="fStatus" title="Trạng thái"><option value="">Mọi trạng thái</option><option value="nhap">Nháp</option><option value="da_duyet">Đã duyệt</option><option value="ngung">Ngưng dùng</option></select>
+    <input id="fTag" list="tagList" placeholder="Thẻ" style="width:110px" title="Lọc theo thẻ (ngữ pháp, trợ từ…)"><datalist id="tagList"></datalist>
     <input id="fSearch" placeholder="Tìm nội dung hoặc mã câu" style="width:190px">
     <button class="g" onclick="loadQuestions()">Lọc</button>
   </div>
   <div class="row">
     <button class="g" onclick="editQ(null)">+ Câu mới</button>
     <span class="sub">Nhập/xuất file:</span>
-    <label for="importFile">Nhập từ .docx vào:</label>
+    <label for="importFile">Nhập từ .docx hoặc .csv vào:</label>
     <span id="importTarget" class="sub"></span>
-    <input type="file" id="importFile" accept=".docx" onchange="importDocx(this)">
+    <input type="file" id="importFile" accept=".docx,.csv,.txt" onchange="importDocx(this)">
     <a href="/api/import-template" download><button class="g">Tải mẫu nhập</button></a>
     <a href="/api/backup" download><button class="g">Sao lưu</button></a>
     <label for="restoreFile">Khôi phục từ .json:</label>
     <input type="file" id="restoreFile" accept=".json" onchange="restoreJson(this)">
   </div>
+  <details class="row"><summary class="sub">Dán từ Excel</summary>
+    <textarea id="pasteBox" rows="4" style="flex:1" placeholder="Chọn các ô trong Excel (kèm dòng tiêu đề), Ctrl+C rồi dán vào đây"></textarea>
+    <button class="g" onclick="importPaste()">Xem trước dữ liệu dán</button>
+  </details>
   <div class="row">
     <span class="sub">Rà soát dữ liệu:</span>
     <button class="g" onclick="showDuplicates()">Kiểm tra trùng</button>
-    <button class="g" onclick="showSimilar()">Tìm câu gần giống</button>
+    <button class="g" onclick="withBusy(this, showSimilar)">Tìm câu gần giống</button>
+    <button class="g" onclick="toggleTrash()">Thùng rác</button>
   </div>
   <div id="importMsg" class="msg"></div>
   <div id="importPreview" class="card" style="display:none"></div>
   <div id="dupBox" class="card" style="display:none"></div>
+  <div id="trashBox" class="card" style="display:none"></div>
   <div id="editor" class="card" style="display:none"></div>
   <div class="row" id="bulkBar">
     <span class="sub">Đã chọn <span id="selCount">0</span> câu.</span>
@@ -129,14 +137,18 @@
     <select id="bulkBloom"><option value="">Giữ mức Bloom</option><option value="1">1. Biết</option><option value="2">2. Hiểu</option><option value="3">3. Vận dụng</option><option value="4">4. Phân tích</option><option value="5">5. Đánh giá</option></select>
     <button class="g" onclick="bulkApply()">Áp dụng cho câu đã chọn</button>
     <button class="d" onclick="bulkDelete()">Xóa các câu đã chọn</button>
+    <button class="g" onclick="setStatus('da_duyet')">Duyệt đã chọn</button>
+    <button class="g" onclick="setStatus('nhap')">Đưa về Nháp</button>
+    <button class="g" onclick="setStatus('ngung')">Ngưng dùng</button>
+    <button class="g" onclick="exportMoodle()">Xuất Moodle XML</button>
     <button class="g" onclick="selectShown()">Chọn các câu đang hiện</button>
     <button class="g" onclick="clearSel()">Bỏ chọn</button>
   </div>
   <div class="pager" id="qPager"></div>
-  <table>
+  <div style="overflow-x:auto"><table>
     <thead><tr><th style="width:28px"></th><th>Mã câu</th><th>Học phần / Giáo trình / Chương</th><th>Bloom</th><th>Loại</th><th>Nội dung</th><th>Đáp án</th><th></th></tr></thead>
     <tbody id="qBody"></tbody>
-  </table>
+  </table></div>
 </div>
 </div>
 </section>
@@ -179,6 +191,15 @@
     <div class="row"><textarea id="resRows" rows="4" placeholder="N4-MN1-B01-001,65&#10;N4-MN1-B01-002,92"></textarea></div>
     <div class="row"><button class="g" onclick="saveResults()">Ghi kết quả</button><span id="resMsg" class="msg"></span></div>
     <div id="diffBox"></div>
+  </div>
+  <div class="card" style="margin-top:16px">
+    <b>Phân tích câu hỏi từ bảng điểm</b> <span class="sub">Mỗi dòng một sinh viên; cột đầu là tên hoặc mã sinh viên; tiêu đề các cột sau là mã câu; ô điểm là 1 (đúng), 0 (sai) hoặc tỷ lệ điểm từ 0 đến 1. Nhập file .csv hoặc .xlsx.</span>
+    <div class="row" style="margin-top:8px">
+      <input type="file" id="scoreFile" accept=".csv,.xlsx,.txt">
+      <label><input type="checkbox" id="scoreRecord"> Ghi tỷ lệ đúng vào kết quả của mã đề (mã đề nhập ở trên)</label>
+      <button class="g" onclick="withBusy(this, analyzeScores)">Phân tích</button>
+    </div>
+    <div id="scoreBox"></div>
   </div>
 </section>
 
@@ -244,6 +265,7 @@
         <label>Học kỳ:</label><input id="hocKy" class="n" value="2">
         <label>Năm học:</label><input id="namHoc" style="width:110px" placeholder="2025-2026">
         <label>Thời gian (phút):</label><input id="thoiGian" class="n" value="90">
+        <label>Số trang:</label><input id="soTrang" class="n" style="width:70px" placeholder="(để trống)">
         <label>Tên đề (ghi chú, không in):</label><input id="tenDe" style="width:160px">
       </div>
     </div>
@@ -280,7 +302,7 @@
   <!-- Bước 5: xem trước -->
   <div class="pane" id="pane5">
     <p class="msg">Xem trước chọn câu cụ thể cho từng phần; bấm “Đổi câu” để thay câu khác. Có thể bỏ qua bước này: khi đó đề chọn câu ngẫu nhiên lúc xuất.</p>
-    <div class="row"><button class="g" onclick="previewExam()">Xem trước đề</button><span id="previewStatus" class="msg"></span></div>
+    <div class="row"><button class="g" onclick="previewExam()">Xem trước đề</button><button class="g" onclick="printPreview()">Xem bản in</button><span id="previewStatus" class="msg"></span></div>
     <div id="previewBox"></div>
   </div>
 
@@ -291,7 +313,7 @@
       <div id="sumBox"></div>
       <div class="row" style="margin-top:10px"><label><input type="checkbox" id="confirmChk"> Tôi đã kiểm tra thông tin trên và muốn xuất đề</label></div>
     </div>
-    <div class="row"><button class="p" onclick="doExport()">Xuất .zip các file .docx</button><span id="exportMsg" class="msg"></span><span id="shortMsg" class="err"></span></div>
+    <div class="row"><button class="p" id="btnExport" onclick="withBusy(this, doExport)">Xuất .zip các file .docx</button><button class="g" onclick="printPreview()">Xem bản in</button><span id="exportMsg" class="msg"></span><span id="shortMsg" class="err"></span></div>
     <div class="card">
       <div class="row"><b>Lịch sử xuất</b> <span class="sub">(tải lại file .zip gồm đề và đáp án)</span><button class="g" onclick="loadHistory()">Làm mới</button></div>
       <div id="histBox"></div>
@@ -385,9 +407,46 @@ function fillChapterFilter() {
 }
 $("#fCourse").onchange = () => { fillTextbookFilter(); loadQuestions(); };
 $("#fTextbook").onchange = () => { fillChapterFilter(); updateImportTarget(); loadQuestions(); };
-$("#fChapter").onchange = loadQuestions;
+$("#fChapter").onchange = () => loadQuestions();  // không truyền Event làm số trang
+$("#fBloom").onchange = () => loadQuestions();
+$("#fType").onchange = () => loadQuestions();
+$("#fSearch").addEventListener("keydown", e => { if (e.key === "Enter") loadQuestions(); });
+$("#fTag").addEventListener("keydown", e => { if (e.key === "Enter") loadQuestions(); });
+$("#fTag").addEventListener("change", () => loadQuestions());
+$("#fStatus").onchange = () => loadQuestions();
+async function loadTagList() {
+  const tags = await api("/api/tags");
+  $("#tagList").innerHTML = tags.map(t => `<option value="${esc(t.tag)}">${esc(t.tag)} (${t.count})</option>`).join("");
+}
 
 // ---------- ngân hàng
+// ---------- trạng thái duyệt: Nháp, Đã duyệt (được ra đề), Ngưng dùng
+const STATUS_LABEL = {nhap: "Nháp", da_duyet: "Đã duyệt", ngung: "Ngưng dùng"};
+const statusBadge = st => {
+  const color = {nhap: ["#fef3c7", "#92400e"], da_duyet: ["#dcfce7", "#166534"], ngung: ["#e5e7eb", "#374151"]}[st] || ["#e5e7eb", "#374151"];
+  return `<span class="tag" style="background:${color[0]};color:${color[1]}">${STATUS_LABEL[st] || st}</span>`;
+};
+async function setStatus(status) {
+  if (!SEL.size) { toast("Chưa chọn câu nào.", true); return; }
+  try {
+    const r = await postJson("/api/questions/status", { ids: [...SEL], status });
+    toast(`Đã đặt ${r.updated} câu sang "${STATUS_LABEL[status]}".`);
+    clearSel(); loadQuestions();
+  } catch (e) { toast(e.message, true); }
+}
+// xuất Moodle XML: các câu đã chọn; không chọn câu nào thì xuất mọi câu đã duyệt
+async function exportMoodle() {
+  try {
+    const r = await fetch("/api/export/moodle", { method: "POST", headers: { "Content-Type": "application/json" },
+                                                   body: JSON.stringify({ ids: [...SEL] }) });
+    if (!r.ok) { const e = await r.json().catch(() => ({})); toast(e.error || "Không xuất được.", true); return; }
+    const url = URL.createObjectURL(await r.blob());
+    Object.assign(document.createElement("a"), { href: url, download: "qbank_moodle.xml" }).click();
+    URL.revokeObjectURL(url);
+    toast(SEL.size ? `Đã xuất ${SEL.size} câu đã chọn ra Moodle XML.` : "Đã xuất mọi câu đã duyệt ra Moodle XML.");
+  } catch (e) { toast(e.message, true); }
+}
+
 // ---------- chọn nhiều câu để sửa hàng loạt
 const SEL = new Set();
 function updateSelBar() {
@@ -412,7 +471,7 @@ async function bulkApply() {
 // xóa các câu đã chọn; có nút hoàn tác như khi xóa một câu
 async function bulkDelete() {
   if (!SEL.size) { toast("Chưa chọn câu nào.", true); return; }
-  if (!confirm(`Xóa ${SEL.size} câu đã chọn? Lịch sử dùng và kết quả thi của các câu này cũng bị xóa.`)) return;
+  if (!confirm(`Chuyển ${SEL.size} câu đã chọn vào thùng rác? Có thể khôi phục trong mục Thùng rác.`)) return;
   try {
     const ids = [...SEL];
     const r = await postJson("/api/questions/bulk-delete", { ids });
@@ -420,7 +479,7 @@ async function bulkDelete() {
     if (openId && ids.includes(+openId.value)) $("#editor").style.display = "none";  // form đang mở của câu vừa xóa
     clearSel();
     loadQuestions();
-    showUndo(r.items, `Đã xóa ${r.deleted} câu.`);
+    showUndo(r.items, `Đã chuyển ${r.deleted} câu vào thùng rác.`, false, r.trash_ids);
   } catch (e) { toast(e.message, true); }
 }
 
@@ -431,7 +490,7 @@ async function loadQuestions(page = 0) {
   await loadTree();
   QPAGE = Math.max(0, page);
   const p = new URLSearchParams();
-  const pairs = {course_id:"#fCourse", textbook_id:"#fTextbook", chapter_id:"#fChapter", bloom:"#fBloom", qtype:"#fType"};
+  const pairs = {course_id:"#fCourse", textbook_id:"#fTextbook", chapter_id:"#fChapter", bloom:"#fBloom", qtype:"#fType", tag:"#fTag", status:"#fStatus"};
   for (const [k, sel] of Object.entries(pairs)) if ($(sel).value) p.set(k, $(sel).value);
   if ($("#fSearch").value.trim()) p.set("q", $("#fSearch").value.trim());
   p.set("page", QPAGE); p.set("per", QPER);
@@ -442,15 +501,17 @@ async function loadQuestions(page = 0) {
   $("#bulkChap").innerHTML = `<option value="">Giữ chương</option>` + chapterOptions("");
   QMAP = Object.fromEntries(list.map(x => [x.id, x]));
   renderBankTree();
+  loadTagList();
+  if (TRASH_OPEN) loadTrash();  // thùng rác đang mở: làm mới sau mỗi thay đổi
   $("#qBody").innerHTML = list.map(q => `
     <tr>
       <td><input type="checkbox" class="qsel" value="${q.id}" ${SEL.has(q.id) ? "checked" : ""} onchange="toggleSel(${q.id}, this.checked)"></td>
       <td>${esc(q.code)}</td>
-      <td>${esc(q.course)} / ${esc(q.textbook)}<div class="sub">${esc(q.chapter_code)}${q.chapter_title ? " - " + esc(q.chapter_title) : ""}</div></td>
-      <td><span class="tag">${q.bloom}. ${BLOOM[q.bloom]}</span></td>
+      <td>${esc(q.course)} / ${esc(q.textbook)}<div class="sub">${esc(q.chapter_code)}${q.chapter_title ? " - " + esc(q.chapter_title) : ""}</div>${q.tags && q.tags.length ? `<div class="sub">🏷 ${esc(q.tags.join(", "))}</div>` : ""}</td>
+      <td><span class="tag">${q.bloom}. ${BLOOM[q.bloom]}</span> ${statusBadge(q.status)}${q.clo ? `<div class="sub">${esc(q.clo)}</div>` : ""}</td>
       <td>${q.qtype}</td>
-      <td>${esc(q.content)}<div class="opts">${esc(q.options.map((o,k)=>(q.qtype==="DS"?"abcdefgh"[k]+") ":"ABCDEFGH"[k]+". ")+o).join("\n"))}</div></td>
-      <td>${esc(q.answer)}<div class="sub">${q.used_count ? "đã dùng " + q.used_count + " lần" : "chưa dùng"}</div></td>
+      <td>${esc(q.content)}${mediaHtml(q.media)}<div class="opts">${esc(q.options.map((o,k)=>(q.qtype==="DS"?"abcdefgh"[k]+") ":"ABCDEFGH"[k]+". ")+o).join("\n"))}</div></td>
+      <td>${esc(q.qtype === "DS" ? q.answer.replace(/D/g, "Đ") : q.answer)}<div class="sub">${q.points != null ? q.points + " điểm · " : ""}${q.used_count ? "đã dùng " + q.used_count + " lần" : "chưa dùng"}</div></td>
       <td style="white-space:nowrap"><button class="g" onclick="editQ(${q.id})">Sửa</button>
           <button class="d" onclick="delQ(${q.id})">Xóa</button></td>
     </tr>`).join("") || `<tr><td colspan="8" class="msg">Chưa có câu hỏi nào. Nhấn “+ Câu mới” hoặc nhập từ .docx.</td></tr>`;
@@ -513,7 +574,7 @@ function chapterOptions(selected) {
 async function editQ(id) {
   await loadTree();
   let q = { chapter_id: $("#fChapter").value || "", bloom: 1, qtype: "TN", content: "", options: ["", "", "", ""], answer: "A", solution: "" };
-  if (id) q = (await api("/api/questions")).find(x => x.id === id) || q;
+  if (id) q = await api(`/api/questions/${id}`);
   if (!TREE.chapters.length) { alert("Hãy tạo học phần, giáo trình, chương trong tab Cấu trúc trước."); return; }
   await loadPassages();
   $("#editor").style.display = "block";
@@ -522,6 +583,10 @@ async function editQ(id) {
     <div class="row">
       <label>Chương</label><select id="eChap">${chapterOptions(q.chapter_id)}</select>
       <label>Bloom</label><select id="eBloom">${Object.entries(BLOOM).map(([k,v])=>`<option value="${k}" ${k==q.bloom?"selected":""}>${k}. ${v}</option>`).join("")}</select>
+      <label>Thẻ</label><input id="eTags" style="width:200px" placeholder="ngữ pháp, trợ từ" value="${esc((q.tags || []).join(", "))}">
+      <label>Trạng thái</label><select id="eStatus">${Object.entries(STATUS_LABEL).map(([k, v]) => `<option value="${k}" ${k === (q.status || "nhap") ? "selected" : ""}>${v}</option>`).join("")}</select>
+      <label>CLO</label><input id="eClo" style="width:90px" placeholder="CLO1" value="${esc(q.clo || "")}">
+      <label>Điểm</label><input id="ePoints" class="n" style="width:70px" placeholder="—" value="${q.points ?? ""}">
       <label>Loại</label><select id="eType">${["TN","DS","DT","TL"].map(t=>`<option value="${t}" ${q.qtype==t?"selected":""}>${t==="TN"?"Trắc nghiệm":t==="DS"?"Đúng/sai":t==="DT"?"Điền từ":"Tự luận"}</option>`).join("")}</select>
     </div>
     <div class="row"><label>Đoạn văn (tùy chọn). Chọn đoạn có sẵn trong chương, hoặc nhập đoạn mới; đoạn giống hệt trong chương sẽ được dùng chung.</label></div>
@@ -531,13 +596,76 @@ async function editQ(id) {
     <div class="row"><textarea id="eContent" rows="3" placeholder="Nội dung câu hỏi">${esc(q.content)}</textarea></div>
     <div class="row"><label>Phương án (TN: mỗi dòng một phương án, # đầu dòng = cố định vị trí; ĐS: mỗi dòng một ý; ĐT/TL: để trống)</label></div>
     <div class="row"><textarea id="eOpts" rows="4">${esc(q.options.join("\n"))}</textarea></div>
-    <div class="row"><label>Đáp án (TN: A/B/C…; ĐS: Đ S Đ…; ĐT: đáp án, nhiều đáp án cách nhau bằng |; TL: để trống)</label><input id="eAns" value="${esc(q.answer)}">
+    <div class="row"><label>Đáp án (TN: A/B/C…; ĐS: Đ S Đ…; ĐT: đáp án, nhiều đáp án cách nhau bằng |; TL: hướng dẫn chấm, in ở cuối đề)</label><input id="eAns" value="${esc(q.answer)}">
       <label>Lời giải</label><input id="eSol" style="flex:1" value="${esc(q.solution)}"></div>
+    <div class="row"><label>Hình ảnh hoặc âm thanh (tùy chọn, tối đa 4 file):</label>
+      <input type="file" accept="image/*,audio/*" onchange="uploadMedia(this)">
+      <span id="eMediaList" class="row" style="gap:6px"></span></div>
     <div class="row"><button class="p" onclick="saveQ()">Lưu</button><button class="g" onclick="$('#editor').style.display='none'">Đóng</button><span id="eMsg" class="err"></span></div>`;
+  EDIT_MEDIA = (q.media || []).slice();
+  renderEditMedia();
   fillPassPick(q.passage_id);
   $("#eChap").onchange = () => fillPassPick(null);
   // form nằm phía trên bảng: cuộn tới để người dùng thấy ngay khi bấm Sửa ở dòng dưới
   $("#editor").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+// ---------- thùng rác: câu đã xóa, khôi phục hoặc xóa hẳn
+let TRASH_OPEN = false;
+function toggleTrash() { TRASH_OPEN = !TRASH_OPEN; $("#trashBox").style.display = TRASH_OPEN ? "block" : "none"; if (TRASH_OPEN) loadTrash(); }
+async function loadTrash() {
+  const rows = await api("/api/trash");
+  const box = $("#trashBox");
+  box.innerHTML = `<div class="row"><b>Thùng rác: ${rows.length} câu</b>
+      <span class="sub">Câu trong thùng rác không dùng để ra đề. Khôi phục sẽ trả lại lịch sử dùng và kết quả thi.</span>
+      <button class="g" ${rows.length ? "" : "disabled"} onclick="restoreTrash(${JSON.stringify(rows.map(r => r.id))})">Khôi phục tất cả</button>
+      <button class="d" ${rows.length ? "" : "disabled"} onclick="emptyTrash()">Xóa hẳn tất cả</button>
+      <button class="g" onclick="toggleTrash()">Đóng</button></div>` +
+    (rows.length ? `<table><thead><tr><th>Mã câu</th><th>Vị trí</th><th>Loại</th><th>Nội dung</th><th>Đã chuyển lúc</th><th></th></tr></thead><tbody>` +
+      rows.map(r => `<tr><td>${esc(r.code)}</td><td>${esc(r.chapter)}</td><td>${esc(r.qtype)}</td><td>${esc(r.content)}</td>
+        <td>${esc(r.deleted_at.replace("T", " "))}</td>
+        <td style="white-space:nowrap"><button class="g" onclick="restoreTrash([${r.id}])">Khôi phục</button>
+        <button class="d" onclick="purgeTrash(${r.id})">Xóa hẳn</button></td></tr>`).join("") + `</tbody></table>`
+      : `<span class="msg">Thùng rác trống.</span>`);
+}
+async function restoreTrash(ids) {
+  try {
+    const r = await postJson("/api/trash/restore", { ids });
+    toast(r.restored ? `Đã khôi phục ${r.restored} câu.` : (r.errors.join("; ") || "Không khôi phục được."), !r.restored);
+    if (r.errors.length && r.restored) toast(`Khôi phục ${r.restored} câu; còn ${r.errors.length} câu không khôi phục được: ${r.errors.join("; ")}`, true);
+  } catch (e) { toast(e.message, true); }
+  loadTrash(); loadQuestions();
+}
+async function purgeTrash(id) {
+  if (!confirm("Xóa hẳn câu này? Không thể khôi phục.")) return;
+  await api(`/api/trash/${id}`, { method: "DELETE" }); loadTrash();
+}
+async function emptyTrash() {
+  if (!confirm("Xóa hẳn tất cả câu trong thùng rác? Không thể khôi phục.")) return;
+  await postJson("/api/trash/empty", {}); loadTrash(); toast("Đã làm trống thùng rác.");
+}
+
+// ---------- hình ảnh và âm thanh đính kèm câu hỏi
+let EDIT_MEDIA = [];  // file đính kèm của câu đang sửa: {kind, file, name}
+const mediaHtml = list => (list && list.length)
+  ? `<div class="row" style="gap:6px;margin:4px 0">${list.map(m => m.kind === "image"
+      ? `<img src="/media/${esc(m.file)}" alt="${esc(m.name)}" style="height:48px;border:1px solid var(--line);border-radius:4px">`
+      : `<audio controls preload="none" src="/media/${esc(m.file)}" style="height:30px"></audio>`).join("")}</div>` : "";
+function renderEditMedia() {
+  $("#eMediaList").innerHTML = EDIT_MEDIA.map((m, i) => `<span class="tag">${m.kind === "image" ? "🖼" : "🔊"} ${esc(m.name)}
+    <button class="g" style="padding:0 6px;border:0" onclick="EDIT_MEDIA.splice(${i},1);renderEditMedia()">×</button></span>`).join("");
+}
+async function uploadMedia(input) {
+  const f = input.files[0]; input.value = "";
+  if (!f) return;
+  if (EDIT_MEDIA.length >= 4) { toast("Mỗi câu tối đa 4 file đính kèm.", true); return; }
+  try {
+    const r = await fetch(`/api/media?name=${encodeURIComponent(f.name)}`, { method: "POST", body: f });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || "Không tải lên được file.");
+    EDIT_MEDIA.push({ kind: d.kind, file: d.file, name: d.name });
+    renderEditMedia();
+  } catch (e) { toast(e.message, true); }
 }
 
 // ---------- đoạn văn
@@ -596,7 +724,8 @@ async function saveQ(confirmPassage = false) {
   const id = $("#eId").value;
   const body = {
     chapter_id: $("#eChap").value, bloom: $("#eBloom").value, qtype: $("#eType").value,
-    content: $("#eContent").value, answer: $("#eAns").value, solution: $("#eSol").value,
+    content: $("#eContent").value, answer: $("#eAns").value, solution: $("#eSol").value, points: $("#ePoints").value,
+    clo: $("#eClo").value, tags: $("#eTags").value, media: EDIT_MEDIA, status: $("#eStatus").value,
     passage: $("#ePassage").value,
     options: $("#eOpts").value.split("\n").map(s => s.trim()).filter(Boolean).map(s => s.replace(/^[A-Ha-h][\.\)]\s*/, "")),
   };
@@ -619,12 +748,12 @@ async function saveQ(confirmPassage = false) {
 let QMAP = {};  // câu đang hiển thị, để hoàn tác khi xóa
 async function delQ(id) {
   const q = QMAP[id];
-  if (!confirm(`Xóa câu ${q ? q.code : "này"}?`)) return;
+  if (!confirm(`Chuyển câu ${q ? q.code : "này"} vào thùng rác?`)) return;
   try {
-    await api(`/api/questions/${id}`, { method: "DELETE" });
+    const r = await api(`/api/questions/${id}`, { method: "DELETE" });
     loadQuestions();
-    if (q) showUndo([toItem(q)], `Đã xóa câu ${q.code}.`);
-    else toast("Đã xóa câu.");
+    if (q) showUndo([toItem(q)], `Đã chuyển câu ${q.code} vào thùng rác.`, false, r.trash_ids);
+    else toast("Đã chuyển câu vào thùng rác.");
   } catch (e) { toast(e.message, true); }
 }
 // hoàn tác: khôi phục câu từ dữ liệu đã có (lịch sử dùng và kết quả thi của câu đã xóa không khôi phục được)
@@ -633,7 +762,7 @@ const toItem = q => ({ code: q.code, course: q.course, textbook: q.textbook, cha
                        chapter_title: q.chapter_title, bloom: q.bloom, qtype: q.qtype, content: q.content,
                        options: q.options, answer: q.answer, solution: q.solution, passage: q.passage });
 // items: câu đã xóa/gộp; allowDup: cho phép khôi phục câu trùng (dùng khi hoàn tác gộp)
-function showUndo(items, msg, allowDup = false) {
+function showUndo(items, msg, allowDup = false, trashIds = null) {
   const t = document.getElementById("toast");
   t.innerHTML = `${esc(msg)} <button class="g" id="undoBtn" style="margin-left:8px">Hoàn tác</button>`;
   t.className = ""; t.style.display = "block";
@@ -641,6 +770,13 @@ function showUndo(items, msg, allowDup = false) {
   undoTimer = setTimeout(() => t.style.display = "none", 8000);
   document.getElementById("undoBtn").onclick = async () => {
     try {
+      if (trashIds) {  // câu đang ở thùng rác: khôi phục từ đó
+        const r = await postJson("/api/trash/restore", { ids: trashIds });
+        toast(r.restored ? `Đã khôi phục ${r.restored} câu.` : (r.errors.join("; ") || "Không khôi phục được."), !r.restored);
+        loadQuestions(); if (TRASH_OPEN) loadTrash();
+        t.style.display = "none";
+        return;
+      }
       const r = await api("/api/restore", { method: "POST", headers: {"Content-Type":"application/json"},
                                             body: JSON.stringify({ questions: items, allow_dup: allowDup }) });
       if (r.added) toast(`Đã khôi phục ${r.added} câu.`); else toast(r.errors.join("; ") || "Không khôi phục được.", true);
@@ -666,34 +802,48 @@ async function loadDifficulty() {
         <td>${f.flag}</td><td>${esc(f.content)}</td></tr>`).join("") + `</tbody></table>`
       : `<span class="msg">Chưa có câu nào bất thường.</span>`}`;
 }
+// nhận "mã,tỷ lệ", "mã<Tab>tỷ lệ" (dán từ Excel) hoặc "mã;tỷ lệ"
 async function saveResults() {
   const rows = $("#resRows").value.split("\n").map(s => s.trim()).filter(Boolean).map(line => {
-    const i = line.lastIndexOf(",");
-    return i < 0 ? { code: line, pct: "" } : { code: line.slice(0, i).trim(), pct: line.slice(i + 1).trim() };
+    const m = /^(.+?)\s*[\t;,]\s*(\S.*)$/.exec(line);
+    return m ? { code: m[1].trim(), pct: m[2].trim() } : { code: line, pct: "" };
   });
   if (!rows.length) { $("#resMsg").innerHTML = `<span class="err">Nhập ít nhất một dòng.</span>`; return; }
   try {
     const r = await postJson("/api/results", { exam_code: $("#resExam").value, rows });
     $("#resMsg").innerHTML = `Đã ghi ${r.added} dòng.` + (r.errors.length ? ` <span class="err">${esc(r.errors.join(" | "))}</span>` : "");
     if (r.added) { $("#resRows").value = ""; loadDifficulty(); }
-  } catch (e) { $("#resMsg").innerHTML = `<span class="err">${esc(e.message)}</span>`; }
+  } catch (e) {
+    $("#resMsg").innerHTML = `<span class="err">${esc(e.message)}</span>`;
+  }
 }
 
 // nhập Word: kiểm tra trước (không ghi), người dùng xác nhận rồi mới nhập
 let PENDING_IMPORT = null;  // {buf, tid, name}
+async function runImportCheck(buf, tid, name, url) {
+  $("#importMsg").textContent = "Đang kiểm tra...";
+  const r = await api(`${url}?textbook_id=${tid}&dry_run=1`, { method: "POST", body: buf });
+  PENDING_IMPORT = { buf, tid, name, url };
+  renderImportPreview(r);
+  $("#importMsg").textContent = "";
+}
+// nhập file: .docx dùng bảng Word, .csv/.txt dùng dòng tiêu đề như bảng; kiểm tra trước, chưa ghi
 async function importDocx(input) {
   const f = input.files[0]; if (!f) return;
   const tid = $("#fTextbook").value;
   input.value = "";
   if (!tid) { $("#importMsg").innerHTML = `<span class="err">Chọn giáo trình ở bộ lọc trước khi nhập.</span>`; return; }
-  $("#importMsg").textContent = "Đang kiểm tra file...";
   try {
-    const buf = await f.arrayBuffer();
-    const r = await api(`/api/import?textbook_id=${tid}&dry_run=1`, { method: "POST", body: buf });
-    PENDING_IMPORT = { buf, tid, name: f.name };
-    renderImportPreview(r);
-    $("#importMsg").textContent = "";
+    await runImportCheck(await f.arrayBuffer(), tid, f.name, /\.docx$/i.test(f.name) ? "/api/import" : "/api/import-text");
   } catch (e) { $("#importMsg").innerHTML = `<span class="err">${esc(e.message)}</span>`; }
+}
+async function importPaste() {
+  const tid = $("#fTextbook").value;
+  const text = $("#pasteBox").value.trim();
+  if (!tid) { $("#importMsg").innerHTML = `<span class="err">Chọn giáo trình ở bộ lọc trước khi nhập.</span>`; return; }
+  if (!text) { $("#importMsg").innerHTML = `<span class="err">Dán dữ liệu (có dòng tiêu đề) vào ô trước.</span>`; return; }
+  try { await runImportCheck(new TextEncoder().encode(text), tid, "Dữ liệu dán", "/api/import-text"); }
+  catch (e) { $("#importMsg").innerHTML = `<span class="err">${esc(e.message)}</span>`; }
 }
 let IMPORT_ROWS = [];  // dòng xem trước của lần kiểm tra gần nhất, để lọc mà không gọi lại server
 function renderImportPreview(r) {
@@ -735,9 +885,9 @@ function renderImportRows() {
 function cancelImport() { PENDING_IMPORT = null; $("#importPreview").style.display = "none"; }
 async function confirmImport() {
   if (!PENDING_IMPORT) return;
-  const { buf, tid } = PENDING_IMPORT;
+  const { buf, tid, url } = PENDING_IMPORT;
   try {
-    const r = await api(`/api/import?textbook_id=${tid}`, { method: "POST", body: buf });
+    const r = await api(`${url}?textbook_id=${tid}`, { method: "POST", body: buf });
     $("#importMsg").innerHTML = importSummary("Đã nhập", r);
     toast(`Đã nhập ${r.added} câu.`);
     cancelImport();
@@ -856,7 +1006,11 @@ async function delExport(id) {
 }
 
 async function structAction(fn) {
-  try { await fn(); $("#structMsg").textContent = "Đã lưu."; renderStruct(); }
+  try {
+    const done = await fn();
+    if (done === false) return;  // người dùng hủy: không báo "Đã lưu"
+    $("#structMsg").textContent = "Đã lưu."; renderStruct();
+  }
   catch (e) { $("#structMsg").innerHTML = `<span class="err">${esc(e.message)}</span>`; }
 }
 const addCourse = () => structAction(async () => {
@@ -903,7 +1057,7 @@ async function saveNode(kind, id) {
   } catch (e) { const m = $("#nMsg"); if (m) m.textContent = e.message; else toast(e.message, true); }
 }
 const delNode = (kind, id) => structAction(async () => {
-  if (!confirm("Xóa mục này? Chỉ xóa được khi không còn dữ liệu bên trong.")) return;
+  if (!confirm("Xóa mục này? Chỉ xóa được khi không còn dữ liệu bên trong.")) return false;
   await api(`/api/${kind}/${id}`, { method: "DELETE" });
 });
 
@@ -919,6 +1073,31 @@ async function loadStats() {
   $("#statTable").innerHTML = `<thead>${head}</thead><tbody>${rows || `<tr><td colspan="9" class="msg">Chưa có chương nào.</td></tr>`}</tbody>`;
 }
 
+// ---------- phân tích câu hỏi từ bảng điểm
+async function analyzeScores() {
+  const f = $("#scoreFile").files[0];
+  if (!f) { $("#scoreBox").innerHTML = `<span class="err">Chọn file bảng điểm trước.</span>`; return; }
+  const record = $("#scoreRecord").checked;
+  const code = $("#resExam").value.trim();
+  if (record && !code) { $("#scoreBox").innerHTML = `<span class="err">Nhập mã đề ở mục "Độ khó thực tế" để ghi kết quả.</span>`; return; }
+  try {
+    const qs = `item-analysis?exam_code=${encodeURIComponent(code)}${record ? "&record=1" : ""}`;
+    const d = await api("/api/" + qs, { method: "POST", body: await f.arrayBuffer() });
+    const flagged = d.items.filter(i => i.flag).length;
+    $("#scoreBox").innerHTML = `
+      <div class="row"><span class="tag">${d.students} sinh viên</span><span class="tag">${d.items.length} câu</span>
+        ${d.kr20 !== null ? `<span class="tag">KR-20 = ${d.kr20}</span>` : ""}<span class="tag">${flagged} câu cần xem</span>
+        ${d.recorded ? `<span class="sub">Đã ghi ${d.recorded.added} dòng kết quả cho mã ${esc(code)}.</span>` : ""}</div>
+      <table><thead><tr><th>Mã câu</th><th class="num">Số SV</th><th class="num">Độ khó (%)</th><th class="num">D</th><th class="num">r câu–tổng</th><th>Nhận xét</th></tr></thead>
+      <tbody>${d.items.map(i => `<tr><td>${esc(i.code)}</td><td class="num">${i.n}</td><td class="num">${i.pct}</td>
+        <td class="num">${i.D}</td><td class="num">${i.r === null ? "—" : i.r}</td><td>${esc(i.flag) || "<span class='sub'>bình thường</span>"}</td></tr>`).join("")}</tbody></table>
+      <p class="sub">D = chênh lệch tỷ lệ đúng giữa nhóm 27% điểm cao và nhóm 27% điểm thấp (D ≥ 0,3 tốt; &lt; 0,2 kém; âm là đáp án cần kiểm tra). r câu–tổng: tương quan giữa câu và tổng điểm các câu khác (≥ 0,2 tốt).
+      KR-20 là độ tin cậy của cả bộ câu (≥ 0,7 chấp nhận được).</p>
+      ${d.unknown_columns.length ? `<p class="err">Bỏ qua các cột không phải mã câu: ${esc(d.unknown_columns.join(", "))}</p>` : ""}
+      ${d.errors.length ? `<p class="err">${esc(d.errors.join(" | "))}</p>` : ""}`;
+  } catch (e) { $("#scoreBox").innerHTML = `<span class="err">${esc(e.message)}</span>`; }
+}
+
 // ---------- xuất đề
 async function loadExport() {
   STATS = await api("/api/stats");
@@ -932,7 +1111,12 @@ async function loadExport() {
   await loadPassages();
   restoreForm();  // sau khi đã có danh sách mẫu, để giữ lại lựa chọn của lần trước
   await loadConfigs();
-  if (!$("#sections").children.length) DEFAULT_PARTS.forEach(([t, q]) => addSection(t, q));
+  if (!$("#sections").children.length) {
+    const wiz = loadWizard();
+    if (wiz && wiz.sections && wiz.sections.length) applyCfg({ sections: wiz.sections });
+    else DEFAULT_PARTS.forEach(([t, q]) => addSection(t, q));
+    if (wiz && wiz.step) STEP = wiz.step;
+  }
   filterExportRows();
   refreshAllCells();
   loadHistory();
@@ -940,7 +1124,7 @@ async function loadExport() {
 }
 
 // ---------- ghi nhớ biểu mẫu xuất đề (lưu trên trình duyệt)
-const REMEMBER = {mon:"v", maHp:"v", soTc:"v", khoaHoc:"v", hocKy:"v", namHoc:"v", thoiGian:"v", tenDe:"v",
+const REMEMBER = {mon:"v", maHp:"v", soTc:"v", khoaHoc:"v", hocKy:"v", namHoc:"v", thoiGian:"v", tenDe:"v", soTrang:"v",
                   tpl:"v", keyTpl:"v", furigana:"v", variants:"v", prefix:"v", start:"v",
                   answerKey:"c", keySeparate:"c", recordUsage:"c", saveHistory:"c"};
 function saveForm() {
@@ -964,6 +1148,14 @@ function restoreForm() {
   }
 }
 document.getElementById("export").addEventListener("change", saveForm);
+// nháp wizard: các phần và số câu đang nhập, bước hiện tại (lưu trên trình duyệt, không lưu lên server)
+function saveWizard() {
+  try { localStorage.setItem("qbank_wizard", JSON.stringify({ sections: readSections(), step: STEP })); } catch (e) {}
+}
+function loadWizard() {
+  try { return JSON.parse(localStorage.getItem("qbank_wizard") || "null"); } catch (e) { return null; }
+}
+document.getElementById("export").addEventListener("input", saveWizard);
 
 // ---------- thông tin đề thi theo học phần
 const META_FIELDS = {ten_hp:"mon", ma_hp:"maHp", so_tc:"soTc", khoa_hoc:"khoaHoc", nam_hoc:"namHoc", hoc_ky:"hocKy", thoi_gian:"thoiGian"};
@@ -1029,7 +1221,12 @@ async function saveConfig() {
 function loadConfig() {
   const c = CONFIGS.find(x => String(x.id) === $("#cfgSelect").value);
   if (!c) { $("#cfgMsg").innerHTML = `<span class="err">Chọn cấu trúc cần tải.</span>`; return; }
-  const cfg = c.config || {};
+  applyCfg(c.config || {});
+  $("#cfgName").value = c.name;
+  $("#cfgMsg").textContent = `Đã tải cấu trúc "${c.name}". Kiểm tra lại số câu trước khi xuất.`;
+}
+// nạp phần, số câu, mẫu, furigana từ một cấu trúc (từ danh sách đã lưu hoặc từ nháp)
+function applyCfg(cfg) {
   $("#sections").innerHTML = "";
   for (const s of cfg.sections || []) {
     addSection(s.title || "", s.qtype || "");
@@ -1045,9 +1242,7 @@ function loadConfig() {
   if (cfg.furigana) $("#furigana").value = cfg.furigana;
   if (cfg.answer_key !== undefined) $("#answerKey").checked = !!cfg.answer_key;
   if (cfg.key_separate !== undefined) $("#keySeparate").checked = !!cfg.key_separate;
-  refreshAllCells(); filterExportRows(); saveForm();
-  $("#cfgName").value = c.name;
-  $("#cfgMsg").textContent = `Đã tải cấu trúc "${c.name}". Kiểm tra lại số câu trước khi xuất.`;
+  refreshAllCells(); filterExportRows(); saveForm(); saveWizard();
 }
 async function deleteConfig() {
   const c = CONFIGS.find(x => String(x.id) === $("#cfgSelect").value);
@@ -1056,6 +1251,12 @@ async function deleteConfig() {
   await api(`/api/configs/${c.id}`, { method: "DELETE" });
   await loadConfigs();
   $("#cfgMsg").textContent = `Đã xóa cấu trúc "${c.name}".`;
+}
+
+// ---------- trạng thái đang xử lý: khóa nút và hiện chữ trong lúc chờ server (tránh bấm hai lần)
+async function withBusy(btn, fn) {
+  const old = btn.textContent; btn.disabled = true; btn.textContent = "Đang xử lý...";
+  try { return await fn(); } finally { btn.disabled = false; btn.textContent = old; }
 }
 
 // ---------- phím tắt: Ctrl+S lưu câu (khi đang sửa), N câu mới, / tìm kiếm
@@ -1385,6 +1586,23 @@ async function previewExam() {
     $("#exportMsg").textContent = "Đang xem trước. Có thể đổi từng câu; xuất sẽ dùng đúng các câu này.";
   } catch (e) { $("#exportMsg").innerHTML = `<span class="err">${esc(e.message)}</span>`; }
 }
+// bảng đặc tả: CLO × mức Bloom, số câu và điểm của các câu đã xem trước
+function blueprintClient(items) {
+  const rows = {};
+  for (const it of items) {
+    const k = it.clo || "(chưa gắn CLO)";
+    const r = rows[k] || (rows[k] = { c: {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}, n: 0, p: 0 });
+    r.c[it.bloom]++; r.n++; r.p += it.points || 0;
+  }
+  const keys = Object.keys(rows).sort();
+  if (!keys.length) return "";
+  const head = Object.entries(BLOOM).map(([k, v]) => `<th class="num">${k}. ${v}</th>`).join("");
+  const body = keys.map(k => `<tr><td>${esc(k)}</td>${[1, 2, 3, 4, 5].map(b => `<td class="num">${rows[k].c[b] || ""}</td>`).join("")}
+    <td class="num"><b>${rows[k].n}</b></td><td class="num">${rows[k].p || ""}</td></tr>`).join("");
+  return `<div class="card"><b>Bảng đặc tả đề</b> <span class="sub">(CLO × mức Bloom, theo các câu đã xem trước)</span>
+    <table style="margin-top:6px"><thead><tr><th>CLO</th>${head}<th class="num">Số câu</th><th class="num">Điểm</th></tr></thead>
+    <tbody>${body}</tbody></table></div>`;
+}
 function renderPreview() {
   if (!PREVIEW) { $("#previewBox").innerHTML = ""; return; }
   const sections = JSON.parse(PREVIEW.sig);
@@ -1398,12 +1616,13 @@ function renderPreview() {
           <div style="width:32px">${n}.</div>
           <div style="flex:1">${esc(it.content)}
             <div class="opts">${esc(it.options.map((o, k) => (it.qtype === "DS" ? "abcdefgh"[k] + ") " : "ABCDEFGH"[k] + ". ") + o).join("\n"))}</div>
-            <div class="sub">${esc(it.code)} · Bloom ${it.bloom} · ĐA: ${esc(it.answer)} · ${it.last_used ? "đã dùng" : "chưa dùng"}</div></div>
+            <div class="sub">${esc(it.code)} · Bloom ${it.bloom} · ĐA: ${esc(it.qtype === "DS" ? it.answer.replace(/D/g, "Đ") : it.answer)} · ${it.last_used ? "đã dùng" : "chưa dùng"}</div></div>
           <button class="g" ${it.passage ? `disabled title="Câu thuộc đoạn văn: không đổi riêng lẻ"` : ""} onclick="swapItem(${si},${ii})">Đổi câu</button>
         </div>`; }).join("") + `</div>`;
   }).join("");
+  const all = PREVIEW.sections.flatMap(s => s.items);
   $("#previewBox").innerHTML = `<div class="row"><b>Xem trước đề</b>
-      <button class="g" onclick="PREVIEW=null;renderPreview();$('#exportMsg').textContent=''">Bỏ xem trước</button></div>` + body;
+      <button class="g" onclick="PREVIEW=null;renderPreview();$('#exportMsg').textContent=''">Bỏ xem trước</button></div>` + blueprintClient(all) + body;
 }
 async function swapItem(si, ii) {
   const cur = PREVIEW.sections[si].items[ii];
@@ -1514,7 +1733,29 @@ function buildSummary() {
       <button class="g" onclick="goStep(1)">Sửa cấu trúc</button></div>`;
 }
 
+// bản in xem trước (HTML) của mã đề đầu tiên, mở trong cửa sổ mới; không ghi lịch sử
+async function printPreview() {
+  const sections = readSections();
+  if (!sections.some(s => s.matrix.length || s.passages.length)) { toast("Chưa nhập số câu hoặc số đoạn cho phần nào.", true); return; }
+  const cur = PREVIEW && PREVIEW.sig === JSON.stringify(sections);
+  const body = {
+    sections, picked: cur ? PREVIEW.sections.map(s => s.items.map(i => i.id)) : undefined,
+    meta: { ten_hp: $("#mon").value, ma_hp: $("#maHp").value, so_tc: $("#soTc").value, khoa_hoc: $("#khoaHoc").value,
+            nam_hoc: $("#namHoc").value, hoc_ky: $("#hocKy").value, thoi_gian: $("#thoiGian").value, so_trang: $("#soTrang").value },
+    prefix: $("#prefix").value, start: parseInt($("#start").value, 10) || 1,
+  };
+  if (!cur) toast("Chưa xem trước đề: bản in sẽ chọn câu khác với lúc xuất. Nên xem trước đề trước.", true);
+  try {
+    const r = await fetch("/api/exam/print", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    if (!r.ok) { const e = await r.json().catch(() => ({})); toast(e.error || "Không tạo được bản in.", true); return; }
+    const url = URL.createObjectURL(new Blob([await r.text()], { type: "text/html" }));
+    if (!window.open(url, "_blank")) toast("Trình duyệt đã chặn cửa sổ mới.", true);
+  } catch (e) { toast(e.message, true); }
+}
 async function doExport() {
+  return doExportInner();
+}
+async function doExportInner() {
   const sections = readSections();
   // Kiểm tra trước khi xuất
   const short = shortCount();
@@ -1530,9 +1771,11 @@ async function doExport() {
     picked: PREVIEW ? PREVIEW.sections.map(s => s.items.map(i => i.id)) : undefined,
     meta: { ten_hp: $("#mon").value, ma_hp: $("#maHp").value, so_tc: $("#soTc").value,
             khoa_hoc: $("#khoaHoc").value, nam_hoc: $("#namHoc").value, hoc_ky: $("#hocKy").value,
-            thoi_gian: $("#thoiGian").value, ten_de: $("#tenDe").value },
+            thoi_gian: $("#thoiGian").value, ten_de: $("#tenDe").value, so_trang: $("#soTrang").value },
     template: $("#tpl").value, key_template: $("#keyTpl").value, furigana: $("#furigana").value,
-    variants: +$("#variants").value || 1, start: +$("#start").value || 1, prefix: $("#prefix").value,
+    variants: +$("#variants").value || 1,
+    start: $("#start").value.trim() === "" ? 1 : parseInt($("#start").value, 10),  // 0 là hợp lệ
+    prefix: $("#prefix").value,
     answer_key: $("#answerKey").checked, key_separate: $("#keySeparate").checked,
     record_usage: $("#recordUsage").checked, save_history: $("#saveHistory").checked,
   };
@@ -1547,6 +1790,9 @@ async function doExport() {
     a.click(); URL.revokeObjectURL(url);
     const reused = +r.headers.get("X-Reused") || 0;
     toast("Đã tải xuống file đề.");
+    // xuất xong: bỏ bản xem trước và ô xác nhận để lần sau không dùng lại đúng các câu cũ
+    PREVIEW = null; renderPreview(); setPreviewStatus();
+    $("#confirmChk").checked = false;
     loadHistory();
     $("#exportMsg").textContent = "Đã tải xuống. " + (reused
       ? `Ưu tiên câu chưa dùng, còn ${reused} câu đã dùng trước đó phải chọn lại (ngân hàng thiếu câu mới).`
