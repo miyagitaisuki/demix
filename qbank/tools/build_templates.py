@@ -140,6 +140,8 @@ VARIANTS = {
     "kiem_tra_nhanh.docx": ("ĐỀ KIỂM TRA NHANH", None),
     "bai_tap_ve_nha.docx": ("BÀI TẬP VỀ NHÀ", "(Sinh viên được sử dụng tài liệu khi làm bài)."),
 }
+# bài tập về nhà không tính thời gian phát đề: bỏ cụm "(Không kể thời gian phát đề)" ở dòng thời gian
+NO_HANDOUT_TIME = {"bai_tap_ve_nha.docx"}
 
 
 def build_variants():
@@ -153,6 +155,11 @@ def build_variants():
             runs[0].text = note
             for r in runs[1:]:
                 r.text = ""
+        if name in NO_HANDOUT_TIME:
+            time_runs = right.paragraphs[6].runs
+            for r in time_runs:
+                if "Không kể" in r.text:
+                    r.text = ""
         doc.save(os.path.join(DST, name))
 
 
