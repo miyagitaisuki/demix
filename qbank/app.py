@@ -9,6 +9,7 @@ Dữ liệu: data/qbank.db (SQLite). Template Word: templates/*.docx
 """
 import csv
 import io
+import statistics
 import json
 import os
 import random
@@ -1885,6 +1886,13 @@ class Handler(BaseHTTPRequestHandler):
             if not rows:
                 raise ValueError("Không có dữ liệu để nhập")
             return self._json(200, parse_rows([rows], textbook_id, dry_run=dry, docx=False))
+        if p == "/api/item-analysis":  # phân tích câu hỏi từ bảng điểm (file .csv, .xlsx hoặc dữ liệu dán)
+            raw = self._raw()
+            res = item_analysis([read_table_text(raw)])
+            if parse_qs(u.query).get("record", ["0"])[0] == "1":  # ghi tỷ lệ đúng vào kết quả của mã đề
+                code = parse_qs(u.query).get("exam_code", [""])[0]
+                res["recorded"] = record_results(code, [(it["code"], it["pct"]) for it in res["items"]])
+            return self._json(200, res)
         if p == "/api/exam/print":  # bản in xem trước (không ghi lịch sử, không ghi lịch sử dùng)
             return self._send(200, print_html(self._json_body()).encode("utf-8"), "text/html; charset=utf-8")
         if p == "/api/import":
@@ -2162,6 +2170,89 @@ class Handler(BaseHTTPRequestHandler):
         self._send(200, data, "application/zip",
                    {"X-Reused": str(reused), "X-Variants": str(variants),
                     "Content-Disposition": attachment_header(fname)})
+
+
+def item_analysis(tables):
+    """Phân tích câu hỏi từ bảng điểm: mỗi dòng một sinh viên, cột đầu là tên/mã sinh viên,
+    các cột sau là mã câu (ví dụ N4-MN1-B01-001). Điểm từng câu là 0–1 (1 = đúng hoàn toàn, 0 = sai, hoặc tỷ lệ điểm).
+    Trả về độ khó p (tỷ lệ đúng TB), chỉ số phân biệt D (nhóm 27% cao trừ nhóm 27% thấp),
+    hệ số tương quan câu–tổng (không tính câu đó) và độ tin cậy KR-20."""
+    rows = [r for r in (tables[0] if tables else []) if any(str(c).strip() for c in r)]
+    if len(rows) < 2:
+        raise ValueError("Bảng điểm cần dòng tiêu đề và ít nhất một sinh viên")
+    head = [h.strip() for h in rows[0]]
+    known = {r["code"]: r["id"] for r in q("SELECT id, code FROM questions WHERE code IS NOT NULL", fetch=True)}
+    cols, unknown = [], []
+    for idx, h in enumerate(head[1:], 1):
+        if h in known:
+            cols.append((idx, h))
+        elif h:
+            unknown.append(h)
+    if not cols:
+        raise ValueError("Không cột nào trùng mã câu trong ngân hàng (tiêu đề cột phải là mã câu, ví dụ N4-MN1-B01-001)")
+    students, errors = [], []
+    for n, r in enumerate(rows[1:], 2):
+        vals = {}
+        for idx, code in cols:
+            raw = str(r[idx]).strip().replace(",", ".") if idx < len(r) else ""
+            if raw == "":
+                continue
+            try:
+                v = float(raw[:-1]) / 100 if raw.endswith("%") else float(raw)
+            except ValueError:
+                errors.append(f"Dòng {n}, cột {code}: '{raw}' không phải số")
+                continue
+            if not 0 <= v <= 1:
+                errors.append(f"Dòng {n}, cột {code}: {raw} ngoài khoảng 0–1 (dùng 1 đúng, 0 sai, hoặc tỷ lệ điểm)")
+                continue
+            vals[code] = v
+        if vals:
+            students.append((str(r[0]).strip() if r else f"dòng {n}", vals))
+    if len(students) < 2:
+        raise ValueError("Cần ít nhất 2 sinh viên có điểm hợp lệ" + (f". Lỗi: {'; '.join(errors[:3])}" if errors else ""))
+    totals = {name: sum(v.values()) for name, v in students}
+    N = len(students)
+    k_group = max(1, round(0.27 * N))
+    items = []
+    for _, code in cols:
+        scored = [(totals[name], vals[code]) for name, vals in students if code in vals]
+        if len(scored) < 2:
+            continue
+        scores = [x for _, x in scored]
+        p = statistics.mean(scores)
+        ordered = sorted(scored, key=lambda t: -t[0])
+        g = max(1, round(0.27 * len(ordered)))
+        D = statistics.mean(x for _, x in ordered[:g]) - statistics.mean(x for _, x in ordered[-g:])
+        rest = [totals[name] - vals[code] for name, vals in students if code in vals]  # tổng không tính câu này
+        r_pb = None
+        try:
+            r_pb = statistics.correlation(scores, rest)
+        except (statistics.StatisticsError, ValueError):
+            pass  # không đủ biến thiên (tất cả đúng hoặc tất cả sai)
+        flag = ""
+        if p <= 0.2:
+            flag = "khó bất thường"
+        elif p >= 0.95:
+            flag = "dễ bất thường"
+        if D < 0:
+            flag = (flag + "; " if flag else "") + "phân biệt âm: kiểm tra đáp án"
+        elif D < 0.2:
+            flag = (flag + "; " if flag else "") + "phân biệt kém"
+        items.append({"id": known[code], "code": code, "n": len(scored), "p": round(p, 3),
+                      "pct": round(p * 100, 1), "D": round(D, 3),
+                      "r": round(r_pb, 3) if r_pb is not None else None, "flag": flag})
+    # KR-20 trên các câu đã phân tích, chỉ tính khi mọi sinh viên có đủ các câu đó
+    kr20 = None
+    codes = [it["code"] for it in items]
+    full = [vals for _, vals in students if all(c in vals for c in codes)]
+    if len(codes) > 1 and len(full) >= 2:
+        pq = sum(statistics.mean(v[c] for v in full) * (1 - statistics.mean(v[c] for v in full)) for c in codes)
+        tot = [sum(v[c] for c in codes) for v in full]
+        var = statistics.pvariance(tot)
+        if var > 0:
+            kr20 = round(len(codes) / (len(codes) - 1) * (1 - pq / var), 3)
+    return {"students": N, "groups": k_group, "items": items, "kr20": kr20,
+            "unknown_columns": unknown, "errors": errors[:30]}
 
 
 def blueprint(flat):

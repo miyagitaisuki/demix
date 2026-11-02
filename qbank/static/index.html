@@ -187,6 +187,15 @@
     <div class="row"><button class="g" onclick="saveResults()">Ghi kết quả</button><span id="resMsg" class="msg"></span></div>
     <div id="diffBox"></div>
   </div>
+  <div class="card" style="margin-top:16px">
+    <b>Phân tích câu hỏi từ bảng điểm</b> <span class="sub">Mỗi dòng một sinh viên; cột đầu là tên hoặc mã sinh viên; tiêu đề các cột sau là mã câu; ô điểm là 1 (đúng), 0 (sai) hoặc tỷ lệ điểm từ 0 đến 1. Nhập file .csv hoặc .xlsx.</span>
+    <div class="row" style="margin-top:8px">
+      <input type="file" id="scoreFile" accept=".csv,.xlsx,.txt">
+      <label><input type="checkbox" id="scoreRecord"> Ghi tỷ lệ đúng vào kết quả của mã đề (mã đề nhập ở trên)</label>
+      <button class="g" onclick="withBusy(this, analyzeScores)">Phân tích</button>
+    </div>
+    <div id="scoreBox"></div>
+  </div>
 </section>
 
 <!-- ============ XUẤT ĐỀ ============ -->
@@ -1000,6 +1009,31 @@ async function loadStats() {
   const rows = s.chapters.map(c => `<tr><td>${esc(c.course)}</td><td>${esc(c.textbook)}</td><td>${esc(c.code)}${c.title ? " - " + esc(c.title) : ""}</td>
       ${Object.keys(BLOOM).map(k=>`<td class="num">${c.counts[k]||0}</td>`).join("")}<td class="num"><b>${c.total}</b></td></tr>`).join("");
   $("#statTable").innerHTML = `<thead>${head}</thead><tbody>${rows || `<tr><td colspan="9" class="msg">Chưa có chương nào.</td></tr>`}</tbody>`;
+}
+
+// ---------- phân tích câu hỏi từ bảng điểm
+async function analyzeScores() {
+  const f = $("#scoreFile").files[0];
+  if (!f) { $("#scoreBox").innerHTML = `<span class="err">Chọn file bảng điểm trước.</span>`; return; }
+  const record = $("#scoreRecord").checked;
+  const code = $("#resExam").value.trim();
+  if (record && !code) { $("#scoreBox").innerHTML = `<span class="err">Nhập mã đề ở mục "Độ khó thực tế" để ghi kết quả.</span>`; return; }
+  try {
+    const qs = `item-analysis?exam_code=${encodeURIComponent(code)}${record ? "&record=1" : ""}`;
+    const d = await api("/api/" + qs, { method: "POST", body: await f.arrayBuffer() });
+    const flagged = d.items.filter(i => i.flag).length;
+    $("#scoreBox").innerHTML = `
+      <div class="row"><span class="tag">${d.students} sinh viên</span><span class="tag">${d.items.length} câu</span>
+        ${d.kr20 !== null ? `<span class="tag">KR-20 = ${d.kr20}</span>` : ""}<span class="tag">${flagged} câu cần xem</span>
+        ${d.recorded ? `<span class="sub">Đã ghi ${d.recorded.added} dòng kết quả cho mã ${esc(code)}.</span>` : ""}</div>
+      <table><thead><tr><th>Mã câu</th><th class="num">Số SV</th><th class="num">Độ khó (%)</th><th class="num">D</th><th class="num">r câu–tổng</th><th>Nhận xét</th></tr></thead>
+      <tbody>${d.items.map(i => `<tr><td>${esc(i.code)}</td><td class="num">${i.n}</td><td class="num">${i.pct}</td>
+        <td class="num">${i.D}</td><td class="num">${i.r === null ? "—" : i.r}</td><td>${esc(i.flag) || "<span class='sub'>bình thường</span>"}</td></tr>`).join("")}</tbody></table>
+      <p class="sub">D = chênh lệch tỷ lệ đúng giữa nhóm 27% điểm cao và nhóm 27% điểm thấp (D ≥ 0,3 tốt; &lt; 0,2 kém; âm là đáp án cần kiểm tra). r câu–tổng: tương quan giữa câu và tổng điểm các câu khác (≥ 0,2 tốt).
+      KR-20 là độ tin cậy của cả bộ câu (≥ 0,7 chấp nhận được).</p>
+      ${d.unknown_columns.length ? `<p class="err">Bỏ qua các cột không phải mã câu: ${esc(d.unknown_columns.join(", "))}</p>` : ""}
+      ${d.errors.length ? `<p class="err">${esc(d.errors.join(" | "))}</p>` : ""}`;
+  } catch (e) { $("#scoreBox").innerHTML = `<span class="err">${esc(e.message)}</span>`; }
 }
 
 // ---------- xuất đề
