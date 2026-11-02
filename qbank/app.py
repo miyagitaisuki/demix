@@ -1386,6 +1386,28 @@ def bulk_update(ids, chapter_id=None, bloom=None):
     return {"updated": len(ids)}
 
 
+def bulk_delete(ids):
+    """Xóa nhiều câu cùng lúc, kèm lịch sử dùng và kết quả thi. Có id không tồn tại thì không xóa câu nào.
+    Trả về bản sao lưu của các câu đã xóa (cùng định dạng file sao lưu) để hoàn tác."""
+    ids = sorted({int(i) for i in ids})
+    if not ids:
+        raise ValueError("Chưa chọn câu nào")
+    ph = ",".join("?" * len(ids))
+    rows = q(QUESTION_SQL + f" WHERE qs.id IN ({ph}) ORDER BY qs.id", ids, fetch=True)
+    if len(rows) != len(ids):
+        raise ValueError("Có câu không còn trong ngân hàng, hãy tải lại trang")
+    undo = [{k: r[k] for k in ("code", "course", "textbook", "chapter_code", "chapter_title", "bloom",
+                               "qtype", "content", "options", "answer", "solution", "passage")}
+            for r in map(row_to_api, rows)]
+    with closing(sqlite3.connect(DB_PATH)) as conn:
+        conn.execute("PRAGMA foreign_keys = ON")
+        conn.execute(f"DELETE FROM exam_usage WHERE question_id IN ({ph})", ids)
+        conn.execute(f"DELETE FROM question_results WHERE question_id IN ({ph})", ids)
+        conn.execute(f"DELETE FROM questions WHERE id IN ({ph})", ids)
+        conn.commit()
+    return {"deleted": len(ids), "items": undo}
+
+
 def restore_item(item, index, allow_dup=False):
     """Khôi phục một câu từ file sao lưu; tự tạo học phần/giáo trình/chương nếu chưa có.
     Câu trùng trong cùng chương bị bỏ qua (báo lỗi để người dùng biết)."""
@@ -1615,6 +1637,8 @@ class Handler(BaseHTTPRequestHandler):
         if p == "/api/questions/bulk":  # đổi chương/mức Bloom cho nhiều câu
             b = self._json_body()
             return self._json(200, bulk_update(b.get("ids", []), b.get("chapter_id") or None, b.get("bloom") or None))
+        if p == "/api/questions/bulk-delete":  # xóa nhiều câu đã chọn (trả về bản sao lưu để hoàn tác)
+            return self._json(200, bulk_delete(self._json_body().get("ids", [])))
         if p == "/api/duplicates/merge":  # giữ một câu, xóa các câu trùng đã chọn (lịch sử chuyển sang câu giữ)
             b = self._json_body()
             keep = int(b.get("keep", 0))
