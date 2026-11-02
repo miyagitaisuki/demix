@@ -1191,18 +1191,28 @@ def render_docx(template_path, meta, exam, code, answer_key, mode="ruby"):
     return buf.getvalue()
 
 
+KEY_PER_ROW = 10  # số câu mỗi dòng của lưới đáp án
+
+
 def render_key_doc(template_path, meta, code, exam):
     """Đáp án theo mẫu trường: bảng lưới 10 câu mỗi dòng, dòng 'Câu' và dòng 'Đáp án'."""
     doc = Document(template_path)
     flat = flatten(exam)
     fill_placeholders(doc, meta_values(meta, code, len(flat)))
     ans = [(n, answer_text(it)) for n, _, it in flat]
-    groups = [ans[i:i + 10] for i in range(0, len(ans), 10)]
+    # lưới đáp án: 10 câu mỗi dòng cho mọi số câu (50, 90...), dòng sau tự xuống; không cố định theo đề
+    per_row = KEY_PER_ROW
+    groups = [ans[i:i + per_row] for i in range(0, len(ans), per_row)]
     marker = next((p for p in _every_paragraph(doc) if "{{BANG_DAP_AN}}" in p.text), None)
     if marker is None:
         marker = doc.add_paragraph()
-    tbl = doc.add_table(rows=2 * len(groups), cols=11)
+    tbl = doc.add_table(rows=2 * len(groups), cols=per_row + 1)
     _set_borders(tbl)
+    from docx.shared import Cm  # cột tiêu đề rộng để không ngắt chữ "Câu", "Đáp án"; các cột đáp án đều nhau
+    tbl.autofit = False
+    for row in tbl.rows:
+        for i, c in enumerate(row.cells):
+            c.width = Cm(1.8) if i == 0 else Cm((16.5 - 1.8) / per_row)
     for gi, g in enumerate(groups):
         r1, r2 = tbl.rows[2 * gi], tbl.rows[2 * gi + 1]
         r1.cells[0].text, r2.cells[0].text = "Câu", "Đáp án"
