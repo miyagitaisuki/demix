@@ -30,6 +30,7 @@ from urllib.parse import urlparse, parse_qs, quote
 
 from docx import Document
 from html import escape as hesc
+from xml.sax.saxutils import escape
 from docx.shared import Pt, Cm
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
@@ -43,6 +44,7 @@ else:
 DB_PATH = os.path.join(DATA_DIR, "data", "qbank.db")
 TPL_DIR = os.path.join(DATA_DIR, "templates")
 STATIC = os.path.join(RES_DIR, "static")
+STATUSES = {"nhap": "Nháp", "da_duyet": "Đã duyệt", "ngung": "Ngưng dùng"}  # chỉ câu "da_duyet" được ra đề
 MEDIA_DIR = os.path.join(DATA_DIR, "data", "media")  # hình ảnh và âm thanh đính kèm câu hỏi
 MEDIA_EXT = {"png": "image", "jpg": "image", "jpeg": "image", "gif": "image", "webp": "image",
              "mp3": "audio", "wav": "audio", "ogg": "audio", "m4a": "audio"}
@@ -135,6 +137,8 @@ def init_storage():
     ensure_column("questions", "clo", "TEXT NOT NULL DEFAULT ''")  # chuẩn đầu ra học phần, ví dụ CLO1
     ensure_column("questions", "tags", "TEXT NOT NULL DEFAULT ''")  # thẻ, lưu dạng ",thẻ1,thẻ2,"
     ensure_column("questions", "media", "TEXT NOT NULL DEFAULT '[]'")  # [{kind, file, name}]
+    # câu có sẵn từ trước được coi là đã duyệt, để đề đang dùng không bị thiếu câu
+    ensure_column("questions", "status", "TEXT NOT NULL DEFAULT 'da_duyet'")
     q("""CREATE TABLE IF NOT EXISTS trash(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             deleted_at TEXT NOT NULL,
@@ -400,6 +404,9 @@ def clean_question(data):
     clo = str(data.get("clo", "")).strip()[:20]
     tags = norm_tags(data.get("tags", ""))
     media = norm_media(data.get("media") or [])
+    status = str(data.get("status") or "nhap")
+    if status not in STATUSES:
+        raise ValueError("Trạng thái phải là Nháp, Đã duyệt hoặc Ngưng dùng")
     raw = data.get("points")
     points = None
     if raw not in (None, ""):
@@ -411,11 +418,12 @@ def clean_question(data):
             raise ValueError("Điểm của câu phải từ 0 đến 10")
     return dict(chapter_id=chapter_id, bloom=bloom, qtype=qtype, content=content,
                 options=json.dumps(options, ensure_ascii=False), answer=answer, solution=solution,
-                passage=passage, points=points, clo=clo, tags=tags, media=json.dumps(media, ensure_ascii=False))
+                passage=passage, points=points, clo=clo, tags=tags, media=json.dumps(media, ensure_ascii=False),
+                status=status)
 
 
-INSERT_Q = """INSERT INTO questions(code,chapter_id,bloom,qtype,content,options,answer,solution,passage,passage_id,points,clo,tags,media)
-              VALUES(:code,:chapter_id,:bloom,:qtype,:content,:options,:answer,:solution,:passage,:passage_id,:points,:clo,:tags,:media)"""
+INSERT_Q = """INSERT INTO questions(code,chapter_id,bloom,qtype,content,options,answer,solution,passage,passage_id,points,clo,tags,media,status)
+              VALUES(:code,:chapter_id,:bloom,:qtype,:content,:options,:answer,:solution,:passage,:passage_id,:points,:clo,:tags,:media,:status)"""
 
 
 def row_to_api(r):
@@ -569,6 +577,7 @@ IMPORT_COLUMNS = {
     "loi_giai": ["lời giải", "loi giai"],
     "clo": ["clo", "chuẩn đầu ra", "chuan dau ra"],
     "tags": ["thẻ", "the", "tags"],
+    "status": ["trạng thái", "trang thai", "status"],
 }
 IMPORT_REQUIRED = ("ma", "noi_dung", "dap_an", "loai", "muc")
 
@@ -646,6 +655,9 @@ def parse_import(data: bytes, textbook_id, dry_run=False):
     return parse_rows(tables, textbook_id, dry_run, docx=True)
 
 
+STATUS_IMPORT = {**{v.lower(): k for k, v in STATUSES.items()}, **{k: k for k in STATUSES}}
+
+
 def parse_rows(tables, textbook_id, dry_run=False, docx=True):
     """tables: danh sách bảng, mỗi bảng là danh sách dòng (chuỗi). Dòng đầu là tiêu đề cột.
     Nhận từ bảng Word, CSV hoặc dữ liệu dán (docx=False: không có khái niệm bảng).
@@ -711,6 +723,7 @@ def parse_rows(tables, textbook_id, dry_run=False, docx=True):
                     "passage": get("doan_van"),
                     "clo": get("clo"),
                     "tags": get("tags"),
+                    "status": STATUS_IMPORT.get(get("status").strip().lower(), ""),
                 })
                 same, other, key = check_duplicate(index, payload)
                 label = where(t_idx, r_idx)
@@ -757,7 +770,7 @@ def pick_base_exam(matrix, qtype=None, usage=None, taken=None):
         n = int(cell.get("n", 0))
         if n <= 0:
             continue
-        sql = "SELECT * FROM questions WHERE chapter_id=? AND bloom=?"
+        sql = "SELECT * FROM questions WHERE chapter_id=? AND bloom=? AND status='da_duyet'"
         args = [int(cell["chapter_id"]), int(cell["bloom"])]
         if qtype:
             sql += " AND qtype=?"
@@ -788,6 +801,8 @@ def load_items(ids, usage):
         if int(i) not in rows:
             raise ValueError("Có câu đã chọn không còn trong ngân hàng, hãy xem trước lại")
         it = row_to_api(rows[int(i)])
+        if it["status"] != "da_duyet":
+            raise ValueError(f"Câu {it['code']} chưa được duyệt hoặc đã ngưng dùng; hãy xem trước lại đề")
         it["last_used"] = usage.get(it["id"])
         out.append(it)
     return out
@@ -798,7 +813,7 @@ def find_replacement(spec, exclude, usage):
     Ưu tiên câu chưa dùng, rồi câu dùng lâu nhất."""
     if spec.get("passage"):
         raise ValueError("Câu thuộc đoạn văn không đổi riêng lẻ; hãy chọn lại cả phần")
-    sql = "SELECT * FROM questions WHERE chapter_id=? AND bloom=? AND qtype=? AND passage_id IS NULL"
+    sql = "SELECT * FROM questions WHERE chapter_id=? AND bloom=? AND qtype=? AND passage_id IS NULL AND status='da_duyet'"
     args = [int(spec["chapter_id"]), int(spec["bloom"]), str(spec["qtype"])]
     pool = [row_to_api(p) for p in q(sql, args, fetch=True) if p["id"] not in exclude]
     if not pool:
@@ -820,7 +835,7 @@ def pick_passages(entries, qtype, usage, taken):
             continue
         cands = []
         for p in q("SELECT id FROM passages WHERE chapter_id=?", (int(e["chapter_id"]),), fetch=True):
-            sql = "SELECT * FROM questions WHERE passage_id=?"
+            sql = "SELECT * FROM questions WHERE passage_id=? AND status='da_duyet'"
             args = [p["id"]]
             if qtype:
                 sql += " AND qtype=?"
@@ -1430,10 +1445,11 @@ def stats():
     tree = get_tree()
     counts = {}  # chương -> mức -> số câu (mọi dạng)
     by_qt = {}   # chương -> dạng -> mức -> số câu (để ô ma trận của từng phần chỉ đếm đúng dạng)
-    for r in q("SELECT chapter_id, bloom, qtype, COUNT(*) AS n FROM questions GROUP BY chapter_id, bloom, qtype", fetch=True):
+    for r in q("SELECT chapter_id, bloom, qtype, status, COUNT(*) AS n FROM questions GROUP BY chapter_id, bloom, qtype, status", fetch=True):
         c = counts.setdefault(r["chapter_id"], {b: 0 for b in BLOOM})
         c[r["bloom"]] += r["n"]
-        by_qt.setdefault(r["chapter_id"], {}).setdefault(r["qtype"], {b: 0 for b in BLOOM})[r["bloom"]] += r["n"]
+        if r["status"] == "da_duyet":  # ô ma trận chỉ tính câu đã duyệt (câu nháp và ngưng dùng không ra đề)
+            by_qt.setdefault(r["chapter_id"], {}).setdefault(r["qtype"], {b: 0 for b in BLOOM})[r["bloom"]] += r["n"]
     by_type = {t: 0 for t in QTYPES}
     for r in q("SELECT qtype, COUNT(*) AS n FROM questions GROUP BY qtype", fetch=True):
         by_type[r["qtype"]] = r["n"]
@@ -1472,7 +1488,7 @@ def build_items(rows):
                       "bloom": r["bloom"], "qtype": r["qtype"], "content": r["content"], "options": r["options"],
                       "answer": r["answer"], "solution": r["solution"], "passage": r["passage"],
                       "points": r.get("points"), "clo": r.get("clo", ""), "tags": r.get("tags", []),
-                      "media": r.get("media", []),
+                      "media": r.get("media", []), "status": r.get("status", "da_duyet"),
                       "media_files": {m["file"]: base64.b64encode(open(os.path.join(MEDIA_DIR, m["file"]), "rb").read()).decode()
                                       for m in r.get("media", []) if os.path.isfile(os.path.join(MEDIA_DIR, m["file"]))},
                       "used": usage.get(r["code"], []), "results": results.get(r["code"], [])})
@@ -1660,6 +1676,8 @@ def restore_from_trash(ids):
 def restore_item(item, index, allow_dup=False):
     """Khôi phục một câu từ file sao lưu; tự tạo học phần/giáo trình/chương nếu chưa có.
     Câu trùng trong cùng chương bị bỏ qua (báo lỗi để người dùng biết)."""
+    item = dict(item)
+    item.setdefault("status", "da_duyet")  # bản sao lưu cũ không có trạng thái: giữ như đang dùng
     chapter_id = ensure_chapter(str(item.get("course", DEFAULT_COURSE)).strip() or DEFAULT_COURSE,
                                 str(item.get("textbook", DEFAULT_COURSE)).strip() or DEFAULT_COURSE,
                                 str(item.get("chapter_code", "Chung")).strip() or "Chung",
@@ -1826,6 +1844,8 @@ class Handler(BaseHTTPRequestHandler):
                 sql += " AND qs.bloom=?"; args.append(int(arg("bloom")))
             if arg("qtype"):
                 sql += " AND qs.qtype=?"; args.append(arg("qtype"))
+            if arg("status") in STATUSES:
+                sql += " AND qs.status=?"; args.append(arg("status"))
             if arg("tag"):  # thẻ lưu dạng ",a,b," nên khớp ",thẻ," là chính xác
                 esc_tag = arg("tag").replace("!", "!!").replace("%", "!%").replace("_", "!_")
                 sql += " AND qs.tags LIKE ? ESCAPE '!'"; args.append(f"%,{esc_tag},%")
@@ -1949,6 +1969,23 @@ class Handler(BaseHTTPRequestHandler):
             with open(os.path.join(MEDIA_DIR, fname), "wb") as f:
                 f.write(raw)
             return self._json(201, {"file": fname, "kind": MEDIA_EXT[ext], "name": os.path.basename(name)[:120]})
+        if p == "/api/export/moodle":  # xuất câu hỏi ra Moodle XML: câu đã chọn, hoặc mọi câu đã duyệt
+            ids = self._json_body().get("ids") or None
+            xml = moodle_xml(ids).encode("utf-8")
+            return self._send(200, xml, "application/xml; charset=utf-8",
+                              {"Content-Disposition": 'attachment; filename="qbank_moodle.xml"'})
+        if p == "/api/questions/status":  # đổi trạng thái hàng loạt: Nháp, Đã duyệt, Ngưng dùng
+            b = self._json_body()
+            status = str(b.get("status", ""))
+            if status not in STATUSES:
+                raise ValueError("Trạng thái không hợp lệ")
+            ids = sorted({int(i) for i in b.get("ids", [])})
+            if not ids:
+                raise ValueError("Chưa chọn câu nào")
+            with closing(sqlite3.connect(DB_PATH)) as conn:
+                cur = conn.execute(f"UPDATE questions SET status=? WHERE id IN ({','.join('?' * len(ids))})", [status] + ids)
+                conn.commit()
+                return self._json(200, {"updated": cur.rowcount})
         if p == "/api/item-analysis":  # phân tích câu hỏi từ bảng điểm (file .csv, .xlsx hoặc dữ liệu dán)
             raw = self._raw()
             res = item_analysis([read_table_text(raw)])
@@ -2103,7 +2140,7 @@ class Handler(BaseHTTPRequestHandler):
             conn.execute("PRAGMA foreign_keys = ON")
             cur = conn.execute("""UPDATE questions SET chapter_id=:chapter_id, bloom=:bloom, qtype=:qtype, content=:content,
                  options=:options, answer=:answer, solution=:solution, passage=:passage, passage_id=:passage_id,
-                 points=:points, clo=:clo, tags=:tags, media=:media WHERE id=:id""", payload)
+                 points=:points, clo=:clo, tags=:tags, media=:media, status=:status WHERE id=:id""", payload)
             conn.commit()
             updated = cur.rowcount
         if not updated:
@@ -2426,6 +2463,93 @@ def print_html(body):
 <h3>Đáp án mã {code}</h3><p>{hesc(ans)}</p>{rubric}
 {blueprint_html(flat)}
 </body></html>"""
+
+
+# ---------------------------------------------------------------- xuất Moodle XML
+def _mx(text):
+    """Escape cho nội dung HTML đặt trong thẻ <text> của Moodle."""
+    return escape(text or "", {'"': "&quot;"})
+
+
+def _mfile(m):
+    """Thẻ <file> nhúng file đính kèm (base64) để Moodle lưu cùng câu hỏi."""
+    path = os.path.join(MEDIA_DIR, m["file"])
+    if not os.path.isfile(path):
+        return ""
+    b64 = base64.b64encode(open(path, "rb").read()).decode()
+    return f'<file name="{_mx(m["file"])}" path="/" encoding="base64">{b64}</file>'
+
+
+def _mmedia(media):
+    """HTML và file đính kèm cho một câu: ảnh nhúng, âm thanh là liên kết đến file."""
+    html, files = "", ""
+    for m in media or []:
+        if m["kind"] == "image":
+            html += f'<p><img src="@@PLUGINFILE@@/{_mx(m["file"])}" alt="{_mx(m["name"])}"></p>'
+        else:
+            html += f'<p><a href="@@PLUGINFILE@@/{_mx(m["file"])}">🔊 {_mx(m["name"])}</a></p>'
+        files += _mfile(m)
+    return html, files
+
+
+def _mq(name, qtype, text, media, grade, extra):
+    """Một câu hỏi Moodle. extra là các thẻ riêng theo loại câu (đáp án, kiểu trả lời)."""
+    mh, mf = _mmedia(media)
+    return (f'<question type="{qtype}"><name><text>{_mx(name)}</text></name>'
+            f'<questiontext format="html"><text>{_mx(text)}{_mx(mh)}</text>{mf}</questiontext>'
+            f'<generalfeedback format="html"><text></text></generalfeedback>'
+            f'<defaultgrade>{grade}</defaultgrade><penalty>0.3333333</penalty><hidden>0</hidden>'
+            f'{extra}</question>')
+
+
+def moodle_xml(ids=None):
+    """Bộ câu hỏi Moodle XML. Không truyền ids: lấy mọi câu đã duyệt. Mỗi học phần/chương là một danh mục."""
+    where, args = "WHERE qs.status='da_duyet'", []  # chỉ câu đã duyệt; câu nháp hoặc ngưng dùng không xuất
+    if ids:
+        where += f" AND qs.id IN ({','.join('?' * len(ids))})"
+        args = [int(i) for i in ids]
+    rows = [row_to_api(r) for r in q(QUESTION_SQL + f" {where} ORDER BY qs.id", args, fetch=True)]
+    out, cats = [], set()
+    for r in rows:
+        parts = [str(x).replace("/", "-") for x in (r["course"], r["textbook"], r["chapter_code"])]
+        cat = "$course$/" + "/".join(parts)  # danh mục Moodle phân cấp bằng dấu /
+        if cat not in cats:
+            cats.add(cat)
+            out.append(f'<question type="category"><category><text>{_mx(cat)}</text></category></question>')
+        grade = fmt_points(r["points"]).replace(",", ".") if r.get("points") is not None else "1"
+        stem = rich_html(r["content"]).replace("<br>", "<br>")
+        if r["qtype"] == "TN":
+            letters = LETTERS
+            ans = "".join(
+                f'<answer fraction="{100 if letters[k] == r["answer"] else 0}" format="html"><text>{_mx(rich_html(o))}</text>'
+                f'<feedback format="html"><text></text></feedback></answer>' for k, o in enumerate(r["options"]))
+            out.append(_mq(r["code"], "multichoice", stem, r["media"], grade,
+                           f'<single>true</single><shuffleanswers>true</shuffleanswers><answernumbering>ABCD</answernumbering>'
+                           f'<correctfeedback format="html"><text></text></correctfeedback>'
+                           f'<partiallycorrectfeedback format="html"><text></text></partiallycorrectfeedback>'
+                           f'<incorrectfeedback format="html"><text></text></incorrectfeedback>{ans}'))
+        elif r["qtype"] == "DS":  # mỗi ý đúng/sai thành một câu riêng, có chung đề
+            for k, o in enumerate(r["options"]):
+                truth = r["answer"][k] == "D"
+                text = f"{r['content']}\n{'abcdefgh'[k]}) {o}"
+                ans = (f'<answer fraction="{100 if truth else 0}" format="html"><text>true</text><feedback format="html"><text></text></feedback></answer>'
+                       f'<answer fraction="{0 if truth else 100}" format="html"><text>false</text><feedback format="html"><text></text></feedback></answer>')
+                out.append(_mq(f"{r['code']}-{'abcdefgh'[k]}", "truefalse", rich_html(text), r["media"], grade, ans))
+        elif r["qtype"] == "DT":
+            ans = "".join(f'<answer fraction="100" format="plain_text"><text>{_mx(a.strip())}</text>'
+                          f'<feedback format="html"><text></text></feedback></answer>'
+                          for a in r["answer"].split("|") if a.strip())
+            out.append(_mq(r["code"], "shortanswer", stem, r["media"], grade,
+                           f"<usecase>0</usecase>{ans}"))
+        else:  # TL: gợi ý chấm để người chấm đọc
+            out.append(_mq(r["code"], "essay", stem, r["media"], grade,
+                           f'<responseformat>editor</responseformat><responserequired>1</responserequired>'
+                           f'<responsefieldlines>12</responsefieldlines><attachments>0</attachments>'
+                           f'<graderinfo format="html"><text>{_mx(r["answer"])}</text></graderinfo>'
+                           f'<responsetemplate format="html"><text></text></responsetemplate>'))
+    if not rows:
+        raise ValueError("Không có câu đã duyệt nào để xuất (câu nháp và câu ngưng dùng không được xuất)")
+    return '<?xml version="1.0" encoding="UTF-8"?>\n<quiz>\n' + "\n".join(out) + "\n</quiz>\n"
 
 
 def main():
