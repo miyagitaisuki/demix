@@ -136,3 +136,66 @@ Thử luồng từ CSDL trống đến khi tải file đề (học phần → ch
 7. ✅ **Tên file xuất luôn là `de_thi.zip`.** Xuất nhiều đề trong ngày sẽ trùng tên. *Đã sửa: tên file `De_<mã HP>_<mã đề đầu-cuối>_<yyyymmdd>.zip`, ví dụ `De_N4_001-010_20261101.zip`, dùng cho cả tải mới và tải lại từ lịch sử.*
 
 Chưa thử trong lần này: hoàn tác trên giao diện, bố cục trên màn hình hẹp, và cây hai cột với nhiều học phần.
+
+## Đề xuất chỉnh sửa từ kiểm thử 2026-11-02
+Chi tiết từng lỗi và cách tái hiện: `docs/bao_cao_kiem_thu_2026-11-02.md`. Trạng thái sửa được ghi ở mục cuối.
+
+### Lỗi (B01–B32)
+- **Critical:** B01 ô lọc chương làm bảng trống; B02 sao lưu/khôi phục thiếu dữ liệu; B03 câu TN hơn 8 phương án làm hỏng xuất đề; B04 CSRF cho phép trang lạ xóa dữ liệu; B05 so trùng bỏ ký hiệu toán nên báo trùng sai.
+- **High:** B06 "Tìm câu gần giống" chậm (42 s/3.000 câu); B07 cột Mức sai bị đoán thành 1; B08 đáp án Tự luận bị xóa; B09 sửa tạo được câu trùng; B10 lưu câu đã bị xóa vẫn báo thành công; B11 xuất nhiều mã đề đếm nhiều lần dùng; B12 xuất lần hai dùng lại câu cũ.
+- **Medium:** B13 "Bắt đầu từ 0" đổi thành 1; B14 thiếu "Đề thi gồm __ trang"; B15 thông tin đề không kiểm tra; B28 "Sửa" tải cả ngân hàng; B29 màn hình hẹp bị cuộn ngang; B30 F5 mất cấu trúc đề đang soạn.
+- **Low:** B16 hủy xóa vẫn báo "Đã lưu"; B17 bộ lọc không nhất quán; B18 tìm `_` `%` khớp tất cả; B19–B20 thông báo lỗi kỹ thuật; B21 chương còn đoạn văn mồ côi không xóa được; B22 đổi chương giữ mã cũ; B23 đáp án đúng/sai hiện "DDD"; B24 tên file thừa "De"; B25 tiền tố mã đề không lọc ký tự; B26 nhập kết quả không nhận dán từ Excel; B27 đoạn văn gần giống khi nhập Word không cảnh báo; B31 lịch sử xuất phình; B32 thiếu tiến trình cho thao tác lâu.
+
+### Cải tiến UI (top 10)
+1. Thanh công cụ gọn: "+ Câu mới" nổi bật, gom Nhập/Sao lưu vào menu "Dữ liệu", Rà soát vào menu "Rà soát"; thanh hàng loạt chỉ hiện khi đã chọn.
+2. Form câu mở thành panel bên phải, không đẩy danh sách.
+3. Furigana hiển thị bằng `<ruby>` trong danh sách, xem trước và form.
+4. Đáp án TN chọn bằng radio, có thêm/bớt phương án (tối đa 8).
+5. Bảng ngân hàng dạng thẻ trên màn hình hẹp, nội dung dài thu gọn.
+6. Chọn file kéo thả có nhãn rõ.
+7. Đáp án đúng/sai hiện "Đ S Đ"; nhãn dạng câu viết đủ.
+8. Bước 2 chia tab theo phần; thanh tổng cố định "Đề: N câu".
+9. Chỉ báo đang tải và khóa nút cho nhập Word, khôi phục, gần giống, xuất đề.
+10. Lịch sử xuất hiện khoảng mã "001–100", thêm cột học phần.
+
+### Cải tiến UX (top 10)
+1. Màn hình bắt đầu 3 bước, kèm tải mẫu và dữ liệu mẫu.
+2. Chọn giáo trình đích ngay trong luồng nhập Word.
+3. Bộ lọc nhất quán (tự chạy, Enter để tìm); lưu bộ lọc lên URL.
+4. "Lưu và thêm câu tiếp" giữ chương, Bloom, loại.
+5. Lưu nháp wizard xuất đề và định tuyến theo URL để F5/Back không mất việc.
+6. Sau khi xuất: xóa bản xem trước, bỏ tích xác nhận.
+7. Mọi thông báo lỗi kỹ thuật bằng tiếng Việt dễ hiểu.
+8. Mã chương khi nhập Word không phân biệt hoa/thường; gợi ý mã gần đúng.
+9. Kiểm tra thông tin đề (số, khoảng hợp lệ); thêm ô số trang.
+10. Nhập kết quả thi nhận dán từ Excel; ghi lại cùng đợt thì hỏi thay thế.
+
+### Tính năng nên bổ sung (top 10)
+1. Sao lưu và khôi phục đầy đủ (cả file `.db`, chế độ thay thế).
+2. Thùng rác thay cho hoàn tác 8 giây.
+3. Đáp án và thang điểm cho câu tự luận.
+4. Xem trước bản in trước khi xuất.
+5. Bảng đặc tả đề (CLO × Bloom × số câu × điểm).
+6. Nhập Excel/CSV và dán từ clipboard.
+7. Hình ảnh và âm thanh trong câu.
+8. Thẻ (tag) tự do: chủ điểm ngữ pháp, cấp JLPT.
+9. Phân tích câu hỏi từ bảng điểm sinh viên.
+10. Trạng thái câu và người duyệt (Nháp → Đã duyệt → Ngưng dùng).
+
+### Nên bỏ hoặc gộp (top 5)
+1. Bộ 3 ô lọc Học phần/Giáo trình/Chương trùng với cây bên trái.
+2. Tùy chọn "kèm đáp án cuối đề".
+3. Hai mẫu demo tự tạo `mau_chuan.docx`, `mau_gon.docx`.
+4. "Tự gộp trùng cùng chương" chạy ngay không hoàn tác; nên có xem trước.
+5. Bốn phần mặc định TN/DS/DT/TL tự thêm.
+
+### Roadmap
+- **Critical:** B01–B05.
+- **High:** B06–B12; nút "Sửa" lấy một câu; màn hình bắt đầu.
+- **Medium:** B13–B15, B29, B30; panel sửa câu, ruby, radio đáp án; nhập Excel; thùng rác; đáp án và điểm tự luận.
+- **Low:** phần còn lại của B16–B32; thẻ; bảng đặc tả; phân tích câu hỏi; trạng thái duyệt; xuất Moodle/QTI; dùng chung qua mạng nội bộ.
+
+### Trạng thái sửa
+- **Đã sửa:** B01–B05, B07–B13, B15–B20, B23–B25, B16, B17, B18.
+- **Sửa một phần:** B29 (màn hình 375px giảm từ 608px xuống 468px, vẫn cuộn ngang; cần làm lại bố cục thanh công cụ).
+- **Chưa sửa:** B06, B14, B21, B22, B26–B28, B30–B32 và toàn bộ mục tính năng mới.

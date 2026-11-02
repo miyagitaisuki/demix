@@ -171,9 +171,10 @@ def default_exam_name(meta, codes):
 
 def export_filename(ma_hp, codes, created_at):
     """Tên file tải về: <mã HP>_<mã đề đầu-cuối>_<yyyymmdd>.zip, ví dụ N4_M001-M012_20261101.zip."""
-    hp = (ma_hp or "").strip() or "De"
+    hp = (ma_hp or "").strip()
     rng = codes[0] if len(codes) <= 1 else f"{codes[0]}-{codes[-1]}"
-    name = f"De_{hp}_{rng}_{created_at[:10].replace('-', '')}.zip" if codes else "De.zip"
+    stem = f"De_{hp}_{rng}" if hp else f"De_{rng}"
+    name = f"{stem}_{created_at[:10].replace('-', '')}.zip" if codes else "De.zip"
     return re.sub(r"[^\w.-]+", "_", name)
 
 
@@ -248,8 +249,8 @@ def migrate_if_needed():
 # ---------------------------------------------------------------- hierarchy helpers
 CHAPTER_LABEL = "co.name || ' / ' || t.name || ' / ' || ch.code || CASE WHEN ch.title <> '' THEN ' - ' || ch.title ELSE '' END"
 QUESTION_SQL = f"""SELECT qs.*, ch.code AS chapter_code, ch.title AS chapter_title,
-    (SELECT COUNT(*) FROM exam_usage u WHERE u.question_id = qs.id) AS used_count,
-    ch.id AS chapter_id, t.id AS textbook_id, t.name AS textbook,
+    (SELECT COUNT(DISTINCT u.used_at) FROM exam_usage u WHERE u.question_id = qs.id) AS used_count,
+    ch.id AS chapter_id, t.id AS textbook_id, t.name AS textbook, t.code AS textbook_code,
     co.id AS course_id, co.name AS course, ({CHAPTER_LABEL}) AS chapter_label
     FROM questions qs
     JOIN chapters ch ON ch.id = qs.chapter_id
@@ -327,6 +328,8 @@ def clean_question(data):
     if qtype == "TN":
         if len(options) < 2:
             raise ValueError("Trắc nghiệm cần ít nhất 2 phương án")
+        if len(options) > 8:
+            raise ValueError("Trắc nghiệm tối đa 8 phương án")
         if answer not in LETTERS[:len(options)]:
             raise ValueError("Đáp án không hợp lệ")
     elif qtype == "DS":
@@ -337,8 +340,8 @@ def clean_question(data):
         if not answer:
             raise ValueError("Thiếu đáp án điền từ (nhiều đáp án chấp nhận cách nhau bằng |)")
         options = []
-    else:  # TL
-        options, answer = [], ""
+    else:  # TL: giữ đáp án/gợi ý chấm nếu có
+        options = []
     passage = str(data.get("passage", "")).strip()
     return dict(chapter_id=chapter_id, bloom=bloom, qtype=qtype, content=content,
                 options=json.dumps(options, ensure_ascii=False), answer=answer, solution=solution,
@@ -435,9 +438,13 @@ def code_of(qid):
     return rows[0]["code"] if rows else "(đã xóa)"
 
 
+DUP_IGNORE = re.compile(r"[\s。、，．,.!?！？「」『』“”\"'()（）]+")
+
+
 def dup_key(content, options):
-    """Khóa so trùng: bỏ hoa/thường, khoảng trắng, dấu câu. Giữ chữ Nhật, chữ Hán."""
-    return re.sub(r"[\W_]+", "", (content + "".join(options)).lower())
+    """Khóa so trùng: bỏ hoa/thường, khoảng trắng và dấu câu thông thường.
+    Giữ ký hiệu toán học và chữ Nhật, chữ Hán (1+1 và 1-1 không còn bị coi là trùng)."""
+    return DUP_IGNORE.sub("", (content + "".join(options)).lower())
 
 
 def dup_index():
@@ -514,7 +521,10 @@ def parse_import(data: bytes, textbook_id, dry_run=False):
     Mã chương phải đã có trong giáo trình được chọn; không tự tạo chương mới."""
     chapter_by_code = {r["code"]: r["id"] for r in q(
         "SELECT id, code FROM chapters WHERE textbook_id=?", (textbook_id,), True)}
-    doc = Document(io.BytesIO(data))
+    try:
+        doc = Document(io.BytesIO(data))
+    except Exception:
+        raise ValueError("File không phải .docx hợp lệ (hãy lưu lại bằng Word dưới định dạng .docx)")
     added, errors, skipped, warnings = 0, [], [], []
     rows_out = []  # xem trước: trạng thái từng dòng
     index = dup_index()
@@ -523,7 +533,8 @@ def parse_import(data: bytes, textbook_id, dry_run=False):
             continue
         cols, missing = map_import_header([c.text for c in table.rows[0].cells])
         if missing:
-            errors.append(f"Bảng {t_idx}: thiếu cột {', '.join(missing)} (dòng tiêu đề)")
+            names = {"ma": "Mã chương", "noi_dung": "Nội dung", "dap_an": "Đáp án", "loai": "Loại", "muc": "Mức"}
+            errors.append(f"Bảng {t_idx}: thiếu cột {', '.join(names[k] for k in missing)} (dòng tiêu đề)")
             continue
         for r_idx, row in enumerate(table.rows[1:], 2):
             cells = [c.text.strip() for c in row.cells]
@@ -556,9 +567,12 @@ def parse_import(data: bytes, textbook_id, dry_run=False):
                     stem = lines
                 if code not in chapter_by_code:
                     raise ValueError(f"mã chương '{code}' không có trong giáo trình đã chọn")
+                muc = get("muc").strip()
+                if not muc.isdigit() or not 1 <= int(muc) <= 5:
+                    raise ValueError(f"mức '{muc}' phải là số từ 1 đến 5")
                 payload = clean_question({
                     "chapter_id": chapter_by_code[code],
-                    "bloom": int(re.sub(r"\D", "", get("muc")) or 1),
+                    "bloom": int(muc),
                     "qtype": qtype,
                     "content": " ".join(stem),
                     "options": options,
@@ -1047,7 +1061,7 @@ def answer_text(it):
         return "".join("Đ" if c == "D" else "S" for c in it["answer"])
     if it["qtype"] == "DT":
         return it["answer"].replace("|", " / ")
-    return "TL"
+    return it["answer"] or "TL"
 
 
 
@@ -1270,15 +1284,31 @@ def stats():
 
 
 def backup_payload():
+    """Bản sao lưu đầy đủ (phiên bản 3): câu hỏi kèm mã, mã học phần/giáo trình, thông tin đề,
+    lịch sử dùng, kết quả thi, và cấu trúc đề đã lưu. Không gồm file .zip đã xuất."""
     rows = q(QUESTION_SQL + " ORDER BY qs.id", fetch=True)
+    usage, results = {}, {}
+    for u in q("""SELECT qs.code AS code, u.exam_code, u.exam_name, u.used_at FROM exam_usage u
+                  JOIN questions qs ON qs.id = u.question_id""", fetch=True):
+        usage.setdefault(u["code"], []).append({k: u[k] for k in ("exam_code", "exam_name", "used_at")})
+    for r in q("""SELECT qs.code AS code, r.exam_code, r.correct_pct AS pct, r.recorded_at FROM question_results r
+                  JOIN questions qs ON qs.id = r.question_id""", fetch=True):
+        results.setdefault(r["code"], []).append({k: r[k] for k in ("exam_code", "pct", "recorded_at")})
+    courses = {c["name"]: c for c in q("SELECT name, code, exam_meta FROM courses", fetch=True)}
     items = []
     for r in rows:
         r = row_to_api(r)
-        items.append({"course": r["course"], "textbook": r["textbook"], "chapter_code": r["chapter_code"],
-                      "chapter_title": r["chapter_title"], "bloom": r["bloom"], "qtype": r["qtype"],
-                      "content": r["content"], "options": r["options"], "answer": r["answer"],
-                      "solution": r["solution"], "passage": r["passage"]})
-    return {"app": "QBank", "version": 2, "questions": items}
+        c = courses.get(r["course"], {})
+        items.append({"code": r["code"], "course": r["course"], "course_code": c.get("code", ""),
+                      "course_exam_meta": json.loads(c.get("exam_meta") or "{}"),
+                      "textbook": r["textbook"], "textbook_code": r.get("textbook_code", ""),
+                      "chapter_code": r["chapter_code"], "chapter_title": r["chapter_title"],
+                      "bloom": r["bloom"], "qtype": r["qtype"], "content": r["content"], "options": r["options"],
+                      "answer": r["answer"], "solution": r["solution"], "passage": r["passage"],
+                      "used": usage.get(r["code"], []), "results": results.get(r["code"], [])})
+    configs = [{"name": c["name"], "config": json.loads(c["config"] or "{}"), "updated_at": c["updated_at"]}
+               for c in q("SELECT name, config, updated_at FROM exam_configs", fetch=True)]
+    return {"app": "QBank", "version": 3, "questions": items, "configs": configs}
 
 
 BACKUP_DIR = os.path.join(DATA_DIR, "data", "backup")
@@ -1421,6 +1451,21 @@ def restore_item(item, index, allow_dup=False):
         raise ValueError(f"trùng câu {code_of(same[0][0])} trong cùng chương (bỏ qua)")
     new_id = insert_q(payload, keep_code=str(item.get("code") or "").strip() or None)
     index.setdefault(key, []).append((new_id, chapter_id, payload["content"]))
+    # mã học phần/giáo trình, thông tin đề (chỉ điền khi còn trống)
+    q("UPDATE courses SET code=? WHERE code='' AND id=(SELECT t.course_id FROM chapters ch JOIN textbooks t ON t.id=ch.textbook_id WHERE ch.id=?)",
+      (str(item.get("course_code", "")), chapter_id))
+    q("UPDATE courses SET exam_meta=? WHERE exam_meta='{}' AND id=(SELECT t.course_id FROM chapters ch JOIN textbooks t ON t.id=ch.textbook_id WHERE ch.id=?)",
+      (json.dumps(item.get("course_exam_meta") or {}, ensure_ascii=False), chapter_id))
+    q("UPDATE textbooks SET code=? WHERE code='' AND id=(SELECT textbook_id FROM chapters WHERE id=?)",
+      (str(item.get("textbook_code", "")), chapter_id))
+    # lịch sử dùng và kết quả thi của câu
+    record_usage([(new_id, str(u.get("exam_code", "")), str(u.get("exam_name", "")), str(u.get("used_at", "")))
+                  for u in item.get("used") or []])
+    with closing(sqlite3.connect(DB_PATH)) as conn:
+        conn.executemany("INSERT INTO question_results(question_id, exam_code, correct_pct, recorded_at) VALUES(?,?,?,?)",
+                         [(new_id, str(r.get("exam_code", "")), float(r.get("pct", 0)), str(r.get("recorded_at", "")))
+                          for r in item.get("results") or []])
+        conn.commit()
 
 
 # ---------------------------------------------------------------- HTTP
@@ -1483,8 +1528,10 @@ class Handler(BaseHTTPRequestHandler):
     def _json_body(self):
         return json.loads(self._raw() or b"{}")
 
-    def _guard(self, fn):
+    def _guard(self, fn, write=False):
         try:
+            if write:
+                self._local_only()
             fn()
         except NeedConfirm as e:
             self._json(409, {"error": str(e), "confirm": True})
@@ -1496,17 +1543,25 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as e:  # lỗi bất ngờ: trả về thông báo, không làm sập server
             self._json(500, {"error": f"{type(e).__name__}: {e}"})
 
+    def _local_only(self):
+        """Chặn ghi dữ liệu từ trang web khác (CSRF): chỉ nhận Host và Origin của chính server này."""
+        if self.headers.get("Host", "") not in (f"127.0.0.1:{PORT}", f"localhost:{PORT}"):
+            raise ValueError("Yêu cầu bị chặn: sai địa chỉ máy chủ")
+        origin = self.headers.get("Origin")
+        if origin and origin not in (f"http://127.0.0.1:{PORT}", f"http://localhost:{PORT}"):
+            raise ValueError("Yêu cầu từ trang khác đã bị chặn")
+
     def do_GET(self):
         self._guard(self._get)
 
     def do_POST(self):
-        self._guard(self._post)
+        self._guard(self._post, write=True)
 
     def do_PUT(self):
-        self._guard(self._put)
+        self._guard(self._put, write=True)
 
     def do_DELETE(self):
-        self._guard(self._delete)
+        self._guard(self._delete, write=True)
 
     # --- GET
     def _get(self):
@@ -1531,9 +1586,11 @@ class Handler(BaseHTTPRequestHandler):
             if arg("qtype"):
                 sql += " AND qs.qtype=?"; args.append(arg("qtype"))
             kw = arg("q")
-            if kw:
-                sql += " AND (qs.content LIKE ? OR qs.solution LIKE ? OR qs.options LIKE ? OR qs.answer LIKE ? OR qs.code LIKE ?)"
-                args += [f"%{kw}%"] * 5
+            if kw:  # ký tự % _ trong từ khóa được coi là chữ thường (escape bằng !)
+                cond = " OR ".join(f"{c} LIKE ? ESCAPE '!'" for c in ("qs.content", "qs.solution", "qs.options", "qs.answer", "qs.code"))
+                sql += f" AND ({cond})"
+                pat = "%" + kw.replace("!", "!!").replace("%", "!%").replace("_", "!_") + "%"
+                args += [pat] * 5
             sql += " ORDER BY co.name, t.name, ch.code, qs.bloom, qs.id"
             if "page" in qs:  # bảng ngân hàng: trả từng trang và tổng số câu khớp
                 per = min(max(int(arg("per") or 50), 1), 50)  # tối đa 50 câu mỗi trang
@@ -1623,6 +1680,11 @@ class Handler(BaseHTTPRequestHandler):
             added, errors = 0, []
             index = dup_index()
             allow_dup = bool(data.get("allow_dup")) if isinstance(data, dict) else False
+            for c in (data.get("configs") or []) if isinstance(data, dict) else []:  # cấu trúc đề đã lưu
+                if str(c.get("name", "")).strip() and isinstance(c.get("config"), dict):
+                    q("""INSERT INTO exam_configs(name, config, updated_at) VALUES(?, ?, ?)
+                         ON CONFLICT(name) DO UPDATE SET config=excluded.config, updated_at=excluded.updated_at""",
+                      (str(c["name"]).strip(), json.dumps(c["config"], ensure_ascii=False), str(c.get("updated_at", ""))))
             for n, item in enumerate(items, 1):
                 try:
                     restore_item(item, index, allow_dup=allow_dup)
@@ -1735,10 +1797,20 @@ class Handler(BaseHTTPRequestHandler):
         payload = clean_question(body)
         check_passage(payload["chapter_id"], payload["passage"], bool(body.get("confirm_passage")))
         payload["id"] = int(m.group(1))
+        same, _, _ = check_duplicate(dup_index(), payload)
+        same = [h for h in same if h[0] != payload["id"]]  # không tính chính câu đang sửa
+        if same:
+            raise ValueError(f"Câu này đã có trong cùng chương ({code_of(same[0][0])}). Hãy sửa nội dung nếu muốn lưu thêm.")
         payload["passage_id"] = resolve_passage(payload["chapter_id"], payload["passage"])
-        q("""UPDATE questions SET chapter_id=:chapter_id, bloom=:bloom, qtype=:qtype, content=:content,
-             options=:options, answer=:answer, solution=:solution, passage=:passage, passage_id=:passage_id
-             WHERE id=:id""", payload)
+        with closing(sqlite3.connect(DB_PATH)) as conn:
+            conn.execute("PRAGMA foreign_keys = ON")
+            cur = conn.execute("""UPDATE questions SET chapter_id=:chapter_id, bloom=:bloom, qtype=:qtype, content=:content,
+                 options=:options, answer=:answer, solution=:solution, passage=:passage, passage_id=:passage_id
+                 WHERE id=:id""", payload)
+            conn.commit()
+            updated = cur.rowcount
+        if not updated:
+            raise ValueError("Câu này không còn trong ngân hàng, hãy tải lại trang")
         self._json(200, {"ok": True, "code": code_of(payload["id"])})
 
     # --- DELETE: chỉ xóa khi không còn dữ liệu bên trong (khóa ngoài RESTRICT)
@@ -1778,7 +1850,7 @@ class Handler(BaseHTTPRequestHandler):
             raise ValueError("Chưa chọn template hợp lệ")
         variants = max(1, int(body.get("variants", 1)))
         start = int(body.get("start", 1))
-        prefix = str(body.get("prefix", ""))
+        prefix = re.sub(r"[^\w-]", "", str(body.get("prefix", "")))  # tiền tố chỉ gồm chữ, số, -, _
         answer_key = bool(body.get("answer_key", True))
         key_separate = bool(body.get("key_separate", False))
         sections = body.get("sections") or [{"title": "", "qtype": None,
@@ -1811,9 +1883,16 @@ class Handler(BaseHTTPRequestHandler):
             raise ValueError("Chưa có phần nào có số câu")
         reused = sum(1 for _, base, _ in parts for it in base if it.get("last_used"))
         meta = body.get("meta", {})
+        so_tc = str(meta.get("so_tc", "")).strip()
+        if so_tc and not re.fullmatch(r"\d+(\.\d)?", so_tc):
+            raise ValueError("Số tín chỉ phải là số, ví dụ 4 hoặc 2.5")
+        tg = str(meta.get("thoi_gian", "")).strip()
+        if tg and not (tg.isdigit() and int(tg) > 0):
+            raise ValueError("Thời gian làm bài phải là số phút dương")
         codes_all = [f"{prefix}{start + i:03d}" for i in range(variants)]
         exam_name = str(meta.get("ten_de", "")).strip() or default_exam_name(meta, codes_all)
         now = datetime.now().isoformat(timespec="seconds")
+        used_at = datetime.now().isoformat(timespec="microseconds")  # mỗi lần xuất một mốc riêng để đếm đúng số lần dùng
         rng = random.Random()
         out = io.BytesIO()
         usage_rows = []
@@ -1832,7 +1911,7 @@ class Handler(BaseHTTPRequestHandler):
                     else:
                         z.writestr(f"DapAn_{code}.docx", render_key(code, exam))
                 if body.get("record_usage", True):
-                    usage_rows += [(it["id"], code, exam_name, now) for _, _, it in flatten(exam)]
+                    usage_rows += [(it["id"], code, exam_name, used_at) for _, _, it in flatten(exam)]
         record_usage(usage_rows)
         data = out.getvalue()
         if body.get("save_history", True):  # lưu bản xuất để tải lại hoặc in lại đáp án

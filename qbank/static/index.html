@@ -133,10 +133,10 @@
     <button class="g" onclick="clearSel()">Bỏ chọn</button>
   </div>
   <div class="pager" id="qPager"></div>
-  <table>
+  <div style="overflow-x:auto"><table>
     <thead><tr><th style="width:28px"></th><th>Mã câu</th><th>Học phần / Giáo trình / Chương</th><th>Bloom</th><th>Loại</th><th>Nội dung</th><th>Đáp án</th><th></th></tr></thead>
     <tbody id="qBody"></tbody>
-  </table>
+  </table></div>
 </div>
 </div>
 </section>
@@ -385,7 +385,10 @@ function fillChapterFilter() {
 }
 $("#fCourse").onchange = () => { fillTextbookFilter(); loadQuestions(); };
 $("#fTextbook").onchange = () => { fillChapterFilter(); updateImportTarget(); loadQuestions(); };
-$("#fChapter").onchange = loadQuestions;
+$("#fChapter").onchange = () => loadQuestions();  // không truyền Event làm số trang
+$("#fBloom").onchange = () => loadQuestions();
+$("#fType").onchange = () => loadQuestions();
+$("#fSearch").addEventListener("keydown", e => { if (e.key === "Enter") loadQuestions(); });
 
 // ---------- ngân hàng
 // ---------- chọn nhiều câu để sửa hàng loạt
@@ -450,7 +453,7 @@ async function loadQuestions(page = 0) {
       <td><span class="tag">${q.bloom}. ${BLOOM[q.bloom]}</span></td>
       <td>${q.qtype}</td>
       <td>${esc(q.content)}<div class="opts">${esc(q.options.map((o,k)=>(q.qtype==="DS"?"abcdefgh"[k]+") ":"ABCDEFGH"[k]+". ")+o).join("\n"))}</div></td>
-      <td>${esc(q.answer)}<div class="sub">${q.used_count ? "đã dùng " + q.used_count + " lần" : "chưa dùng"}</div></td>
+      <td>${esc(q.qtype === "DS" ? q.answer.replace(/D/g, "Đ") : q.answer)}<div class="sub">${q.used_count ? "đã dùng " + q.used_count + " lần" : "chưa dùng"}</div></td>
       <td style="white-space:nowrap"><button class="g" onclick="editQ(${q.id})">Sửa</button>
           <button class="d" onclick="delQ(${q.id})">Xóa</button></td>
     </tr>`).join("") || `<tr><td colspan="8" class="msg">Chưa có câu hỏi nào. Nhấn “+ Câu mới” hoặc nhập từ .docx.</td></tr>`;
@@ -856,7 +859,11 @@ async function delExport(id) {
 }
 
 async function structAction(fn) {
-  try { await fn(); $("#structMsg").textContent = "Đã lưu."; renderStruct(); }
+  try {
+    const done = await fn();
+    if (done === false) return;  // người dùng hủy: không báo "Đã lưu"
+    $("#structMsg").textContent = "Đã lưu."; renderStruct();
+  }
   catch (e) { $("#structMsg").innerHTML = `<span class="err">${esc(e.message)}</span>`; }
 }
 const addCourse = () => structAction(async () => {
@@ -903,7 +910,7 @@ async function saveNode(kind, id) {
   } catch (e) { const m = $("#nMsg"); if (m) m.textContent = e.message; else toast(e.message, true); }
 }
 const delNode = (kind, id) => structAction(async () => {
-  if (!confirm("Xóa mục này? Chỉ xóa được khi không còn dữ liệu bên trong.")) return;
+  if (!confirm("Xóa mục này? Chỉ xóa được khi không còn dữ liệu bên trong.")) return false;
   await api(`/api/${kind}/${id}`, { method: "DELETE" });
 });
 
@@ -1398,7 +1405,7 @@ function renderPreview() {
           <div style="width:32px">${n}.</div>
           <div style="flex:1">${esc(it.content)}
             <div class="opts">${esc(it.options.map((o, k) => (it.qtype === "DS" ? "abcdefgh"[k] + ") " : "ABCDEFGH"[k] + ". ") + o).join("\n"))}</div>
-            <div class="sub">${esc(it.code)} · Bloom ${it.bloom} · ĐA: ${esc(it.answer)} · ${it.last_used ? "đã dùng" : "chưa dùng"}</div></div>
+            <div class="sub">${esc(it.code)} · Bloom ${it.bloom} · ĐA: ${esc(it.qtype === "DS" ? it.answer.replace(/D/g, "Đ") : it.answer)} · ${it.last_used ? "đã dùng" : "chưa dùng"}</div></div>
           <button class="g" ${it.passage ? `disabled title="Câu thuộc đoạn văn: không đổi riêng lẻ"` : ""} onclick="swapItem(${si},${ii})">Đổi câu</button>
         </div>`; }).join("") + `</div>`;
   }).join("");
@@ -1532,7 +1539,9 @@ async function doExport() {
             khoa_hoc: $("#khoaHoc").value, nam_hoc: $("#namHoc").value, hoc_ky: $("#hocKy").value,
             thoi_gian: $("#thoiGian").value, ten_de: $("#tenDe").value },
     template: $("#tpl").value, key_template: $("#keyTpl").value, furigana: $("#furigana").value,
-    variants: +$("#variants").value || 1, start: +$("#start").value || 1, prefix: $("#prefix").value,
+    variants: +$("#variants").value || 1,
+    start: $("#start").value.trim() === "" ? 1 : parseInt($("#start").value, 10),  // 0 là hợp lệ
+    prefix: $("#prefix").value,
     answer_key: $("#answerKey").checked, key_separate: $("#keySeparate").checked,
     record_usage: $("#recordUsage").checked, save_history: $("#saveHistory").checked,
   };
@@ -1547,6 +1556,9 @@ async function doExport() {
     a.click(); URL.revokeObjectURL(url);
     const reused = +r.headers.get("X-Reused") || 0;
     toast("Đã tải xuống file đề.");
+    // xuất xong: bỏ bản xem trước và ô xác nhận để lần sau không dùng lại đúng các câu cũ
+    PREVIEW = null; renderPreview(); setPreviewStatus();
+    $("#confirmChk").checked = false;
     loadHistory();
     $("#exportMsg").textContent = "Đã tải xuống. " + (reused
       ? `Ưu tiên câu chưa dùng, còn ${reused} câu đã dùng trước đó phải chọn lại (ngân hàng thiếu câu mới).`
