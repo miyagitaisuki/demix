@@ -30,7 +30,7 @@ python3 app.py                 # rồi mở http://127.0.0.1:8765
 - Thống kê → "Chưa từng ra đề" cho biết số câu còn có thể chọn không trùng, theo chương × mức Bloom và dạng câu.
 
 ## Reset tình trạng ra đề
-Tab Ngân hàng, dòng "Reset tình trạng ra đề": reset câu đang tick, chương đang lọc, hoặc toàn bộ CSDL (phải gõ `RESET`). Reset chỉ xóa số lần đã ra đề, không xóa câu hay file đề đã xuất. Trước khi xóa, app ghi bản sao lưu vào thư mục `data/backup` (`truoc_reset_<thời điểm>.json` chứa lịch sử bị xóa; khi reset toàn bộ còn có `qbank_<ngày>.json`).
+Tab Ngân hàng, mục "Công cụ" (nút "Nhập, xuất, rà soát"), dòng "Reset tình trạng ra đề": reset câu đang tick, chương đang lọc, hoặc toàn bộ CSDL (phải gõ `RESET`). Reset chỉ xóa số lần đã ra đề, không xóa câu hay file đề đã xuất. Trước khi xóa, app ghi bản sao lưu vào thư mục `data/backup` (`truoc_reset_<thời điểm>.json` chứa lịch sử bị xóa; khi reset toàn bộ còn có `qbank_<ngày>.json`).
 
 ## Định dạng file nhập (chuẩn)
 Tải mẫu bằng nút **Tải mẫu nhập** (tab Ngân hàng). File là .docx, mỗi bảng là một nhóm câu:

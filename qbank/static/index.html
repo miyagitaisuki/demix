@@ -4,6 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>QBank - Ngân hàng câu hỏi</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <style>
   :root { --b:#2563eb; --line:#e5e7eb; --bg:#f8fafc; --mut:#64748b; }
   * { box-sizing: border-box; }
@@ -80,11 +83,118 @@
   .sec-total { margin-left:auto; font-weight:600; }
   #toast { position:fixed; bottom:16px; right:16px; background:#0f172a; color:#fff; padding:10px 14px; border-radius:8px; display:none; max-width:420px; z-index:10; box-shadow:0 4px 12px rgba(0,0,0,.2); }
   #toast.err { background:#b91c1c; }
+
+  /* ===== giao diện theo mẫu (chỉ sáng) ===== */
+  :root { --b:#2563eb; --line:#e2e8f0; --bg:#f8fafc; --mut:#64748b; --ink:#0f172a; }
+  body { font-family:Inter,system-ui,"Segoe UI",Roboto,sans-serif; font-size:13.5px; color:var(--ink); background:#f1f5f9; }
+  main { max-width:1320px; padding:20px; }
+  header.topbar { display:flex; align-items:center; gap:0; height:56px; padding:0 20px; background:#fff; border-bottom:1px solid var(--line); position:sticky; top:0; z-index:20; }
+  .brand { display:flex; align-items:center; gap:10px; }
+  .logo { width:30px; height:30px; border-radius:9px; background:linear-gradient(135deg,#2563eb,#6366f1); color:#fff; display:flex; align-items:center; justify-content:center; font-weight:700; }
+  .bn { font-weight:700; font-size:16px; letter-spacing:-.01em; }
+  header.topbar nav { display:flex; height:100%; margin-left:28px; gap:4px; }
+  header.topbar nav button { height:100%; padding:0 12px; border:0; border-radius:0; border-bottom:2px solid transparent; background:none; color:var(--mut); font-weight:500; }
+  header.topbar nav button.on { color:var(--b); border-bottom-color:var(--b); font-weight:600; }
+  section > h2 { display:none; }
+  button { border-radius:8px; border:1px solid #cbd5e1; background:#fff; color:#334155; padding:6px 12px; font-weight:500; font-size:13px; cursor:pointer; transition:background .15s; }
+  button:hover { background:#f8fafc; }
+  button:disabled { opacity:.45; cursor:default; }
+  button.p { background:var(--b); border-color:var(--b); color:#fff; box-shadow:0 1px 2px rgba(37,99,235,.3); }
+  button.p:hover { background:#1d4ed8; }
+  button.d { color:#b91c1c; border-color:#fecaca; }
+  button.d:hover { background:#fef2f2; }
+  input, select, textarea { border-radius:8px; border:1px solid #cbd5e1; background:#fff; color:var(--ink); padding:6px 9px; font-size:13px; }
+  input:focus, select:focus, textarea:focus { outline:none; border-color:var(--b); box-shadow:0 0 0 3px rgba(37,99,235,.15); }
+  label { font-size:12px; color:var(--mut); }
+  .card { background:#fff; border:1px solid var(--line); border-radius:12px; padding:14px; margin-bottom:12px; box-shadow:0 1px 2px rgba(15,23,42,.04); }
+  .sub { color:var(--mut); font-size:12px; }
+  .msg { color:var(--mut); }
+
+  /* cây học phần */
+  .side { width:272px; flex:0 0 272px; display:flex; flex-direction:column; overflow:hidden; background:#fff; border:1px solid var(--line); border-radius:12px; padding:0; max-height:calc(100vh - 110px); position:sticky; top:72px; box-shadow:0 1px 2px rgba(15,23,42,.04); }
+  .side-head { padding:12px; border-bottom:1px solid var(--line); }
+  .side-title { font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--mut); margin-bottom:8px; }
+  .side-tools { display:flex; gap:6px; align-items:center; }
+  .side-tools input { flex:1; min-width:0; padding:5px 8px; font-size:12.5px; }
+  .side-tools button { padding:3px 9px; font-size:15px; line-height:1.2; }
+  #bankTree { overflow:auto; padding:6px; flex:1; }
+  .tn { display:flex; align-items:center; gap:6px; padding:5px 8px; margin:1px 0; border-radius:7px; cursor:pointer; color:#334155; font-size:13px; }
+  .tn:hover { background:#f1f5f9; }
+  .tn.on { background:#eff6ff; color:var(--b); font-weight:600; }
+  .tn .nm { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .tn .cnt { color:#94a3b8; font-size:11.5px; font-variant-numeric:tabular-nums; }
+  .tn.l1 { font-weight:600; }
+  .tn.l2 { padding-left:26px; }
+  .tn.l3 { padding-left:44px; font-size:12.5px; color:#475569; }
+  .tn .car { width:18px; height:18px; flex:none; padding:0; border-radius:5px; border:1px solid #cbd5e1; background:#fff; color:#64748b; font-size:13px; line-height:1; display:inline-flex; align-items:center; justify-content:center; }
+  .tn .car:hover { border-color:var(--b); color:var(--b); }
+  .tn .car.none { border:0; background:none; visibility:hidden; }
+  .twocol { gap:16px; }
+  .main-col { min-width:0; }
+
+  /* bộ lọc */
+  .filters { display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:10px; margin-bottom:10px; }
+  .f { display:flex; flex-direction:column; gap:4px; min-width:0; }
+  .f select { width:100%; }
+  .filterbar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:12px; }
+  .search { position:relative; flex:1; min-width:240px; }
+  .search i { position:absolute; left:10px; top:50%; transform:translateY(-50%); color:#94a3b8; font-size:12px; }
+  .search input { width:100%; padding-left:30px; }
+  .sp { flex:1; }
+  details.tools { background:#fff; border:1px solid var(--line); border-radius:12px; padding:10px 14px; margin-bottom:12px; }
+  details.tools > summary { cursor:pointer; color:var(--mut); font-weight:600; font-size:13px; }
+  details.tools > .row { margin:10px 0 0; }
+
+  /* thanh hàng loạt */
+  .bulkbar { display:none; align-items:center; gap:8px; flex-wrap:wrap; background:#0f172a; color:#e2e8f0; border-radius:12px; padding:10px 14px; margin-bottom:12px; box-shadow:0 8px 20px rgba(15,23,42,.25); }
+  .bulkbar button { background:#1e293b; border-color:#334155; color:#e2e8f0; }
+  .bulkbar button:hover { background:#334155; }
+  .bulkbar button.d { background:#7f1d1d; border-color:#7f1d1d; color:#fff; }
+  .bulkbar select { background:#1e293b; border-color:#334155; color:#e2e8f0; }
+  .bulkbar label, .bulkbar .sub { color:#cbd5e1; }
+
+  /* bảng câu hỏi */
+  .tcard { background:#fff; border:1px solid var(--line); border-radius:12px; overflow:hidden; box-shadow:0 1px 2px rgba(15,23,42,.04); }
+  .qtable { border-collapse:separate; border-spacing:0; }
+  .qtable th { position:static; background:#f8fafc; color:#64748b; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; padding:10px 12px; border-bottom:1px solid var(--line); box-shadow:none; }
+  .qtable td { padding:12px; border-bottom:1px solid #f1f5f9; vertical-align:top; font-size:13px; }
+  .qtable tbody tr:hover td { background:#fafcff; }
+  .qtable td.ck { width:36px; }
+  .qtable td.acts { white-space:nowrap; text-align:right; width:80px; }
+  .code { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-weight:600; font-size:12px; color:var(--b); white-space:nowrap; }
+  .stem { font-size:13.5px; font-weight:500; line-height:1.5; white-space:pre-wrap; color:var(--ink); }
+  .opts-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:3px 12px; margin-top:8px; padding:8px; background:#f8fafc; border:1px solid #f1f5f9; border-radius:8px; }
+  .opt { font-size:12.5px; color:#475569; padding:2px 6px; border-radius:5px; }
+  .opt b { color:#334155; margin-right:4px; }
+  .opt.ok { background:#dcfce7; color:#14532d; font-weight:600; }
+  .opt.ok b { color:#15803d; }
+  .ans-line { margin-top:6px; font-size:12px; color:#334155; }
+  .ans-line b { color:#15803d; }
+  .badge { display:inline-flex; align-items:center; padding:2px 8px; border-radius:999px; font-size:11px; font-weight:600; border:1px solid transparent; white-space:nowrap; }
+  .bl1 { background:#eff6ff; color:#1d4ed8; border-color:#bfdbfe; }
+  .bl2 { background:#ecfdf5; color:#047857; border-color:#a7f3d0; }
+  .bl3 { background:#fffbeb; color:#b45309; border-color:#fde68a; }
+  .bl4 { background:#f5f3ff; color:#6d28d9; border-color:#ddd6fe; }
+  .bl5 { background:#fff1f2; color:#be123c; border-color:#fecdd3; }
+  .st-nhap { background:#fef3c7; color:#92400e; border-color:#fde68a; }
+  .st-da_duyet { background:#dcfce7; color:#166534; border-color:#bbf7d0; }
+  .st-ngung { background:#f1f5f9; color:#475569; border-color:#e2e8f0; }
+  .qt { display:inline-block; padding:1px 7px; border-radius:6px; background:#f1f5f9; color:#334155; font:600 11px ui-monospace,SFMono-Regular,Menlo,monospace; }
+  .ib { border:0; background:none; padding:6px; border-radius:6px; color:#64748b; }
+  .ib:hover { background:#f1f5f9; color:var(--b); }
+  .ib.del:hover { background:#fef2f2; color:#b91c1c; }
+  .tfoot { display:flex; justify-content:space-between; align-items:center; gap:8px; padding:10px 12px; border-top:1px solid var(--line); background:#fafbfc; }
+  .tfoot .pager { margin:0; }
+  .pager button { padding:4px 10px; }
+  .tblwrap { border-radius:8px; }
+  .ctab, .fillbar { font-size:13px; }
+  @media (max-width:1100px) { .filters { grid-template-columns:repeat(3,minmax(0,1fr)); } }
+  @media (max-width:640px) { .filters { grid-template-columns:repeat(2,minmax(0,1fr)); } }
 </style>
 </head>
 <body>
-<header>
-  <b>QBank</b>
+<header class="topbar">
+  <div class="brand"><span class="logo">Q</span><span class="bn">QBank</span></div>
   <nav>
     <button data-tab="bank" class="on">Ngân hàng</button>
     <button data-tab="struct">Cấu trúc</button>
@@ -97,70 +207,81 @@
 <!-- ============ NGÂN HÀNG ============ -->
 <section id="bank" class="on">
 <div class="twocol">
-<aside class="side" id="bankTree"></aside>
+<aside class="side">
+  <div class="side-head">
+    <div class="side-title">Danh mục học phần</div>
+    <div class="side-tools">
+      <input id="treeSearch" placeholder="Lọc danh mục..." oninput="TREE_QUERY=this.value;renderBankTree()">
+      <button class="g" onclick="setAllTree(true)" title="Mở tất cả">+</button>
+      <button class="g" onclick="setAllTree(false)" title="Thu gọn tất cả">−</button>
+    </div>
+  </div>
+  <div id="bankTree"></div>
+</aside>
 <div class="main-col">
-  <div class="row">
-    <select id="fCourse" title="Học phần"></select>
-    <select id="fTextbook" title="Giáo trình"></select>
-    <select id="fChapter" title="Chương"></select>
-    <select id="fBloom"><option value="">Mọi mức</option></select>
-    <select id="fType"><option value="">Mọi loại</option><option value="TN">Trắc nghiệm</option><option value="DS">Đúng/sai</option><option value="DT">Điền từ</option><option value="TL">Tự luận</option></select>
-    <select id="fStatus" title="Trạng thái"><option value="">Mọi trạng thái</option><option value="nhap">Nháp</option><option value="da_duyet">Đã duyệt</option><option value="ngung">Ngưng dùng</option></select>
-    <input id="fTag" list="tagList" placeholder="Thẻ" style="width:110px" title="Lọc theo thẻ (ngữ pháp, trợ từ…)"><datalist id="tagList"></datalist>
-    <input id="fSearch" placeholder="Tìm nội dung hoặc mã câu" style="width:190px">
+  <div class="filters">
+    <div class="f"><label>Học phần</label><select id="fCourse"></select></div>
+    <div class="f"><label>Giáo trình</label><select id="fTextbook"></select></div>
+    <div class="f"><label>Chương</label><select id="fChapter"></select></div>
+    <div class="f"><label>Mức Bloom</label><select id="fBloom"><option value="">Mọi mức</option></select></div>
+    <div class="f"><label>Loại câu</label><select id="fType"><option value="">Mọi loại</option><option value="TN">Trắc nghiệm</option><option value="DS">Đúng/sai</option><option value="DT">Điền từ</option><option value="TL">Tự luận</option></select></div>
+    <div class="f"><label>Trạng thái</label><select id="fStatus" title="Trạng thái"><option value="">Mọi trạng thái</option><option value="nhap">Nháp</option><option value="da_duyet">Đã duyệt</option><option value="ngung">Ngưng dùng</option></select></div>
+  </div>
+  <div class="filterbar">
+    <div class="search"><i class="fa-solid fa-magnifying-glass"></i><input id="fSearch" placeholder="Tìm nội dung hoặc mã câu"></div>
+    <input id="fTag" list="tagList" placeholder="Thẻ" style="width:120px" title="Lọc theo thẻ (ngữ pháp, trợ từ…)"><datalist id="tagList"></datalist>
     <button class="g" onclick="loadQuestions()">Lọc</button>
+    <span class="sp"></span>
+    <button class="g" onclick="document.getElementById('toolsBox').open=!document.getElementById('toolsBox').open"><i class="fa-solid fa-file-import"></i> Nhập, xuất, rà soát</button>
+    <button class="p" onclick="editQ(null)"><i class="fa-solid fa-plus"></i> Câu mới</button>
   </div>
-  <div class="row">
-    <button class="g" onclick="editQ(null)">+ Câu mới</button>
-    <span class="sub">Nhập/xuất file:</span>
-    <label for="importFile">Nhập từ .docx hoặc .csv vào:</label>
-    <span id="importTarget" class="sub"></span>
-    <input type="file" id="importFile" accept=".docx,.csv,.txt" onchange="importDocx(this)">
-    <a href="/api/import-template" download><button class="g">Tải mẫu nhập</button></a>
-    <a href="/api/backup" download><button class="g">Sao lưu</button></a>
-    <label for="restoreFile">Khôi phục từ .json:</label>
-    <input type="file" id="restoreFile" accept=".json" onchange="restoreJson(this)">
-  </div>
-  <details class="row"><summary class="sub">Dán từ Excel</summary>
-    <textarea id="pasteBox" rows="4" style="flex:1" placeholder="Chọn các ô trong Excel (kèm dòng tiêu đề), Ctrl+C rồi dán vào đây"></textarea>
-    <button class="g" onclick="importPaste()">Xem trước dữ liệu dán</button>
+  <details class="tools" id="toolsBox">
+    <summary>Công cụ: nhập và xuất file, sao lưu, rà soát trùng, thùng rác, reset tình trạng ra đề</summary>
+    <div class="row"><label>Nhập từ .docx hoặc .csv vào:</label><span id="importTarget" class="sub"></span>
+      <input type="file" id="importFile" accept=".docx,.csv,.txt" onchange="importDocx(this)">
+      <a href="/api/import-template" download><button class="g">Tải mẫu nhập</button></a></div>
+    <div class="row"><a href="/api/backup" download><button class="g">Sao lưu .json</button></a>
+      <label for="restoreFile">Khôi phục từ .json:</label>
+      <input type="file" id="restoreFile" accept=".json" onchange="restoreJson(this)"></div>
+    <details class="row"><summary class="sub">Dán từ Excel</summary>
+      <textarea id="pasteBox" rows="4" style="flex:1" placeholder="Chọn các ô trong Excel (kèm dòng tiêu đề), Ctrl+C rồi dán vào đây"></textarea>
+      <button class="g" onclick="importPaste()">Xem trước dữ liệu dán</button>
+    </details>
+    <div class="row"><label>Rà soát:</label>
+      <button class="g" onclick="showDuplicates()">Kiểm tra trùng</button>
+      <button class="g" onclick="withBusy(this, showSimilar)">Tìm câu gần giống</button>
+      <button class="g" onclick="toggleTrash()">Thùng rác</button></div>
+    <div class="row"><label>Reset tình trạng ra đề:</label>
+      <button class="d" onclick="resetUsage('questions')">Câu đang tick</button>
+      <button class="d" onclick="resetUsage('chapters')">Chương đang lọc</button>
+      <button class="d" onclick="resetUsage('all')">Toàn bộ CSDL</button>
+      <span class="sub">Chỉ xóa số lần đã ra đề, không xóa câu.</span></div>
   </details>
-  <div class="row">
-    <span class="sub">Reset tình trạng ra đề:</span>
-    <button class="d" onclick="resetUsage('questions')">Câu đang tick</button>
-    <button class="d" onclick="resetUsage('chapters')">Chương đang lọc</button>
-    <button class="d" onclick="resetUsage('all')">Toàn bộ CSDL</button>
-    <span class="sub">Chỉ xóa số lần đã ra đề, không xóa câu.</span>
-  </div>
-  <div class="row">
-    <span class="sub">Rà soát dữ liệu:</span>
-    <button class="g" onclick="showDuplicates()">Kiểm tra trùng</button>
-    <button class="g" onclick="withBusy(this, showSimilar)">Tìm câu gần giống</button>
-    <button class="g" onclick="toggleTrash()">Thùng rác</button>
-  </div>
   <div id="importMsg" class="msg"></div>
   <div id="importPreview" class="card" style="display:none"></div>
   <div id="dupBox" class="card" style="display:none"></div>
   <div id="trashBox" class="card" style="display:none"></div>
   <div id="editor" class="card" style="display:none"></div>
-  <div class="row" id="bulkBar">
-    <span class="sub">Đã chọn <span id="selCount">0</span> câu.</span>
+  <div class="bulkbar" id="bulkBar">
+    <span><b id="selCount">0</b> câu đã chọn</span>
     <select id="bulkChap"></select>
     <select id="bulkBloom"><option value="">Giữ mức Bloom</option><option value="1">1. Biết</option><option value="2">2. Hiểu</option><option value="3">3. Vận dụng</option><option value="4">4. Phân tích</option><option value="5">5. Đánh giá</option></select>
-    <button class="g" onclick="bulkApply()">Áp dụng cho câu đã chọn</button>
-    <button class="d" onclick="bulkDelete()">Xóa các câu đã chọn</button>
-    <button class="g" onclick="setStatus('da_duyet')">Duyệt đã chọn</button>
-    <button class="g" onclick="setStatus('nhap')">Đưa về Nháp</button>
-    <button class="g" onclick="setStatus('ngung')">Ngưng dùng</button>
-    <button class="g" onclick="exportMoodle()">Xuất Moodle XML</button>
-    <button class="g" onclick="selectShown()">Chọn các câu đang hiện</button>
-    <button class="g" onclick="clearSel()">Bỏ chọn</button>
+    <button onclick="bulkApply()">Áp dụng</button>
+    <button onclick="setStatus('da_duyet')">Duyệt</button>
+    <button onclick="setStatus('nhap')">Đưa về Nháp</button>
+    <button onclick="setStatus('ngung')">Ngưng dùng</button>
+    <button onclick="exportMoodle()">Xuất Moodle XML</button>
+    <button onclick="selectShown()">Chọn các câu đang hiện</button>
+    <button onclick="clearSel()">Bỏ chọn</button>
+    <button class="d" onclick="bulkDelete()">Xóa</button>
   </div>
-  <div class="pager" id="qPager"></div>
-  <div style="overflow-x:auto"><table>
-    <thead><tr><th style="width:28px"></th><th>Mã câu</th><th>Học phần / Giáo trình / Chương</th><th>Bloom</th><th>Loại</th><th>Nội dung</th><th>Đáp án</th><th></th></tr></thead>
-    <tbody id="qBody"></tbody>
-  </table></div>
+  <div class="tcard">
+    <div style="overflow-x:auto"><table class="qtable">
+      <thead><tr><th></th><th style="width:160px">Mã câu</th><th style="width:230px">Học phần / Giáo trình / Chương</th><th style="width:130px">Bloom</th><th style="width:70px">Loại</th><th>Nội dung và đáp án</th><th style="width:150px">Trạng thái</th><th></th></tr></thead>
+      <tbody id="qBody"></tbody>
+    </table></div>
+    <div class="tfoot"><span></span><div class="pager" id="qPager"></div></div>
+  </div>
 </div>
 </div>
 </section>
@@ -441,10 +562,7 @@ async function loadTagList() {
 // ---------- ngân hàng
 // ---------- trạng thái duyệt: Nháp, Đã duyệt (được ra đề), Ngưng dùng
 const STATUS_LABEL = {nhap: "Nháp", da_duyet: "Đã duyệt", ngung: "Ngưng dùng"};
-const statusBadge = st => {
-  const color = {nhap: ["#fef3c7", "#92400e"], da_duyet: ["#dcfce7", "#166534"], ngung: ["#e5e7eb", "#374151"]}[st] || ["#e5e7eb", "#374151"];
-  return `<span class="tag" style="background:${color[0]};color:${color[1]}">${STATUS_LABEL[st] || st}</span>`;
-};
+const statusBadge = st => `<span class="badge st-${st}">${STATUS_LABEL[st] || st}</span>`;
 async function setStatus(status) {
   if (!SEL.size) { toast("Chưa chọn câu nào.", true); return; }
   try {
@@ -472,6 +590,7 @@ const PCT_OPTS = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
 let UNUSED_STATS = null;  // thống kê gần nhất (có số câu chưa từng ra đề)
 function updateSelBar() {
   $("#selCount").textContent = SEL.size;
+  $("#bulkBar").style.display = SEL.size ? "flex" : "none";
 }
 function toggleSel(id, on) { on ? SEL.add(id) : SEL.delete(id); updateSelBar(); }
 function selectShown() { document.querySelectorAll(".qsel").forEach(c => { c.checked = true; SEL.add(+c.value); }); updateSelBar(); }
@@ -524,18 +643,32 @@ async function loadQuestions(page = 0) {
   renderBankTree();
   loadTagList();
   if (TRASH_OPEN) loadTrash();  // thùng rác đang mở: làm mới sau mỗi thay đổi
-  $("#qBody").innerHTML = list.map(q => `
-    <tr>
-      <td><input type="checkbox" class="qsel" value="${q.id}" ${SEL.has(q.id) ? "checked" : ""} onchange="toggleSel(${q.id}, this.checked)"></td>
-      <td>${esc(q.code)}</td>
-      <td>${esc(q.course)} / ${esc(q.textbook)}<div class="sub">${esc(q.chapter_code)}${q.chapter_title ? " - " + esc(q.chapter_title) : ""}</div>${q.tags && q.tags.length ? `<div class="sub">🏷 ${esc(q.tags.join(", "))}</div>` : ""}</td>
-      <td><span class="tag">${q.bloom}. ${BLOOM[q.bloom]}</span> ${statusBadge(q.status)}${q.clo ? `<div class="sub">${esc(q.clo)}</div>` : ""}</td>
-      <td>${q.qtype}</td>
-      <td>${esc(q.content)}${mediaHtml(q.media)}<div class="opts">${esc(q.options.map((o,k)=>(q.qtype==="DS"?"abcdefgh"[k]+") ":"ABCDEFGH"[k]+". ")+o).join("\n"))}</div></td>
-      <td>${esc(q.qtype === "DS" ? q.answer.replace(/D/g, "Đ") : q.answer)}<div class="sub">${q.points != null ? q.points + " điểm · " : ""}${q.used_count ? "đã dùng " + q.used_count + " lần" : "chưa dùng"}</div></td>
-      <td style="white-space:nowrap"><button class="g" onclick="editQ(${q.id})">Sửa</button>
-          <button class="d" onclick="delQ(${q.id})">Xóa</button></td>
-    </tr>`).join("") || `<tr><td colspan="8" class="msg">Chưa có câu hỏi nào. Nhấn “+ Câu mới” hoặc nhập từ .docx.</td></tr>`;
+  $("#qBody").innerHTML = list.map(qRowHtml).join("") || `<tr><td colspan="8" class="msg" style="padding:24px;text-align:center">Chưa có câu hỏi nào. Nhấn “Câu mới” hoặc nhập từ .docx trong mục Công cụ.</td></tr>`;
+}
+
+const OPT_L = "ABCDEFGH";
+const BLOOM_CLS = {1: "bl1", 2: "bl2", 3: "bl3", 4: "bl4", 5: "bl5"};
+// một dòng bảng: đáp án đúng được tô xanh ngay trong danh sách phương án
+function qRowHtml(q) {
+  const marks = q.qtype === "TN" ? q.options.map((_, k) => q.answer === OPT_L[k])
+              : q.qtype === "DS" ? q.options.map((_, k) => q.answer[k] === "D") : [];
+  const opts = q.options.length ? `<div class="opts-grid">${q.options.map((o, k) => {
+      const lab = q.qtype === "DS" ? "abcdefgh"[k].toUpperCase() : OPT_L[k];
+      return `<div class="opt ${marks[k] ? "ok" : ""}"><b>${lab}.</b>${esc(o)}</div>`; }).join("")}</div>` : "";
+  const ans = (q.qtype === "TN" || q.qtype === "DS") ? "" : `<div class="ans-line">Đáp án: <b>${esc(q.answer)}</b></div>`;
+  const chap = `${esc(q.chapter_code)}${q.chapter_title ? " - " + esc(q.chapter_title) : ""}`;
+  const tags = q.tags && q.tags.length ? `<div class="sub">🏷 ${esc(q.tags.join(", "))}</div>` : "";
+  const used = q.used_count ? `Đã dùng ${q.used_count} lần` : "Chưa dùng";
+  return `<tr>
+    <td class="ck"><input type="checkbox" class="qsel" value="${q.id}" ${SEL.has(q.id) ? "checked" : ""} onchange="toggleSel(${q.id}, this.checked)"></td>
+    <td><div class="code">${esc(q.code)}</div></td>
+    <td><div style="font-weight:600">${esc(q.course)}</div><div class="sub">${esc(q.textbook)}</div><div class="sub">${chap}</div>${tags}</td>
+    <td><span class="badge ${BLOOM_CLS[q.bloom]}">${q.bloom}. ${BLOOM[q.bloom]}</span>${q.clo ? `<div class="sub" style="margin-top:4px">${esc(q.clo)}</div>` : ""}</td>
+    <td><span class="qt">${q.qtype}</span></td>
+    <td><div class="stem">${esc(q.content)}</div>${mediaHtml(q.media)}${opts}${ans}</td>
+    <td>${statusBadge(q.status)}<div class="sub" style="margin-top:4px">${q.points != null ? q.points + " điểm · " : ""}${used}</div></td>
+    <td class="acts"><button class="ib" title="Sửa" onclick="editQ(${q.id})"><i class="fa-solid fa-pen-to-square"></i></button><button class="ib del" title="Xóa" onclick="delQ(${q.id})"><i class="fa-solid fa-trash-can"></i></button></td>
+  </tr>`;
 }
 
 // thanh phân trang kiểu Gmail: "1–50 của 17981" và hai nút ‹ ›
@@ -547,28 +680,81 @@ function renderQPager(total) {
     <button class="g" title="Trang sau" aria-label="Trang sau" ${last ? "disabled" : ""} onclick="loadQuestions(${QPAGE + 1})">›</button>`;
 }
 
-// cây học phần / giáo trình / chương ở bên trái; bấm để lọc
+// ---------- cây học phần: nút + / − để mở, thu gọn; nhớ trạng thái trên máy này
+const TREE_KEY = "qbank_tree_open";
+let TREE_OPEN = new Set();
+try { TREE_OPEN = new Set(JSON.parse(localStorage.getItem(TREE_KEY) || "[]")); } catch (e) { TREE_OPEN = new Set(); }
+let TREE_QUERY = "";
+const treeChLabel = ch => `${ch.code}${ch.title ? " - " + ch.title : ""}`;
+function saveTreeOpen() { try { localStorage.setItem(TREE_KEY, JSON.stringify([...TREE_OPEN])); } catch (e) {} }
+function toggleNode(key, ev) {
+  if (ev) ev.stopPropagation();
+  TREE_OPEN.has(key) ? TREE_OPEN.delete(key) : TREE_OPEN.add(key);
+  saveTreeOpen(); renderBankTree();
+}
+function setAllTree(open) {
+  TREE_OPEN.clear();
+  if (open) { TREE.courses.forEach(c => TREE_OPEN.add("c" + c.id)); TREE.textbooks.forEach(t => TREE_OPEN.add("t" + t.id)); }
+  saveTreeOpen(); renderBankTree();
+}
+// khi chọn một mục trong cây, mở sẵn các nhánh cha để thấy mục đó
+function openForPick(kind, id) {
+  if (kind === "all") return;
+  let t = null;
+  if (kind === "course") TREE_OPEN.add("c" + id);
+  else if (kind === "textbook") t = TREE.textbooks.find(x => x.id == id);
+  else { const ch = TREE.chapters.find(x => x.id == id); t = ch && TREE.textbooks.find(x => x.id == ch.textbook_id); }
+  if (t) { TREE_OPEN.add("c" + t.course_id); TREE_OPEN.add("t" + t.id); }
+  saveTreeOpen();
+}
 function renderBankTree() {
   const cId = $("#fCourse").value, tId = $("#fTextbook").value, chId = $("#fChapter").value;
-  const total = (ids) => TREE.chapters.filter(c => ids(c)).reduce((a, c) => a + c.count, 0);
-  const row = (cls, label, cnt, action) =>
-    `<div class="tn ${cls}" onclick="${action}"><span>${label}</span> <span class="cnt">${cnt}</span></div>`;
-  let html = row(!cId ? "on" : "", "Tất cả học phần", total(() => true), "pickNav('all')");
+  const q = fold(TREE_QUERY.trim());
+  const match = s => !q || fold(s).includes(q);
+  const chByTb = new Map(), cntTb = new Map(), tbByCo = new Map(), cntCo = new Map();
+  let all = 0;
+  for (const ch of TREE.chapters) {  // bảng tra trước: không quét lại danh sách cho từng dòng
+    if (!chByTb.has(ch.textbook_id)) chByTb.set(ch.textbook_id, []);
+    chByTb.get(ch.textbook_id).push(ch);
+    cntTb.set(ch.textbook_id, (cntTb.get(ch.textbook_id) || 0) + ch.count);
+    all += ch.count;
+  }
+  for (const t of TREE.textbooks) {
+    if (!tbByCo.has(t.course_id)) tbByCo.set(t.course_id, []);
+    tbByCo.get(t.course_id).push(t);
+    cntCo.set(t.course_id, (cntCo.get(t.course_id) || 0) + (cntTb.get(t.id) || 0));
+  }
+  // đang tìm: các nhánh có kết quả được mở sẵn (không ghi vào trạng thái đã lưu)
+  const forced = new Set();
+  if (q) for (const ch of TREE.chapters) {
+    const t = TREE.textbooks.find(x => x.id == ch.textbook_id);
+    if (t && (match(treeChLabel(ch)) || match(t.name))) { forced.add("t" + t.id); forced.add("c" + t.course_id); }
+  }
+  const isOpen = k => TREE_OPEN.has(k) || forced.has(k);
+  const row = (cls, key, open, label, cnt, action) => `<div class="tn ${cls}" onclick="${action}">`
+    + (key ? `<button class="car" onclick="toggleNode('${key}', event)" title="${open ? "Thu gọn" : "Mở rộng"}">${open ? "−" : "+"}</button>` : `<span class="car none"></span>`)
+    + `<span class="nm">${label}</span><span class="cnt">${cnt}</span></div>`;
+  let html = `<div class="tn ${!cId && !tId && !chId ? "on" : ""}" onclick="pickNav('all')"><span class="car none"></span><span class="nm">Tất cả học phần</span><span class="cnt">${all}</span></div>`;
   for (const c of TREE.courses) {
-    html += row(`l1 ${c.id == cId && !tId && !chId ? "on" : ""}`, `<b>${esc(c.name)}</b>`,
-                total(ch => TREE.textbooks.some(t => t.id == ch.textbook_id && t.course_id == c.id)), `pickNav('course',${c.id})`);
-    for (const t of TREE.textbooks.filter(t => t.course_id == c.id)) {
-      html += row(`l2 ${t.id == tId && !chId ? "on" : ""}`, esc(t.name),
-                  total(ch => ch.textbook_id == t.id), `pickNav('textbook',${t.id})`);
-      for (const ch of TREE.chapters.filter(ch => ch.textbook_id == t.id)) {
-        html += row(`l3 ${ch.id == chId ? "on" : ""}`, `${esc(ch.code)}${ch.title ? " - " + esc(ch.title) : ""}`,
-                    ch.count, `pickNav('chapter',${ch.id})`);
-      }
+    const tbs = (tbByCo.get(c.id) || []).filter(t => !q || match(t.name) || (chByTb.get(t.id) || []).some(ch => match(treeChLabel(ch))));
+    if (q && !tbs.length && !match(c.name)) continue;
+    const ck = "c" + c.id, cOpen = isOpen(ck);
+    html += row(`l1 ${!tId && !chId && cId == c.id ? "on" : ""}`, (tbByCo.get(c.id) || []).length ? ck : null, cOpen,
+                esc(c.name), cntCo.get(c.id) || 0, `pickNav('course',${c.id})`);
+    if (!cOpen) continue;
+    for (const t of tbs) {
+      const tk = "t" + t.id, tOpen = isOpen(tk);
+      const chs = (chByTb.get(t.id) || []).filter(ch => !q || match(treeChLabel(ch)) || match(t.name));
+      html += row(`l2 ${tId == t.id && !chId ? "on" : ""}`, chs.length ? tk : null, tOpen,
+                  esc(t.name), cntTb.get(t.id) || 0, `pickNav('textbook',${t.id})`);
+      if (!tOpen) continue;
+      for (const ch of chs) html += row(`l3 ${ch.id == chId ? "on" : ""}`, null, false, esc(treeChLabel(ch)), ch.count, `pickNav('chapter',${ch.id})`);
     }
   }
   $("#bankTree").innerHTML = html;
 }
 function pickNav(kind, id) {
+  openForPick(kind, id);
   if (kind === "all") { $("#fCourse").value = ""; fillTextbookFilter(); $("#fTextbook").value = ""; fillChapterFilter(); }
   else if (kind === "course") { $("#fCourse").value = id; fillTextbookFilter(); $("#fTextbook").value = ""; fillChapterFilter(); }
   else if (kind === "textbook") {
