@@ -177,6 +177,7 @@
   .ans-line { margin-top:6px; font-size:12px; color:#334155; }
   .ans-line b { color:#15803d; }
   .badge { display:inline-flex; align-items:center; padding:2px 8px; border-radius:999px; font-size:11px; font-weight:600; border:1px solid transparent; white-space:nowrap; }
+  .badge.clo { background:#f1f5f9; color:#0f172a; border-color:#cbd5e1; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }
   .bl1 { background:#eff6ff; color:#1d4ed8; border-color:#bfdbfe; }
   .bl2 { background:#ecfdf5; color:#047857; border-color:#a7f3d0; }
   .bl3 { background:#fffbeb; color:#b45309; border-color:#fde68a; }
@@ -324,7 +325,7 @@
   </div>
   <div class="tcard">
     <div style="overflow-x:auto"><table class="qtable">
-      <thead><tr><th style="width:36px"></th><th style="width:120px">Mã câu</th><th style="width:150px">Học phần / Giáo trình / Chương</th><th style="width:92px">Bloom</th><th style="width:54px">Loại</th><th>Nội dung và đáp án</th><th style="width:108px">Trạng thái</th><th style="width:76px"></th></tr></thead>
+      <thead><tr><th style="width:36px"></th><th style="width:120px">Mã câu</th><th style="width:150px">Học phần / Giáo trình / Chương</th><th style="width:92px">Bloom</th><th style="width:72px">CLO</th><th style="width:54px">Loại</th><th>Nội dung và đáp án</th><th style="width:108px">Trạng thái</th><th style="width:76px"></th></tr></thead>
       <tbody id="qBody"></tbody>
     </table></div>
     <div class="tfoot"><span></span><div class="pager" id="qPager"></div></div>
@@ -698,7 +699,7 @@ async function loadQuestions(page = 0) {
   renderBankTree();
   loadTagList();
   if (TRASH_OPEN) loadTrash();  // thùng rác đang mở: làm mới sau mỗi thay đổi
-  $("#qBody").innerHTML = list.map(qRowHtml).join("") || `<tr><td colspan="8" class="msg" style="padding:24px;text-align:center">Chưa có câu hỏi nào. Nhấn “Câu mới” hoặc nhập từ .docx trong mục Công cụ.</td></tr>`;
+  $("#qBody").innerHTML = list.map(qRowHtml).join("") || `<tr><td colspan="9" class="msg" style="padding:24px;text-align:center">Chưa có câu hỏi nào. Nhấn “Câu mới” hoặc nhập từ .docx trong mục Công cụ.</td></tr>`;
 }
 
 const OPT_L = "ABCDEFGH";
@@ -718,7 +719,8 @@ function qRowHtml(q) {
     <td class="ck"><input type="checkbox" class="qsel" value="${q.id}" ${SEL.has(q.id) ? "checked" : ""} onchange="toggleSel(${q.id}, this.checked)"></td>
     <td><div class="code">${esc(q.code)}</div></td>
     <td><div style="font-weight:600">${esc(q.course)}</div><div class="sub">${esc(q.textbook)}</div><div class="sub">${chap}</div>${tags}</td>
-    <td><span class="badge ${BLOOM_CLS[q.bloom]}">${q.bloom}. ${BLOOM[q.bloom]}</span>${q.clo ? `<div class="sub" style="margin-top:4px">${esc(q.clo)}</div>` : ""}</td>
+    <td><span class="badge ${BLOOM_CLS[q.bloom]}">${q.bloom}. ${BLOOM[q.bloom]}</span></td>
+    <td>${q.clo ? `<span class="badge clo">${esc(q.clo)}</span>` : `<span class="sub">—</span>`}</td>
     <td><span class="qt">${q.qtype}</span></td>
     <td><div class="stem">${esc(q.content)}</div>${mediaHtml(q.media)}${opts}${ans}</td>
     <td>${statusBadge(q.status)}<div class="sub" style="margin-top:4px">${q.points != null ? q.points + " điểm · " : ""}${used}</div></td>
@@ -2096,7 +2098,7 @@ function renderPreview() {
           <div style="width:32px">${n}.</div>
           <div style="flex:1">${esc(it.content)}
             <div class="opts">${esc(it.options.map((o, k) => (it.qtype === "DS" ? "abcdefgh"[k] + ") " : "ABCDEFGH"[k] + ". ") + o).join("\n"))}</div>
-            <div class="sub">${esc(it.code)} · Bloom ${it.bloom} · ĐA: ${esc(it.qtype === "DS" ? it.answer.replace(/D/g, "Đ") : it.answer)} · ${it.last_used ? "đã dùng" : "chưa dùng"}</div></div>
+            <div class="sub">${esc(it.code)} · ${it.clo ? "CLO: " + esc(it.clo) + " · " : ""}Bloom ${it.bloom} · ĐA: ${esc(it.qtype === "DS" ? it.answer.replace(/D/g, "Đ") : it.answer)} · ${it.last_used ? "đã dùng" : "chưa dùng"}</div></div>
           <button class="g" ${it.passage ? `disabled title="Câu thuộc đoạn văn: không đổi riêng lẻ"` : ""} onclick="swapItem(${si},${ii})">Đổi câu</button>
         </div>`; }).join("") + `</div>`;
   }).join("");
