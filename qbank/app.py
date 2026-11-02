@@ -1246,6 +1246,14 @@ def rubric_table(doc, marker, n, it):
         levels = crit.get("levels") or [""] * 5
         for j in range(5):
             cells[2 + j].text = levels[j] if j < len(levels) else ""
+    from docx.shared import Cm  # vừa khổ giấy: tiêu chí rộng, điểm hẹp, năm mức đều nhau
+    t.autofit = False
+    widths = [Cm(3.1), Cm(1.5)] + [Cm(2.38)] * 5
+    for col, w in zip(t.columns, widths):  # lưới cột (tblGrid) để Word và LibreOffice cùng áp dụng
+        col.width = w
+    for row in t.rows:
+        for c, w in zip(row.cells, widths):
+            c.width = w
     marker._p.addprevious(t._tbl)
 
 
