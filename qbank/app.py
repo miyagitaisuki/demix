@@ -135,6 +135,7 @@ def init_storage():
     ensure_column("questions", "passage", "TEXT NOT NULL DEFAULT ''")
     ensure_column("questions", "points", "REAL")  # điểm câu hỏi, không bắt buộc
     ensure_column("questions", "clo", "TEXT NOT NULL DEFAULT ''")  # chuẩn đầu ra học phần, ví dụ CLO1
+    ensure_column("questions", "rubric", "TEXT NOT NULL DEFAULT ''")  # tự luận: tiêu chí × 5 mức (JSON)
     ensure_column("questions", "tags", "TEXT NOT NULL DEFAULT ''")  # thẻ, lưu dạng ",thẻ1,thẻ2,"
     ensure_column("questions", "media", "TEXT NOT NULL DEFAULT '[]'")  # [{kind, file, name}]
     # câu có sẵn từ trước được coi là đã duyệt, để đề đang dùng không bị thiếu câu
@@ -416,19 +417,37 @@ def clean_question(data):
             raise ValueError("Điểm phải là số, ví dụ 0,5 hoặc 2")
         if not 0 < points <= 10:
             raise ValueError("Điểm của câu phải từ 0 đến 10")
+    rubric = []  # tự luận: mỗi tiêu chí có điểm và mô tả cho mức 0-4
+    if qtype == "TL":
+        for crit in data.get("rubric") or []:
+            text = str(crit.get("text", "")).strip()
+            if not text:
+                continue
+            raw = crit.get("points")
+            pts = None
+            if raw not in (None, ""):
+                try:
+                    pts = float(str(raw).replace(",", "."))
+                except ValueError:
+                    raise ValueError("Điểm tiêu chí phải là số")
+            levels = [str(x).strip() for x in (crit.get("levels") or [])][:5]
+            levels += [""] * (5 - len(levels))
+            rubric.append({"text": text, "points": pts, "levels": levels})
     return dict(chapter_id=chapter_id, bloom=bloom, qtype=qtype, content=content,
                 options=json.dumps(options, ensure_ascii=False), answer=answer, solution=solution,
                 passage=passage, points=points, clo=clo, tags=tags, media=json.dumps(media, ensure_ascii=False),
-                status=status)
+                status=status, rubric=json.dumps(rubric, ensure_ascii=False))
 
 
-INSERT_Q = """INSERT INTO questions(code,chapter_id,bloom,qtype,content,options,answer,solution,passage,passage_id,points,clo,tags,media,status)
-              VALUES(:code,:chapter_id,:bloom,:qtype,:content,:options,:answer,:solution,:passage,:passage_id,:points,:clo,:tags,:media,:status)"""
+INSERT_Q = """INSERT INTO questions(code,chapter_id,bloom,qtype,content,options,answer,solution,passage,passage_id,points,clo,tags,media,status,rubric)
+              VALUES(:code,:chapter_id,:bloom,:qtype,:content,:options,:answer,:solution,:passage,:passage_id,:points,:clo,:tags,:media,:status,:rubric)"""
 
 
 def row_to_api(r):
     r = dict(r)
     r["options"] = json.loads(r["options"])
+    if "rubric" in r:
+        r["rubric"] = json.loads(r["rubric"] or "[]")
     if "tags" in r:
         r["tags"] = tags_list(r["tags"])
     if "media" in r:
@@ -1194,7 +1213,43 @@ def render_docx(template_path, meta, exam, code, answer_key, mode="ruby"):
 KEY_PER_ROW = 10  # số câu mỗi dòng của lưới đáp án
 
 
-def render_key_doc(template_path, meta, code, exam):
+def clo_lines(flat):
+    """Đáp án theo CĐR: các câu gom theo CLO, số câu trắc nghiệm và tự luận, điểm của mỗi CLO."""
+    by = {}
+    for n, _, it in flat:
+        by.setdefault(it.get("clo") or "", []).append((n, it))
+    lines = ["ĐÁP ÁN THEO CHUẨN ĐẦU RA"]
+    for clo in sorted(by):
+        items = by[clo]
+        tn = sum(1 for _, it in items if it["qtype"] != "TL")
+        tl = sum(1 for _, it in items if it["qtype"] == "TL")
+        pts = sum(it["points"] for _, it in items if it.get("points") is not None)
+        extra = f", {fmt_points(pts)} điểm" if pts else ""
+        lines.append(f"{clo}: câu {', '.join(str(n) for n, _ in items)} ({tn} trắc nghiệm, {tl} tự luận{extra})")
+    return lines
+
+
+def rubric_table(doc, marker, n, it):
+    """Bảng tiêu chí × mức 0-4 cho một câu tự luận (theo mẫu 'đánh giá theo CĐR')."""
+    crits = it.get("rubric") or []
+    lines_before = f"Câu {n} (tự luận): hướng dẫn chấm theo tiêu chí"
+    marker.insert_paragraph_before(lines_before)
+    t = doc.add_table(rows=1 + len(crits), cols=7)
+    _set_borders(t)
+    head = ["Tiêu chí", "Điểm", "Mức 0 (<40%)", "Mức 1 (40–54%)", "Mức 2 (55–69%)", "Mức 3 (70–84%)", "Mức 4 (85–100%)"]
+    for c, h in zip(t.rows[0].cells, head):
+        c.text = h
+    for r, crit in enumerate(crits, 1):
+        cells = t.rows[r].cells
+        cells[0].text = crit.get("text", "")
+        cells[1].text = fmt_points(crit["points"]) if crit.get("points") is not None else ""
+        levels = crit.get("levels") or [""] * 5
+        for j in range(5):
+            cells[2 + j].text = levels[j] if j < len(levels) else ""
+    marker._p.addprevious(t._tbl)
+
+
+def render_key_doc(template_path, meta, code, exam, clo_mode=False):
     """Đáp án theo mẫu trường: bảng lưới 10 câu mỗi dòng, dòng 'Câu' và dòng 'Đáp án'."""
     doc = Document(template_path)
     flat = flatten(exam)
@@ -1219,6 +1274,12 @@ def render_key_doc(template_path, meta, code, exam):
         for j, (n, a) in enumerate(g):
             r1.cells[j + 1].text, r2.cells[j + 1].text = str(n), a
     marker._p.addprevious(tbl._tbl)
+    if clo_mode:
+        for line in clo_lines(flat):
+            marker.insert_paragraph_before(line)
+    for n, _, it in flat:
+        if it["qtype"] == "TL" and it.get("rubric"):
+            rubric_table(doc, marker, n, it)
     for line in rubric_lines(flat):
         marker.insert_paragraph_before(line)
     _set_text(marker, "")
@@ -2169,7 +2230,7 @@ class Handler(BaseHTTPRequestHandler):
         with closing(sqlite3.connect(DB_PATH)) as conn:
             conn.execute("PRAGMA foreign_keys = ON")
             cur = conn.execute("""UPDATE questions SET chapter_id=:chapter_id, bloom=:bloom, qtype=:qtype, content=:content,
-                 options=:options, answer=:answer, solution=:solution, passage=:passage, passage_id=:passage_id,
+                 options=:options, answer=:answer, solution=:solution, passage=:passage, passage_id=:passage_id, rubric=:rubric,
                  points=:points, clo=:clo, tags=:tags, media=:media, status=:status WHERE id=:id""", payload)
             conn.commit()
             updated = cur.rowcount
@@ -2231,12 +2292,13 @@ class Handler(BaseHTTPRequestHandler):
         furigana = ("paren" if fg.startswith("paren") else "ruby") + ("+auto" if fg.endswith("_auto") else "")
         if furigana.endswith("+auto") and _get_kakasi() is None:
             raise ValueError("Chưa cài pykakasi nên không tự thêm furigana được (pip install pykakasi)")
-        key_name = os.path.basename(body.get("key_template") or "dap_an_chuan.docx")
+        key_name = os.path.basename(body.get("key_template") or "phieu_dap_an.docx")
         key_tpl_path = os.path.join(TPL_DIR, key_name)
         usage = usage_map()
         counts = usage_counts()
         # seed: cùng seed và cùng lịch sử dùng thì chọn lại đúng các câu cũ; mỗi lần xuất có seed riêng
         seed = int(body["seed"]) if str(body.get("seed", "")).strip() else random.SystemRandom().randrange(1, 10**9)
+        clo_mode = bool(body.get("clo_mode"))
         rng = random.Random(seed)
         taken = set()
         picked = body.get("picked")  # câu đã xem trước và đổi tay, aligned theo sections
@@ -2254,6 +2316,10 @@ class Handler(BaseHTTPRequestHandler):
                         raise ValueError("Bản xem trước không khớp số câu; hãy xem trước lại")
             base = build_section(s, usage, taken, ids or None, rng, counts)
             parts.append((str(s.get("title", "")).strip(), base, bool(s.get("shuffle", True))))
+        if clo_mode:  # đáp án theo CĐR: mọi câu trong đề phải có CLO
+            missing = [it["code"] for _, base, _ in parts for it in base if not it.get("clo")]
+            if missing:
+                raise ValueError("Đáp án theo CĐR: còn câu chưa gắn CLO: " + ", ".join(missing[:15]))
         if not parts:
             raise ValueError("Chưa có phần nào có số câu")
         reused = sum(1 for _, base, _ in parts for it in base if it.get("last_used"))
@@ -2289,7 +2355,7 @@ class Handler(BaseHTTPRequestHandler):
                             z.write(path, f"Am_thanh/{m['file']}")
                 if key_separate:
                     if os.path.isfile(key_tpl_path):
-                        z.writestr(f"DapAn_{code}.docx", render_key_doc(key_tpl_path, body.get("meta", {}), code, exam))
+                        z.writestr(f"DapAn_{code}.docx", render_key_doc(key_tpl_path, body.get("meta", {}), code, exam, clo_mode))
                     else:
                         z.writestr(f"DapAn_{code}.docx", render_key(code, exam))
                 if body.get("record_usage", True):

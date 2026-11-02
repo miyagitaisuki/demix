@@ -160,10 +160,16 @@
   .qtable td { padding:12px; border-bottom:1px solid #f1f5f9; vertical-align:top; font-size:13px; }
   .qtable tbody tr:hover td { background:#fafcff; }
   .qtable td.ck { width:36px; }
-  .qtable td.acts { white-space:nowrap; text-align:right; width:80px; }
+  .qtable td.acts { white-space:nowrap; text-align:right; }
+  .qtable td.ck { width:36px; }
+  .qtable .stem { max-width:none; }
+  .code { white-space:normal; word-break:break-all; }
+  /* màn hình rộng: dùng gần hết bề ngang, nội dung và đáp án chiếm phần lớn */
+  @media (min-width:1600px) { main { max-width:none; padding:20px 28px; } .side { width:300px; flex-basis:300px; } }
+  @media (min-width:2200px) { .side { width:340px; flex-basis:340px; } }
   .code { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-weight:600; font-size:12px; color:var(--b); white-space:nowrap; }
   .stem { font-size:13.5px; font-weight:500; line-height:1.5; white-space:pre-wrap; color:var(--ink); }
-  .opts-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:3px 12px; margin-top:8px; padding:8px; background:#f8fafc; border:1px solid #f1f5f9; border-radius:8px; }
+  .opts-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(170px,1fr)); gap:3px 12px; margin-top:8px; padding:8px; background:#f8fafc; border:1px solid #f1f5f9; border-radius:8px; }
   .opt { font-size:12.5px; color:#475569; padding:2px 6px; border-radius:5px; }
   .opt b { color:#334155; margin-right:4px; }
   .opt.ok { background:#dcfce7; color:#14532d; font-weight:600; }
@@ -318,7 +324,7 @@
   </div>
   <div class="tcard">
     <div style="overflow-x:auto"><table class="qtable">
-      <thead><tr><th></th><th style="width:160px">Mã câu</th><th style="width:230px">Học phần / Giáo trình / Chương</th><th style="width:130px">Bloom</th><th style="width:70px">Loại</th><th>Nội dung và đáp án</th><th style="width:150px">Trạng thái</th><th></th></tr></thead>
+      <thead><tr><th style="width:36px"></th><th style="width:120px">Mã câu</th><th style="width:150px">Học phần / Giáo trình / Chương</th><th style="width:92px">Bloom</th><th style="width:54px">Loại</th><th>Nội dung và đáp án</th><th style="width:108px">Trạng thái</th><th style="width:76px"></th></tr></thead>
       <tbody id="qBody"></tbody>
     </table></div>
     <div class="tfoot"><span></span><div class="pager" id="qPager"></div></div>
@@ -499,6 +505,7 @@
       <div class="row"><b>Tóm tắt trước khi xuất</b></div>
       <div id="sumBox"></div>
       <div class="row" style="margin-top:10px"><label>Seed chọn câu (để trống = ngẫu nhiên): <input id="seedIn" class="n" style="width:140px"></label></div>
+      <div class="row" style="margin-top:10px"><label><input type="checkbox" id="cloMode"> Đáp án theo CĐR (mọi câu phải có CLO; in bảng CLO và bảng tiêu chí câu tự luận)</label></div>
       <div class="row" style="margin-top:10px"><label><input type="checkbox" id="confirmChk"> Tôi đã kiểm tra thông tin trên và muốn xuất đề</label></div>
     </div>
     <div class="row"><button class="p" id="btnExport" onclick="withBusy(this, doExport)">Xuất .zip các file .docx</button><button class="g" onclick="printPreview()">Xem bản in</button><span id="exportMsg" class="msg"></span><span id="shortMsg" class="err"></span></div>
@@ -842,7 +849,7 @@ async function editQ(id) {
       <label>Trạng thái</label><select id="eStatus">${Object.entries(STATUS_LABEL).map(([k, v]) => `<option value="${k}" ${k === (q.status || "nhap") ? "selected" : ""}>${v}</option>`).join("")}</select>
       <label>CLO</label><input id="eClo" style="width:90px" placeholder="CLO1" value="${esc(q.clo || "")}">
       <label>Điểm</label><input id="ePoints" class="n" style="width:70px" placeholder="—" value="${q.points ?? ""}">
-      <label>Loại</label><select id="eType">${["TN","DS","DT","TL"].map(t=>`<option value="${t}" ${q.qtype==t?"selected":""}>${t==="TN"?"Trắc nghiệm":t==="DS"?"Đúng/sai":t==="DT"?"Điền từ":"Tự luận"}</option>`).join("")}</select>
+      <label>Loại</label><select id="eType" onchange="renderRubricEditor()">${["TN","DS","DT","TL"].map(t=>`<option value="${t}" ${q.qtype==t?"selected":""}>${t==="TN"?"Trắc nghiệm":t==="DS"?"Đúng/sai":t==="DT"?"Điền từ":"Tự luận"}</option>`).join("")}</select>
     </div>
     <div class="row"><label>Đoạn văn (tùy chọn). Chọn đoạn có sẵn trong chương, hoặc nhập đoạn mới; đoạn giống hệt trong chương sẽ được dùng chung.</label></div>
     <div class="row"><select id="ePassPick" style="min-width:260px"></select></div>
@@ -853,17 +860,44 @@ async function editQ(id) {
     <div class="row"><textarea id="eOpts" rows="4">${esc(q.options.join("\n"))}</textarea></div>
     <div class="row"><label>Đáp án (TN: A/B/C…; ĐS: Đ S Đ…; ĐT: đáp án, nhiều đáp án cách nhau bằng |; TL: hướng dẫn chấm, in ở cuối đề)</label><input id="eAns" value="${esc(q.answer)}">
       <label>Lời giải</label><input id="eSol" style="flex:1" value="${esc(q.solution)}"></div>
+    <div id="eRubricBox" style="display:none"></div>
     <div class="row"><label>Hình ảnh hoặc âm thanh (tùy chọn, tối đa 4 file):</label>
       <input type="file" accept="image/*,audio/*" onchange="uploadMedia(this)">
       <span id="eMediaList" class="row" style="gap:6px"></span></div>
     <div class="row"><button class="p" onclick="saveQ()">Lưu</button><button class="g" onclick="$('#editor').style.display='none'">Đóng</button><span id="eMsg" class="err"></span></div>`;
   EDIT_MEDIA = (q.media || []).slice();
+  EDIT_RUBRIC = (q.rubric || []).map(c => ({ text: c.text || "", points: c.points ?? "", levels: [...(c.levels || []), "", "", "", "", ""].slice(0, 5) }));
+  renderRubricEditor();
   renderEditMedia();
   fillPassPick(q.passage_id);
   $("#eChap").onchange = () => fillPassPick(null);
   // form nằm phía trên bảng: cuộn tới để người dùng thấy ngay khi bấm Sửa ở dòng dưới
   $("#editor").scrollIntoView({ behavior: "smooth", block: "start" });
 }
+
+// ---------- bảng tiêu chí × mức cho câu tự luận (đáp án theo CĐR)
+let EDIT_RUBRIC = [];
+function rbSync() {  // đưa giá trị đang nhập vào bộ nhớ trước khi vẽ lại
+  document.querySelectorAll(".rb-t").forEach(el => { EDIT_RUBRIC[el.dataset.i].text = el.value; });
+  document.querySelectorAll(".rb-p").forEach(el => { EDIT_RUBRIC[el.dataset.i].points = el.value; });
+  document.querySelectorAll(".rb-l").forEach(el => { EDIT_RUBRIC[el.dataset.i].levels[el.dataset.j] = el.value; });
+}
+function renderRubricEditor() {
+  const box = $("#eRubricBox");
+  if (!box) return;
+  const isTL = $("#eType") && $("#eType").value === "TL";
+  box.style.display = isTL ? "block" : "none";
+  if (!isTL) return;
+  box.innerHTML = `<div class="sub" style="margin:8px 0">Bảng tiêu chí × mức cho câu tự luận: điểm của từng tiêu chí và mô tả đáp ứng ở mỗi mức. Dùng để in đáp án theo CĐR.</div>
+    <div class="tblwrap"><table class="qtable"><thead><tr><th>Tiêu chí</th><th>Điểm</th><th>Mức 0 (&lt;40%)</th><th>Mức 1 (40–54%)</th><th>Mức 2 (55–69%)</th><th>Mức 3 (70–84%)</th><th>Mức 4 (85–100%)</th><th></th></tr></thead>
+    <tbody>${EDIT_RUBRIC.map((c, i) => `<tr><td><input class="rb-t" data-i="${i}" value="${esc(c.text)}" style="width:100%"></td>
+      <td><input class="n rb-p" data-i="${i}" value="${esc(c.points)}" style="width:60px"></td>
+      ${[0, 1, 2, 3, 4].map(j => `<td><input class="rb-l" data-i="${i}" data-j="${j}" value="${esc((c.levels || [])[j] || "")}" style="width:100%"></td>`).join("")}
+      <td><button class="d" onclick="rbRemove(${i})">Xóa</button></td></tr>`).join("")}</tbody></table></div>
+    <button class="g" style="margin-top:6px" onclick="rbAdd()">+ Thêm tiêu chí</button>`;
+}
+function rbAdd() { rbSync(); EDIT_RUBRIC.push({ text: "", points: "", levels: ["", "", "", "", ""] }); renderRubricEditor(); }
+function rbRemove(i) { rbSync(); EDIT_RUBRIC.splice(i, 1); renderRubricEditor(); }
 
 // ---------- thùng rác: câu đã xóa, khôi phục hoặc xóa hẳn
 let TRASH_OPEN = false;
@@ -982,6 +1016,7 @@ async function saveQ(confirmPassage = false) {
     content: $("#eContent").value, answer: $("#eAns").value, solution: $("#eSol").value, points: $("#ePoints").value,
     clo: $("#eClo").value, tags: $("#eTags").value, media: EDIT_MEDIA, status: $("#eStatus").value,
     passage: $("#ePassage").value,
+    rubric: $("#eType").value === "TL" ? (rbSync(), EDIT_RUBRIC.filter(c => c.text.trim()).map(c => ({ text: c.text, points: c.points, levels: c.levels }))) : [],
     options: $("#eOpts").value.split("\n").map(s => s.trim()).filter(Boolean).map(s => s.replace(/^[A-Ha-h][\.\)]\s*/, "")),
   };
   if (confirmPassage) body.confirm_passage = true;
@@ -1427,7 +1462,7 @@ async function loadExport() {
   TREE = await api("/api/tree");
   const tpls = await api("/api/templates");
   $("#tpl").innerHTML = tpls.map(t => `<option ${t === "de_thi_chuan.docx" ? "selected" : ""}>${esc(t)}</option>`).join("");
-  $("#keyTpl").innerHTML = tpls.map(t => `<option ${t === "dap_an_chuan.docx" ? "selected" : ""}>${esc(t)}</option>`).join("");
+  $("#keyTpl").innerHTML = tpls.map(t => `<option ${t === "phieu_dap_an.docx" ? "selected" : ""}>${esc(t)}</option>`).join("");
   renderCourseChips();
   $("#metaCourse").innerHTML = `<option value="">— chọn học phần —</option>` + TREE.courses.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join("");
   await loadPassages();
@@ -2227,6 +2262,7 @@ async function doExportInner() {
     answer_key: $("#answerKey").checked, key_separate: $("#keySeparate").checked,
     record_usage: $("#recordUsage").checked, save_history: $("#saveHistory").checked,
     seed: $("#seedIn").value.trim(),
+    clo_mode: $("#cloMode").checked,
   };
   $("#exportMsg").textContent = "Đang tạo...";
   try {
