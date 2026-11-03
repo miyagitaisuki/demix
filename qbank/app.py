@@ -757,7 +757,7 @@ def parse_rows(tables, textbook_id, dry_run=False, docx=True):
                     "chapter_id": chapter_by_code[code],
                     "bloom": int(muc),
                     "qtype": qtype,
-                    "content": " ".join(stem),
+                    "content": "\n".join(stem),  # giữ xuống dòng: câu dẫn nhập và câu hỏi, lời đáp đối thoại
                     "options": options,
                     "answer": get("dap_an"),
                     "solution": solution,
@@ -774,7 +774,7 @@ def parse_rows(tables, textbook_id, dry_run=False, docx=True):
                     sim = similar_passage(payload["chapter_id"], payload["passage"])
                     if sim:
                         warnings.append(f"{label}: đoạn văn gần giống đoạn {sim[0]} ({round(sim[1] * 100)}%); kiểm tra lại")
-                preview = {"where": label, "code": code, "qtype": qtype, "content": " ".join(stem)[:80]}
+                preview = {"where": label, "code": code, "qtype": qtype, "content": " ".join(stem)[:80]}  # xem trước: một dòng
                 if same:
                     ref = same[0][0]
                     ref_txt = f"câu {code_of(ref)}" if isinstance(ref, int) else ref.lower()  # ref là nhãn dòng khi xem trước
@@ -1145,9 +1145,16 @@ def emit_options(doc, marker, options, mode="ruby"):
 
 
 def emit_question(doc, marker, n, it, mode="ruby"):
+    """Nội dung câu: mỗi dòng trong nội dung xuống hàng. Nếu có từ hai dòng trở lên, dòng đầu là
+    câu dẫn nhập và in đậm; các dòng sau (câu hỏi, lời đáp đối thoại) in thường."""
     p = marker.insert_paragraph_before("")
     p.add_run(f"Câu {n}. ").bold = True
-    add_rich(p, it["content"], mode=mode)
+    lines = [ln.strip() for ln in (it["content"] or "").splitlines() if ln.strip()] or [""]
+    bold_lead = len(lines) > 1 and not SPEAKER_LINE.match(lines[0])
+    for i, ln in enumerate(lines):
+        if i:
+            p.add_run().add_break()
+        add_rich(p, ln, bold=(bold_lead and i == 0), mode=mode)
     if it.get("points") is not None:
         p.add_run(f" ({fmt_points(it['points'])} điểm)").italic = True
     if it["qtype"] == "TN":
