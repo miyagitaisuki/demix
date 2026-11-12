@@ -841,6 +841,7 @@ IMPORT_COLUMNS = {
     "loi_giai": ["lời giải", "loi giai"],
     "clo": ["clo", "chuẩn đầu ra", "chuan dau ra"],
     "tags": ["thẻ", "the", "tags"],
+    "so_tu": ["số từ", "so tu", "số từ tối đa", "so tu toi da", "giới hạn từ", "gioi han tu"],
     "status": ["trạng thái", "trang thai", "status"],
 }
 IMPORT_REQUIRED = ("ma", "noi_dung", "dap_an", "loai", "muc")
@@ -987,6 +988,7 @@ def parse_rows(tables, textbook_id, dry_run=False, docx=True):
                     "passage": get("doan_van"),
                     "clo": get("clo"),
                     "tags": get("tags"),
+                    "word_limit": get("so_tu"),  # điền từ: số từ tối đa, để trống = không giới hạn
                     "status": STATUS_IMPORT.get(get("status").strip().lower(), ""),
                 })
                 same, other, key = check_duplicate(index, payload)

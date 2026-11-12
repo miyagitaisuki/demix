@@ -59,3 +59,10 @@ def test_label_item_has_hint(tmp_path):
     text = "\n".join(p.text for p in Document(str(path)).paragraphs)
     assert app.LABEL_HINT in text
     assert "so_do.png" not in text  # hình không có file trong thư mục media thì bỏ qua, không làm hỏng việc xuất
+
+
+def test_import_reads_word_limit_column():
+    cols, missing = app.map_import_header(["Mã chương", "Nội dung", "Đáp án", "Loại", "Mức", "Số từ"])
+    assert missing == [] and cols["so_tu"] == 5
+    out = app.clean_question(dict(dt(), word_limit="2"))
+    assert out["word_limit"] == 2
