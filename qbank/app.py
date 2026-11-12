@@ -141,7 +141,8 @@ def init_storage():
     ensure_column("questions", "clo", "TEXT NOT NULL DEFAULT ''")  # chuẩn đầu ra học phần, ví dụ CLO1
     ensure_column("questions", "rubric", "TEXT NOT NULL DEFAULT ''")  # tự luận: tiêu chí × 5 mức (JSON)
     ensure_column("questions", "tags", "TEXT NOT NULL DEFAULT ''")  # thẻ, lưu dạng ",thẻ1,thẻ2,"
-    ensure_column("questions", "media", "TEXT NOT NULL DEFAULT '[]'")  # [{kind, file, name}]
+    ensure_column("questions", "media", "TEXT NOT NULL DEFAULT '[]'")  # [{kind, file, name, tts?}]
+    ensure_column("passages", "media", "TEXT NOT NULL DEFAULT '[]'")  # âm thanh/hình dùng chung cho mọi câu của đoạn
     # câu có sẵn từ trước được coi là đã duyệt, để đề đang dùng không bị thiếu câu
     ensure_column("questions", "status", "TEXT NOT NULL DEFAULT 'da_duyet'")
     q("""CREATE TABLE IF NOT EXISTS trash(
@@ -203,6 +204,7 @@ def to_textts_script(text):
 
 def textts_audio(script, engine="voicevox", level=None):
     """Nhờ textts đọc kịch bản, lưu mp3 vào thư mục media; trả về {kind, file, name} để gắn vào câu."""
+    raw_script = script
     script = to_textts_script(script)
     if not script:
         raise ValueError("Kịch bản trống")
@@ -226,7 +228,8 @@ def textts_audio(script, engine="voicevox", level=None):
     fname = f"{os.urandom(16).hex()}.mp3"
     with open(os.path.join(MEDIA_DIR, fname), "wb") as f:
         f.write(audio)
-    return {"kind": "audio", "file": fname, "name": f"{stem}.mp3", "duration_s": res.get("duration_s")}
+    return {"kind": "audio", "file": fname, "name": f"{stem}.mp3", "duration_s": res.get("duration_s"),
+            "tts": norm_tts({"script": raw_script, "engine": engine, "level": level})}
 
 
 def migrate_passages():
@@ -417,11 +420,23 @@ def norm_media(value):
         f = str((m or {}).get("file", ""))
         if not MEDIA_NAME.fullmatch(f) or not os.path.isfile(os.path.join(MEDIA_DIR, f)):
             raise ValueError("File đính kèm không còn tồn tại, hãy tải lên lại")
-        out.append({"kind": MEDIA_EXT[f.rsplit(".", 1)[1]], "file": f,
-                    "name": str(m.get("name", f))[:120]})
+        item = {"kind": MEDIA_EXT[f.rsplit(".", 1)[1]], "file": f, "name": str(m.get("name", f))[:120]}
+        tts = norm_tts(m.get("tts"))
+        if tts and item["kind"] == "audio":
+            item["tts"] = tts
+        out.append(item)
     if len(out) > 4:
         raise ValueError("Mỗi câu tối đa 4 file đính kèm")
     return out
+
+
+def norm_tts(value):
+    """Kịch bản đã dùng để tạo file nghe bằng textts (lưu kèm file để sửa và tạo lại)."""
+    if not isinstance(value, dict) or not str(value.get("script", "")).strip():
+        return None
+    engine = value.get("engine") if value.get("engine") in TEXTTS_ENGINES else "voicevox"
+    level = value.get("level") if value.get("level") in ("N5", "N4", "N3", "N2", "N1") else ""
+    return {"script": str(value["script"]).strip()[:5000], "engine": engine, "level": level}
 
 
 def tags_list(stored):
@@ -536,7 +551,29 @@ def row_to_api(r):
         r["tags"] = tags_list(r["tags"])
     if "media" in r:
         r["media"] = json.loads(r["media"] or "[]")
+    r["passage_media"] = passage_media(r.get("passage_id"))
     return r
+
+
+def passage_media(pid):
+    """File đính kèm của đoạn văn (dùng chung cho các câu thuộc đoạn)."""
+    if not pid:
+        return []
+    row = q("SELECT media FROM passages WHERE id=?", (int(pid),), True)
+    return json.loads(row[0]["media"] or "[]") if row else []
+
+
+def set_passage_media(pid, media):
+    if pid:
+        q("UPDATE passages SET media=? WHERE id=?", (json.dumps(norm_media(media), ensure_ascii=False), int(pid)))
+
+
+def save_passage_media(question_id, body):
+    """Ghi file đính kèm của đoạn văn khi lưu câu (chỉ khi form gửi kèm passage_media)."""
+    if isinstance(body.get("passage_media"), list):
+        row = q("SELECT passage_id FROM questions WHERE id=?", (int(question_id),), True)
+        if row and row[0]["passage_id"]:
+            set_passage_media(row[0]["passage_id"], body["passage_media"])
 
 
 def make_code(question_id_or_none, chapter_id=None):
@@ -1234,7 +1271,12 @@ def emit_question(doc, marker, n, it, mode="ruby"):
             add_rich(line, opt, mode=mode)
     elif it["qtype"] == "DT":
         marker.insert_paragraph_before("    Đáp án: ……………………………")
-    for m in it.get("media") or []:  # hình ảnh nhúng vào đề; âm thanh ghi tên file (file nằm trong thư mục Am_thanh)
+    emit_media(doc, marker, it.get("media"))
+
+
+def emit_media(doc, marker, media):
+    """Hình ảnh nhúng vào đề; âm thanh ghi tên file (file nằm trong thư mục Am_thanh)."""
+    for m in media or []:
         if m["kind"] == "image" and os.path.isfile(os.path.join(MEDIA_DIR, m["file"])):
             pic = doc.add_paragraph()  # đoạn mới có đủ đối tượng cha để chèn hình, rồi chuyển lên trước dấu đánh dấu
             marker._p.addprevious(pic._p)
@@ -1286,6 +1328,7 @@ def render_docx(template_path, meta, exam, code, answer_key, mode="ruby"):
             last_title = title
         if it.get("passage") and it["passage"] != last_passage:
             emit_passage(doc, marker, it["passage"], mode)
+            emit_media(doc, marker, it.get("passage_media"))
         last_passage = it.get("passage") or None
         emit_question(doc, marker, n, it, mode)
     _set_text(marker, "")
@@ -1594,11 +1637,14 @@ def difficulty():
 
 
 def list_passages():
-    return q("""SELECT p.id, p.code, p.content, p.chapter_id, ({CL}) AS chapter,
+    rows = q("""SELECT p.id, p.code, p.content, p.media, p.chapter_id, ({CL}) AS chapter,
                 (SELECT COUNT(*) FROM questions qs WHERE qs.passage_id = p.id) AS count
                 FROM passages p JOIN chapters ch ON ch.id = p.chapter_id
                 JOIN textbooks t ON t.id = ch.textbook_id JOIN courses co ON co.id = t.course_id
                 ORDER BY p.code""".replace("{CL}", CHAPTER_LABEL), fetch=True)
+    for r in rows:
+        r["media"] = json.loads(r["media"] or "[]")
+    return rows
 
 
 def update_passage(pid, content):
@@ -1679,8 +1725,10 @@ def build_items(rows):
                       "answer": r["answer"], "solution": r["solution"], "passage": r["passage"],
                       "points": r.get("points"), "clo": r.get("clo", ""), "tags": r.get("tags", []),
                       "media": r.get("media", []), "status": r.get("status", "da_duyet"),
+                      "passage_media": r.get("passage_media", []),
                       "media_files": {m["file"]: base64.b64encode(open(os.path.join(MEDIA_DIR, m["file"]), "rb").read()).decode()
-                                      for m in r.get("media", []) if os.path.isfile(os.path.join(MEDIA_DIR, m["file"]))},
+                                      for m in r.get("media", []) + r.get("passage_media", [])
+                                      if os.path.isfile(os.path.join(MEDIA_DIR, m["file"]))},
                       "used": usage.get(r["code"], []), "results": results.get(r["code"], [])})
     return items
 
@@ -1883,6 +1931,12 @@ def restore_item(item, index, allow_dup=False):
         raise ValueError(f"trùng câu {code_of(same[0][0])} trong cùng chương (bỏ qua)")
     new_id = insert_q(payload, keep_code=str(item.get("code") or "").strip() or None)
     index.setdefault(key, []).append((new_id, chapter_id, payload["content"]))
+    pid = q("SELECT passage_id FROM questions WHERE id=?", (new_id,), True)[0]["passage_id"]
+    if pid and item.get("passage_media") and not passage_media(pid):  # file của đoạn: chỉ điền khi đoạn chưa có
+        try:
+            set_passage_media(pid, item["passage_media"])
+        except ValueError:
+            pass
     # mã học phần/giáo trình, thông tin đề (chỉ điền khi còn trống)
     q("UPDATE courses SET code=? WHERE code='' AND id=(SELECT t.course_id FROM chapters ch JOIN textbooks t ON t.id=ch.textbook_id WHERE ch.id=?)",
       (str(item.get("course_code", "")), chapter_id))
@@ -2139,6 +2193,7 @@ class Handler(BaseHTTPRequestHandler):
             if same:  # đã có câu y hệt trong cùng chương: không lưu, báo người dùng
                 raise ValueError(f"Câu này đã có trong cùng chương ({code_of(same[0][0])}). Hãy sửa nội dung nếu muốn lưu thêm.")
             new_id = insert_q(payload)
+            save_passage_media(new_id, body)
             warnings = [f"Trùng nội dung với câu {code_of(h[0])} ở chương khác" for h in other[:3]]
             return self._json(201, {"ok": True, "id": new_id, "code": code_of(new_id), "warnings": warnings})
         if p == "/api/import-text":  # CSV hoặc dữ liệu dán từ Excel
@@ -2317,7 +2372,13 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(200, {"ok": True})
         pm = re.fullmatch(r"/api/passages/(\d+)", path)
         if pm:
-            update_passage(int(pm.group(1)), self._json_body().get("content", ""))
+            b = self._json_body()
+            if "content" in b:
+                update_passage(int(pm.group(1)), b.get("content", ""))
+            if isinstance(b.get("media"), list):
+                if not q("SELECT 1 FROM passages WHERE id=?", (int(pm.group(1)),), True):
+                    raise ValueError("Đoạn văn không tồn tại")
+                set_passage_media(int(pm.group(1)), b["media"])
             return self._json(200, {"ok": True})
         cm = re.fullmatch(r"/api/courses/(\d+)/exam-meta", urlparse(self.path).path)
         if cm:  # thông tin đề thi gắn với học phần, tự điền khi xuất đề
@@ -2347,6 +2408,7 @@ class Handler(BaseHTTPRequestHandler):
             updated = cur.rowcount
         if not updated:
             raise ValueError("Câu này không còn trong ngân hàng, hãy tải lại trang")
+        save_passage_media(payload["id"], body)
         self._json(200, {"ok": True, "code": code_of(payload["id"])})
 
     # --- DELETE: chỉ xóa khi không còn dữ liệu bên trong (khóa ngoài RESTRICT)
@@ -2460,7 +2522,7 @@ class Handler(BaseHTTPRequestHandler):
                                    answer_key and not key_separate, furigana)
                 z.writestr(f"De_{code}.docx", data)
                 for _, _, it in flatten(exam):  # âm thanh của câu trong đề được đưa vào thư mục Am_thanh
-                    for m in it.get("media") or []:
+                    for m in (it.get("media") or []) + (it.get("passage_media") or []):
                         path = os.path.join(MEDIA_DIR, m["file"])
                         if m["kind"] == "audio" and os.path.isfile(path) and f"Am_thanh/{m['file']}" not in z.namelist():
                             z.write(path, f"Am_thanh/{m['file']}")
@@ -2640,6 +2702,16 @@ def rich_html(text):
     return out.replace("\n", "<br>")
 
 
+def _print_media(media):
+    out = []
+    for m in media or []:
+        if m["kind"] == "image":
+            out.append(f"<div><img src='/media/{m['file']}' style='max-width:100%;max-height:260px'></div>")
+        else:
+            out.append(f"<div><audio controls preload='none' src='/media/{m['file']}'></audio> <small>{hesc(m['name'])}</small></div>")
+    return out
+
+
 def print_html(body):
     """Bản in xem trước của một mã đề, dựng từ cùng cách chọn câu như khi xuất (không ghi gì vào CSDL)."""
     sections = body.get("sections") or []
@@ -2661,18 +2733,18 @@ def print_html(body):
     meta = body.get("meta", {})
     code = f"{body.get('prefix', '')}{int(body.get('start', 1) or 1):03d}"
     sec_html = []
-    last_title = None
+    last_title, last_passage = None, None
     for n, title, it in flat:
         if title and title != last_title:
             sec_html.append(f"<h2>{hesc(title)}</h2>")
             last_title = title
         pts = f" <i>({fmt_points(it['points'])} điểm)</i>" if it.get("points") is not None else ""
+        if it.get("passage") and it["passage"] != last_passage:  # đoạn văn và file nghe của đoạn, in trước câu đầu
+            sec_html.append(f"<div class='q' style='border:1px solid #999;padding:6px'>{rich_html(it['passage'])}"
+                            + "".join(_print_media(it.get("passage_media"))) + "</div>")
+        last_passage = it.get("passage") or None
         lines = [f"<div class='q'><b>Câu {n}.</b> {rich_html(it['content'])}{pts}"]
-        for m in it.get("media") or []:
-            if m["kind"] == "image":
-                lines.append(f"<div><img src='/media/{m['file']}' style='max-width:100%;max-height:260px'></div>")
-            else:
-                lines.append(f"<div><audio controls preload='none' src='/media/{m['file']}'></audio> <small>{hesc(m['name'])}</small></div>")
+        lines += _print_media(it.get("media"))
         if it["qtype"] == "TN":
             lines.append("<div class='opts'>" + "".join(
                 f"<span>{LETTERS[k]}. {rich_html(o)}</span>" for k, o in enumerate(it["options"])) + "</div>")
@@ -2759,6 +2831,7 @@ def moodle_xml(ids=None):
             cats.add(cat)
             out.append(f'<question type="category"><category><text>{_mx(cat)}</text></category></question>')
         grade = fmt_points(r["points"]).replace(",", ".") if r.get("points") is not None else "1"
+        r["media"] = (r.get("passage_media") or []) + (r.get("media") or [])
         stem = rich_html(r["content"]).replace("<br>", "<br>")
         if r["qtype"] == "TN":
             letters = LETTERS

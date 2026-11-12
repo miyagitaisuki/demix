@@ -235,4 +235,7 @@ Câu hỏi dạng nghe có thể tạo âm thanh ngay trong form sửa câu, kh�
 3. Sửa kịch bản: mỗi dòng một lượt nói `[1] ...`, `[2] ...` (dòng không ghi vai được gán `[1]`), furigana `{漢字|かな}` tự đổi sang cú pháp textts, nghỉ bằng `[pause=800]`.
 4. Chọn engine, trình độ (N5 đọc chậm nhất), bấm **Tạo và đính kèm**. File mp3 được lưu vào `data/media` như file tải lên; bấm **Lưu** để gắn vào câu.
 
+5. **Gắn vào đoạn văn:** câu có đoạn văn (ví dụ hội thoại 聴解 dùng cho nhiều câu) thì chọn "Gắn vào: Đoạn văn". File nghe lưu ở đoạn, mọi câu thuộc đoạn dùng chung; chọn đoạn có sẵn ở câu khác sẽ thấy ngay file đó. Khi xuất đề, file của đoạn được ghi một lần trước câu đầu tiên của đoạn và chép vào thư mục `Am_thanh`; bản Moodle gắn file của đoạn vào từng câu.
+6. **Sửa và tạo lại:** kịch bản được lưu cùng file. Bấm ✎ cạnh file để mở lại kịch bản, sửa rồi bấm "Tạo lại" để thay file cũ (bấm Lưu để giữ thay đổi).
+
 textts chạy ở địa chỉ khác thì đặt biến môi trường `TEXTTS_API_URL` (mặc định `http://127.0.0.1:8000`).
