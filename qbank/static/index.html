@@ -987,7 +987,7 @@ async function editQ(id) {
       <label>Trạng thái</label><select id="eStatus">${Object.entries(STATUS_LABEL).map(([k, v]) => `<option value="${k}" ${k === (q.status || "nhap") ? "selected" : ""}>${v}</option>`).join("")}</select>
       <label>CLO</label><input id="eClo" style="width:90px" placeholder="CLO1" value="${esc(q.clo || "")}">
       <label>Điểm</label><input id="ePoints" class="n" style="width:70px" placeholder="—" value="${q.points ?? ""}">
-      <label>Loại</label><select id="eType" onchange="renderRubricEditor()">${["TN","DS","DT","TL"].map(t=>`<option value="${t}" ${q.qtype==t?"selected":""}>${t==="TN"?"Trắc nghiệm":t==="DS"?"Đúng/sai":t==="DT"?"Điền từ":"Tự luận"}</option>`).join("")}</select>
+      <label>Loại</label><select id="eType" onchange="renderRubricEditor()">${["TN","DS","DT","TL"].map(t=>`<option value="${t}" ${q.qtype==t?"selected":""}>${t==="TN"?"Trắc nghiệm":t==="DS"?"Đúng/sai":t==="DT"?"Điền từ":"Tự luận"}</option>`).join("")}</select> <label title="Chỉ áp dụng cho Điền từ: học viên được viết tối đa bấy nhiêu từ (0 = không giới hạn)">Số từ tối đa <input id="eLimit" class="n" style="width:60px" value="${q.word_limit || 0}"></label>
     </div>
     <div class="row"><label>Đoạn văn (tùy chọn). Chọn đoạn có sẵn trong chương, hoặc nhập đoạn mới; đoạn giống hệt trong chương sẽ được dùng chung.</label></div>
     <div class="row"><select id="ePassPick" style="min-width:260px"></select></div>
@@ -1239,6 +1239,7 @@ async function saveQ(confirmPassage = false) {
     chapter_id: $("#eChap").value, bloom: $("#eBloom").value, qtype: $("#eType").value,
     content: $("#eContent").value, answer: $("#eAns").value, solution: $("#eSol").value, points: $("#ePoints").value,
     clo: $("#eClo").value, tags: $("#eTags").value, media: EDIT_MEDIA, status: $("#eStatus").value,
+    word_limit: $("#eLimit") ? $("#eLimit").value : 0,
     passage: $("#ePassage").value,
     ...($("#ePassage").value.trim() ? { passage_media: EDIT_PMEDIA } : {}),
     rubric: $("#eType").value === "TL" ? (rbSync(), EDIT_RUBRIC.filter(c => c.text.trim()).map(c => ({ text: c.text, points: c.points, levels: c.levels }))) : [],
@@ -1778,6 +1779,7 @@ function readSections() {
     title: card.querySelector(".st").value,
     qtype: card.querySelector(".sq").value,
     shuffle: card.querySelector(".ss").checked,
+    listening: card.querySelector(".sl").checked,
     matrix: matrixOf(card),
     passages: [...card.querySelectorAll(".prow")]
       .map(r => ({ chapter_id: +r.querySelector(".pch").value, n: +r.querySelector(".pn").value || 0 }))
@@ -1820,6 +1822,7 @@ function applyCfg(cfg) {
     addSection(s.title || "", s.qtype || "");
     const card = $("#sections").lastElementChild;
     card.querySelector(".ss").checked = s.shuffle !== false;
+    card.querySelector(".sl").checked = !!s.listening;
     for (const m of s.matrix || []) {
       if (m.n > 0 && haveFor(m.chapter_id, m.bloom, s.qtype || "") > 0) card._vals.set(valKey(m.chapter_id, m.bloom), m.n);
     }
@@ -1915,6 +1918,7 @@ function addSection(title = "", qtype = "") {
       <select class="sq" onchange="refreshSection(this.closest('.sec'))">${Object.entries(QT).map(([k, v]) => `<option value="${k}" ${k === qtype ? "selected" : ""}>${v}</option>`).join("")}</select>
       <select class="smode" onchange="setMode(this.closest('.sec'), this.value)"><option value="manual">Nhập tay từng ô</option><option value="pct">Theo tỷ lệ %</option></select>
       <label><input type="checkbox" class="ss" checked> Xáo câu & phương án</label>
+      <label title="Chỉ các câu của phần này được ghép vào file đề nghe (De_xxx_nghe.mp3)"><input type="checkbox" class="sl"> Phần nghe</label>
       <span style="flex:1"></span>
       <button class="d" onclick="this.closest('.sec').remove()">Xóa phần</button>
     </div>

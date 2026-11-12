@@ -53,8 +53,32 @@ MEDIA_EXT = {"png": "image", "jpg": "image", "jpeg": "image", "gif": "image", "w
 MEDIA_MAX = {"image": 5 * 1024 * 1024, "audio": 15 * 1024 * 1024}
 MEDIA_NAME = re.compile(r"[a-f0-9]{32}\.(png|jpe?g|gif|webp|mp3|wav|ogg|m4a)")
 BLOOM = {1: "Biết", 2: "Hiểu", 3: "Vận dụng", 4: "Phân tích", 5: "Đánh giá"}
-LETTERS = "ABCDEFGH"
+LETTERS = "ABCDEFGHIJKL"  # tối đa 12 phương án (nối tiêu đề); TN thường vẫn tối đa 8
 QTYPES = ("TN", "DS", "DT", "TL")  # trắc nghiệm, đúng/sai, điền từ, tự luận
+# Câu TN có thẻ "TFNG" là dạng Đúng / Sai / Không có thông tin (IELTS Reading), dùng phương án cố định
+TFNG_TAG = ",tfng,"
+TFNG_OPTIONS = ("正（真）", "誤（偽）", "情報なし（書かれていない）")
+# Câu TN có thẻ "noitieude" là nối tiêu đề (matching headings): nhiều đoạn dùng chung một danh sách tiêu đề,
+# danh sách in một lần trước nhóm câu và không xáo thứ tự phương án
+MATCH_TAG = "noitieude"
+MATCH_MAX_OPTIONS = 12
+
+
+def has_tag(it, name):
+    return name in [str(t).lower() for t in (it.get("tags") or [])]
+
+
+def is_match(it):
+    return it.get("qtype") == "TN" and has_tag(it, MATCH_TAG)
+
+
+# Ghi nhãn sơ đồ: câu DT có thẻ "ghinhan" kèm hình (ảnh có các vị trí đánh số); mỗi vị trí là một câu
+LABEL_TAG = "ghinhan"
+LABEL_HINT = "Nhìn hình và ghi tên đúng cho vị trí được đánh số."
+
+
+def is_label(it):
+    return it.get("qtype") == "DT" and has_tag(it, LABEL_TAG)
 DEFAULT_COURSE = "Chưa phân loại"
 PORT = int(os.environ.get("QBANK_PORT", "8765"))
 TEXTTS_URL = os.environ.get("TEXTTS_API_URL", "http://127.0.0.1:8000").rstrip("/")  # API của textts (python server.py)
@@ -133,6 +157,7 @@ def init_storage():
             content TEXT NOT NULL)""")
     ensure_column("courses", "code", "TEXT NOT NULL DEFAULT ''")
     ensure_column("questions", "passage_id", "INTEGER REFERENCES passages(id)")
+    ensure_column("questions", "word_limit", "INTEGER NOT NULL DEFAULT 0")  # điền từ: số từ tối đa (0 = không giới hạn)
     ensure_column("courses", "exam_meta", "TEXT NOT NULL DEFAULT '{}'")
     ensure_column("textbooks", "code", "TEXT NOT NULL DEFAULT ''")
     ensure_column("questions", "code", "TEXT")
@@ -279,6 +304,12 @@ def listening_segments(flat, repeat=1, answer_s=10, gap_ms=1500):
             segs += [speech(f"{n}番{{ばん}}。"), pause(800)] + play(q_audio) + [pause(answer_s * 1000)]
         i += 1
     return segs
+
+
+def listening_only(exam, flags):
+    """Các câu của phần được đánh dấu "Phần nghe", giữ nguyên số thứ tự toàn đề (n) như trong flatten(exam)."""
+    keep = {id(it) for (_, items), flag in zip(exam, flags) if flag for it in items}
+    return [x for x in flatten(exam) if id(x[2]) in keep]
 
 
 def listening_track(code, flat, opts):
@@ -553,11 +584,24 @@ def clean_question(data):
         raise ValueError("Mức Bloom phải từ 1 đến 5")
     if qtype not in QTYPES:
         raise ValueError("Loại câu phải là TN, DS, DT hoặc TL")
+    tags_norm = norm_tags(data.get("tags", ""))
+    try:
+        word_limit = int(data.get("word_limit") or 0)
+    except (TypeError, ValueError):
+        raise ValueError("Giới hạn số từ phải là số nguyên")
+    if qtype != "DT":
+        word_limit = 0  # chỉ điền từ mới có giới hạn số từ
+    if qtype == "TN" and TFNG_TAG in tags_norm.lower():
+        # Đúng / sai / không có thông tin (kiểu IELTS): 3 phương án cố định, đáp án là A, B hoặc C
+        options = list(TFNG_OPTIONS)
+        if answer not in LETTERS[:3]:
+            raise ValueError("Đúng/Sai/Không có thông tin: đáp án là A (正), B (誤) hoặc C (情報なし)")
     if qtype == "TN":
         if len(options) < 2:
             raise ValueError("Trắc nghiệm cần ít nhất 2 phương án")
-        if len(options) > 8:
-            raise ValueError("Trắc nghiệm tối đa 8 phương án")
+        limit = MATCH_MAX_OPTIONS if MATCH_TAG in tags_norm.lower() else 8
+        if len(options) > limit:
+            raise ValueError(f"Trắc nghiệm tối đa {limit} phương án")
         if answer not in LETTERS[:len(options)]:
             raise ValueError("Đáp án không hợp lệ")
     elif qtype == "DS":
@@ -567,6 +611,8 @@ def clean_question(data):
     elif qtype == "DT":
         if not answer:
             raise ValueError("Thiếu đáp án điền từ (nhiều đáp án chấp nhận cách nhau bằng |)")
+        if word_limit and not 1 <= word_limit <= 20:
+            raise ValueError("Giới hạn số từ điền từ phải từ 1 đến 20 (0 = không giới hạn)")
         options = []
     else:  # TL: giữ đáp án/gợi ý chấm nếu có
         options = []
@@ -607,11 +653,11 @@ def clean_question(data):
     return dict(chapter_id=chapter_id, bloom=bloom, qtype=qtype, content=content,
                 options=json.dumps(options, ensure_ascii=False), answer=answer, solution=solution,
                 passage=passage, points=points, clo=clo, tags=tags, media=json.dumps(media, ensure_ascii=False),
-                status=status, rubric=json.dumps(rubric, ensure_ascii=False))
+                status=status, rubric=json.dumps(rubric, ensure_ascii=False), word_limit=word_limit)
 
 
-INSERT_Q = """INSERT INTO questions(code,chapter_id,bloom,qtype,content,options,answer,solution,passage,passage_id,points,clo,tags,media,status,rubric)
-              VALUES(:code,:chapter_id,:bloom,:qtype,:content,:options,:answer,:solution,:passage,:passage_id,:points,:clo,:tags,:media,:status,:rubric)"""
+INSERT_Q = """INSERT INTO questions(code,chapter_id,bloom,qtype,content,options,answer,solution,passage,passage_id,points,clo,tags,media,status,rubric,word_limit)
+              VALUES(:code,:chapter_id,:bloom,:qtype,:content,:options,:answer,:solution,:passage,:passage_id,:points,:clo,:tags,:media,:status,:rubric,:word_limit)"""
 
 
 def row_to_api(r):
@@ -795,6 +841,7 @@ IMPORT_COLUMNS = {
     "loi_giai": ["lời giải", "loi giai"],
     "clo": ["clo", "chuẩn đầu ra", "chuan dau ra"],
     "tags": ["thẻ", "the", "tags"],
+    "so_tu": ["số từ", "so tu", "số từ tối đa", "so tu toi da", "giới hạn từ", "gioi han tu"],
     "status": ["trạng thái", "trang thai", "status"],
 }
 IMPORT_REQUIRED = ("ma", "noi_dung", "dap_an", "loai", "muc")
@@ -941,6 +988,7 @@ def parse_rows(tables, textbook_id, dry_run=False, docx=True):
                     "passage": get("doan_van"),
                     "clo": get("clo"),
                     "tags": get("tags"),
+                    "word_limit": get("so_tu"),  # điền từ: số từ tối đa, để trống = không giới hạn
                     "status": STATUS_IMPORT.get(get("status").strip().lower(), ""),
                 })
                 same, other, key = check_duplicate(index, payload)
@@ -1153,7 +1201,7 @@ def make_variant(base, shuffle, rng):
     if shuffle:
         rng.shuffle(units)
         counts = {}  # cân bằng đáp án trong cùng một mã đề
-        return [shuffle_question(it, rng, counts)[0] for g in units for it in g]
+        return [it if is_match(it) else shuffle_question(it, rng, counts)[0] for g in units for it in g]
     return [it for g in units for it in g]
 
 
@@ -1321,6 +1369,16 @@ def emit_options(doc, marker, options, mode="ruby"):
     marker._p.addprevious(tbl._tbl)
 
 
+def emit_heading_list(doc, marker, options, mode="ruby"):
+    """Danh sách tiêu đề dùng chung cho một nhóm nối tiêu đề, in một lần trước câu đầu của nhóm."""
+    head = marker.insert_paragraph_before("")
+    head.add_run("Danh sách tiêu đề (chọn một tiêu đề cho mỗi đoạn):").bold = True
+    for i, opt in enumerate(options):
+        line = marker.insert_paragraph_before("")
+        line.add_run(f"    {LETTERS[i]}. ")
+        add_rich(line, opt, mode=mode)
+
+
 def emit_question(doc, marker, n, it, mode="ruby"):
     """Nội dung câu: mỗi dòng trong nội dung xuống hàng. Nếu có từ hai dòng trở lên, dòng đầu là
     câu dẫn nhập và in đậm; các dòng sau (câu hỏi, lời đáp đối thoại) in thường."""
@@ -1334,7 +1392,9 @@ def emit_question(doc, marker, n, it, mode="ruby"):
         add_rich(p, ln, bold=(bold_lead and i == 0), mode=mode)
     if it.get("points") is not None:
         p.add_run(f" ({fmt_points(it['points'])} điểm)").italic = True
-    if it["qtype"] == "TN":
+    if is_match(it):
+        marker.insert_paragraph_before("    Đáp án (chữ cái tiêu đề): ……")
+    elif it["qtype"] == "TN":
         emit_options(doc, marker, it["options"], mode)
     elif it["qtype"] == "DS":
         for k, opt in enumerate(it["options"]):
@@ -1342,7 +1402,10 @@ def emit_question(doc, marker, n, it, mode="ruby"):
             line.add_run(f"    {'abcdefgh'[k]}) ")
             add_rich(line, opt, mode=mode)
     elif it["qtype"] == "DT":
-        marker.insert_paragraph_before("    Đáp án: ……………………………")
+        limit = f" (không quá {it['word_limit']} từ)" if it.get("word_limit") else ""
+        if is_label(it):
+            marker.insert_paragraph_before(f"    {LABEL_HINT}")
+        marker.insert_paragraph_before(f"    Đáp án{limit}: ……………………………")
     emit_media(doc, marker, it.get("media"))
 
 
@@ -1392,7 +1455,7 @@ def render_docx(template_path, meta, exam, code, answer_key, mode="ruby"):
     marker = next((p for p in _every_paragraph(doc) if "{{CAU_HOI}}" in p.text), None)
     if marker is None:
         marker = doc.add_paragraph()
-    last_title, last_passage = None, None
+    last_title, last_passage, last_match = None, None, None
     for n, title, it in flat:
         if title and title != last_title:  # tiêu đề phần: "I. ...", in một lần trước câu đầu của phần
             head = marker.insert_paragraph_before(title)
@@ -1402,6 +1465,13 @@ def render_docx(template_path, meta, exam, code, answer_key, mode="ruby"):
             emit_passage(doc, marker, it["passage"], mode)
             emit_media(doc, marker, it.get("passage_media"))
         last_passage = it.get("passage") or None
+        if is_match(it):
+            key = (it.get("passage_id"), tuple(it["options"]))
+            if key != last_match:
+                emit_heading_list(doc, marker, it["options"], mode)
+                last_match = key
+        else:
+            last_match = None
         emit_question(doc, marker, n, it, mode)
     _set_text(marker, "")
 
@@ -2475,7 +2545,7 @@ class Handler(BaseHTTPRequestHandler):
             conn.execute("PRAGMA foreign_keys = ON")
             cur = conn.execute("""UPDATE questions SET chapter_id=:chapter_id, bloom=:bloom, qtype=:qtype, content=:content,
                  options=:options, answer=:answer, solution=:solution, passage=:passage, passage_id=:passage_id, rubric=:rubric,
-                 points=:points, clo=:clo, tags=:tags, media=:media, status=:status WHERE id=:id""", payload)
+                 points=:points, clo=:clo, tags=:tags, media=:media, status=:status, word_limit=:word_limit WHERE id=:id""", payload)
             conn.commit()
             updated = cur.rowcount
         if not updated:
@@ -2549,7 +2619,7 @@ class Handler(BaseHTTPRequestHandler):
         rng = random.Random(seed)
         taken = set()
         picked = body.get("picked")  # câu đã xem trước và đổi tay, aligned theo sections
-        parts = []  # (tiêu đề, danh sách câu gốc, có xáo)
+        parts = []  # (tiêu đề, danh sách câu gốc, có xáo, là phần nghe)
         for idx, s in enumerate(sections):
             if not section_has_content(s):
                 continue  # phần không có số câu thì bỏ qua
@@ -2562,14 +2632,17 @@ class Handler(BaseHTTPRequestHandler):
                     if len(ids) != want:
                         raise ValueError("Bản xem trước không khớp số câu; hãy xem trước lại")
             base = build_section(s, usage, taken, ids or None, rng, counts)
-            parts.append((str(s.get("title", "")).strip(), base, bool(s.get("shuffle", True))))
+            parts.append((str(s.get("title", "")).strip(), base, bool(s.get("shuffle", True)),
+                          bool(s.get("listening"))))
         if clo_mode:  # đáp án theo CĐR: mọi câu trong đề phải có CLO
-            missing = [it["code"] for _, base, _ in parts for it in base if not it.get("clo")]
+            missing = [it["code"] for _, base, _, _ in parts for it in base if not it.get("clo")]
             if missing:
                 raise ValueError("Đáp án theo CĐR: còn câu chưa gắn CLO: " + ", ".join(missing[:15]))
         if not parts:
             raise ValueError("Chưa có phần nào có số câu")
-        reused = sum(1 for _, base, _ in parts for it in base if it.get("last_used"))
+        if listening and not any(flag for *_, flag in parts):
+            raise ValueError("Chưa đánh dấu phần nào là phần nghe (ô \"Phần nghe\" ở bước Số câu và đoạn)")
+        reused = sum(1 for _, base, *_ in parts for it in base if it.get("last_used"))
         meta = body.get("meta", {})
         so_tc = str(meta.get("so_tc", "")).strip()
         st = str(meta.get("so_trang", "")).strip()
@@ -2591,12 +2664,14 @@ class Handler(BaseHTTPRequestHandler):
             for i in range(variants):
                 code = f"{prefix}{start + i:03d}"
                 codes.append(code)
-                exam = [(t, make_variant(b, sh, rng)) for t, b, sh in parts]
+                exam = [(t, make_variant(b, sh, rng)) for t, b, sh, _ in parts]
+                # file nghe chỉ ghép các câu của phần được đánh dấu "Phần nghe", giữ nguyên số thứ tự trong đề
+                lis_flags = [flag for *_, flag in parts]
                 data = render_docx(tpl_path, body.get("meta", {}), exam, code,
                                    answer_key and not key_separate, furigana)
                 z.writestr(f"De_{code}.docx", data)
                 if listening:  # file đề nghe ghép sẵn theo thứ tự câu của mã đề này
-                    track = listening_track(code, flatten(exam), listening)
+                    track = listening_track(code, listening_only(exam, lis_flags), listening)
                     if track:
                         z.writestr(f"Am_thanh/De_{code}_nghe.mp3", track)
                         listening_made += 1
@@ -2621,7 +2696,7 @@ class Handler(BaseHTTPRequestHandler):
               (now, exam_name, ", ".join(codes),
                json.dumps({"meta": body.get("meta", {}), "variants": variants, "start": start,
                            "prefix": prefix, "template": tpl, "seed": seed,
-                           "picked_ids": [[it["id"] for it in base] for _, base, _ in parts]}, ensure_ascii=False), data))
+                           "picked_ids": [[it["id"] for it in base] for _, base, *_ in parts]}, ensure_ascii=False), data))
 
         fname = export_filename(meta.get("ma_hp"), codes_all, now)
         self._send(200, data, "application/zip",
@@ -2813,7 +2888,7 @@ def print_html(body):
     meta = body.get("meta", {})
     code = f"{body.get('prefix', '')}{int(body.get('start', 1) or 1):03d}"
     sec_html = []
-    last_title, last_passage = None, None
+    last_title, last_passage, last_match = None, None, None
     for n, title, it in flat:
         if title and title != last_title:
             sec_html.append(f"<h2>{hesc(title)}</h2>")
@@ -2825,14 +2900,22 @@ def print_html(body):
         last_passage = it.get("passage") or None
         lines = [f"<div class='q'><b>Câu {n}.</b> {rich_html(it['content'])}{pts}"]
         lines += _print_media(it.get("media"))
-        if it["qtype"] == "TN":
+        if is_match(it):  # danh sách tiêu đề in một lần trước nhóm câu (xem bản xuất đề)
+            key = (it.get("passage_id"), tuple(it["options"]))
+            if key != last_match:
+                sec_html.append("<div class='q'><b>Danh sách tiêu đề:</b> " + " ".join(
+                    f"{LETTERS[k]}. {rich_html(o)}" for k, o in enumerate(it["options"])) + "</div>")
+                last_match = key
+            lines.append("<div class='fill'>Đáp án (chữ cái tiêu đề): ……</div>")
+        elif it["qtype"] == "TN":
             lines.append("<div class='opts'>" + "".join(
                 f"<span>{LETTERS[k]}. {rich_html(o)}</span>" for k, o in enumerate(it["options"])) + "</div>")
         elif it["qtype"] == "DS":
             lines.append("<div class='opts ds'>" + "".join(
                 f"<span>{'abcdefgh'[k]}) {rich_html(o)}</span>" for k, o in enumerate(it["options"])) + "</div>")
         elif it["qtype"] == "DT":
-            lines.append("<div class='fill'>Đáp án: ……………………………</div>")
+            limit = f" (không quá {it['word_limit']} từ)" if it.get("word_limit") else ""
+            lines.append(f"<div class='fill'>Đáp án{limit}: ……………………………</div>")
         else:
             lines.append("<div class='essay'>&nbsp;</div>")
         sec_html.append("".join(lines) + "</div>")

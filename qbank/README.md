@@ -241,6 +241,34 @@ Câu hỏi dạng nghe có thể tạo âm thanh ngay trong form sửa câu, kh�
 textts chạy ở địa chỉ khác thì đặt biến môi trường `TEXTTS_API_URL` (mặc định `http://127.0.0.1:8000`).
 
 ## Xuất đề nghe trọn bộ theo mã đề
+Ở bước **Số câu và đoạn**, tick ô **Phần nghe** ở phần thi nghe (có thể nhiều phần). Ở bước tùy chọn xuất đề, tick **Tạo file đề nghe** (cần bật textts bản có `/api/v1/assemble`). Chỉ các câu của phần được đánh dấu mới được ghép; đề chính (`De_xxx.docx`) giữ nguyên mọi phần. Mỗi mã đề có thêm `Am_thanh/De_xxx_nghe.mp3`, ghép đúng thứ tự câu trong mã đề đó (số câu theo đề chính):
+- Câu thuộc đoạn văn có file nghe: đọc "n番からm番", phát file của đoạn, rồi đến file riêng của từng câu (nếu có), sau đó chừa thời gian làm bài cho cả nhóm.
+- Câu lẻ có file nghe: đọc "n番", phát file, chừa thời gian làm bài.
+- Câu không có file nghe thì bỏ qua. Nếu bật file đề nghe mà chưa đánh dấu phần nghe nào thì báo lỗi, không xuất. Chọn được số lần phát (1 hoặc 2), số giây làm mỗi câu và giọng đọc số câu.
+
+## Dạng Đúng / Sai / Không có thông tin (TFNG)
+- Câu **TN** có thẻ `TFNG` (không phân biệt hoa thường) dùng 3 phương án cố định: `正（真）`, `誤（偽）`, `情報なし（書かれていない）`. Phương án nhập tay bị thay bằng 3 phương án này.
+- Đáp án chỉ nhận A, B hoặc C (A = 正, B = 誤, C = 情報なし).
+- Lọc theo thẻ `tfng` ở tab Ngân hàng để gom các câu dạng này.
+- Chưa có: nút chọn mẫu trong form sửa câu, và tiêu đề riêng cho dạng này khi xuất đề (các bước sau của kế hoạch IELTS).
+
+## Nối tiêu đề (matching headings)
+- Câu **TN** có thẻ `noitieude`. Mỗi đoạn là một câu; phương án là danh sách tiêu đề (2–12 tiêu đề, tiêu đề thừa được phép). Đáp án là chữ cái của tiêu đề đúng (A–L).
+- Các câu cùng đoạn (cùng đoạn văn và cùng danh sách tiêu đề) được in thành một nhóm: danh sách tiêu đề in **một lần** trước câu đầu, mỗi câu chỉ có dòng "Đáp án (chữ cái tiêu đề)".
+- Khi xáo đề, các câu nối tiêu đề **không xáo phương án**, để danh sách và đáp án luôn khớp.
+- Chưa có: nút chọn mẫu trong form sửa câu, và kiểm tra các câu trong cùng nhóm có cùng danh sách tiêu đề.
+
+## Điền từ có giới hạn số từ
+- Câu **DT** có trường **Số từ tối đa** (1–20; 0 = không giới hạn) trong form sửa câu. Lưu ở cột `word_limit` (tự thêm khi khởi động, không mất dữ liệu cũ).
+- Khi xuất đề, dòng đáp án ghi "Đáp án (không quá N từ): ……". Trường này không ảnh hưởng cách chấm.
+- Chỉ DT có giới hạn; các dạng khác luôn lưu 0.
+
+## Ghi nhãn sơ đồ
+- Câu **DT** có thẻ `ghinhan` và kèm **hình** (mục Đa phương tiện của câu). Hình có các vị trí đánh số (1, 2, 3…); mỗi vị trí là một câu, đáp án là tên điền vào.
+- Khi xuất đề, câu có thẻ in thêm dòng hướng dẫn "Nhìn hình và ghi tên đúng cho vị trí được đánh số."
+- Hình phải có trong thư mục media, nếu không sẽ bị bỏ qua khi xuất (hành vi có sẵn).
+- Chưa có: vẽ số lên hình trong qbank (cần chuẩn bị hình sẵn), và dạng nối tên với danh sách lựa chọn.
+
 Ở bước tùy chọn xuất đề, tick **Tạo file đề nghe** (cần bật textts bản có `/api/v1/assemble`). Mỗi mã đề có thêm `Am_thanh/De_xxx_nghe.mp3`, ghép đúng thứ tự câu trong mã đề đó:
 - Câu thuộc đoạn văn có file nghe: đọc "n番からm番", phát file của đoạn, rồi đến file riêng của từng câu (nếu có), sau đó chừa thời gian làm bài cho cả nhóm.
 - Câu lẻ có file nghe: đọc "n番", phát file, chừa thời gian làm bài.
