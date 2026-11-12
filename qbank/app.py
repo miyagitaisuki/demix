@@ -55,6 +55,9 @@ MEDIA_NAME = re.compile(r"[a-f0-9]{32}\.(png|jpe?g|gif|webp|mp3|wav|ogg|m4a)")
 BLOOM = {1: "Biết", 2: "Hiểu", 3: "Vận dụng", 4: "Phân tích", 5: "Đánh giá"}
 LETTERS = "ABCDEFGH"
 QTYPES = ("TN", "DS", "DT", "TL")  # trắc nghiệm, đúng/sai, điền từ, tự luận
+# Câu TN có thẻ "TFNG" là dạng Đúng / Sai / Không có thông tin (IELTS Reading), dùng phương án cố định
+TFNG_TAG = ",tfng,"
+TFNG_OPTIONS = ("正（真）", "誤（偽）", "情報なし（書かれていない）")
 DEFAULT_COURSE = "Chưa phân loại"
 PORT = int(os.environ.get("QBANK_PORT", "8765"))
 TEXTTS_URL = os.environ.get("TEXTTS_API_URL", "http://127.0.0.1:8000").rstrip("/")  # API của textts (python server.py)
@@ -559,6 +562,12 @@ def clean_question(data):
         raise ValueError("Mức Bloom phải từ 1 đến 5")
     if qtype not in QTYPES:
         raise ValueError("Loại câu phải là TN, DS, DT hoặc TL")
+    tags_norm = norm_tags(data.get("tags", ""))
+    if qtype == "TN" and TFNG_TAG in tags_norm.lower():
+        # Đúng / sai / không có thông tin (kiểu IELTS): 3 phương án cố định, đáp án là A, B hoặc C
+        options = list(TFNG_OPTIONS)
+        if answer not in LETTERS[:3]:
+            raise ValueError("Đúng/Sai/Không có thông tin: đáp án là A (正), B (誤) hoặc C (情報なし)")
     if qtype == "TN":
         if len(options) < 2:
             raise ValueError("Trắc nghiệm cần ít nhất 2 phương án")

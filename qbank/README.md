@@ -245,3 +245,10 @@ textts chạy ở địa chỉ khác thì đặt biến môi trường `TEXTTS_A
 - Câu thuộc đoạn văn có file nghe: đọc "n番からm番", phát file của đoạn, rồi đến file riêng của từng câu (nếu có), sau đó chừa thời gian làm bài cho cả nhóm.
 - Câu lẻ có file nghe: đọc "n番", phát file, chừa thời gian làm bài.
 - Câu không có file nghe thì bỏ qua. Nếu bật file đề nghe mà chưa đánh dấu phần nghe nào thì báo lỗi, không xuất. Chọn được số lần phát (1 hoặc 2), số giây làm mỗi câu và giọng đọc số câu.
+
+## Dạng Đúng / Sai / Không có thông tin (TFNG)
+- Câu **TN** có thẻ `TFNG` (không phân biệt hoa thường) dùng 3 phương án cố định: `正（真）`, `誤（偽）`, `情報なし（書かれていない）`. Phương án nhập tay bị thay bằng 3 phương án này.
+- Đáp án chỉ nhận A, B hoặc C (A = 正, B = 誤, C = 情報なし).
+- Lọc theo thẻ `tfng` ở tab Ngân hàng để gom các câu dạng này.
+- Chưa có: nút chọn mẫu trong form sửa câu, và tiêu đề riêng cho dạng này khi xuất đề (các bước sau của kế hoạch IELTS).
+
