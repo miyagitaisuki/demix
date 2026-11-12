@@ -45,3 +45,17 @@ def test_export_shows_limit(tmp_path):
     path.write_bytes(data)
     text = "\n".join(p.text for p in Document(str(path)).paragraphs)
     assert "Đáp án (không quá 2 từ):" in text
+
+
+def test_label_item_has_hint(tmp_path):
+    tpl = os.path.join(os.path.dirname(app.__file__), "templates", "de_thi_chuan.docx")
+    item = {"id": 2, "code": "L01", "qtype": "DT", "content": "図の 3 の部分は何ですか。", "options": [],
+            "answer": "玄関", "passage": "", "passage_id": None, "passage_media": [],
+            "media": [{"kind": "image", "file": "missing.png", "name": "so_do.png"}],
+            "tags": ["ghinhan"], "points": None, "word_limit": 0}
+    data = app.render_docx(tpl, {}, [("Phần IV. Ghi nhãn", [item])], "T003", False)
+    path = tmp_path / "de.docx"
+    path.write_bytes(data)
+    text = "\n".join(p.text for p in Document(str(path)).paragraphs)
+    assert app.LABEL_HINT in text
+    assert "so_do.png" not in text  # hình không có file trong thư mục media thì bỏ qua, không làm hỏng việc xuất

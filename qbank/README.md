@@ -263,3 +263,9 @@ textts chạy ở địa chỉ khác thì đặt biến môi trường `TEXTTS_A
 - Khi xuất đề, dòng đáp án ghi "Đáp án (không quá N từ): ……". Trường này không ảnh hưởng cách chấm.
 - Chỉ DT có giới hạn; các dạng khác luôn lưu 0.
 
+## Ghi nhãn sơ đồ
+- Câu **DT** có thẻ `ghinhan` và kèm **hình** (mục Đa phương tiện của câu). Hình có các vị trí đánh số (1, 2, 3…); mỗi vị trí là một câu, đáp án là tên điền vào.
+- Khi xuất đề, câu có thẻ in thêm dòng hướng dẫn "Nhìn hình và ghi tên đúng cho vị trí được đánh số."
+- Hình phải có trong thư mục media, nếu không sẽ bị bỏ qua khi xuất (hành vi có sẵn).
+- Chưa có: vẽ số lên hình trong qbank (cần chuẩn bị hình sẵn), và dạng nối tên với danh sách lựa chọn.
+

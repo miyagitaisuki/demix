@@ -70,6 +70,15 @@ def has_tag(it, name):
 
 def is_match(it):
     return it.get("qtype") == "TN" and has_tag(it, MATCH_TAG)
+
+
+# Ghi nhãn sơ đồ: câu DT có thẻ "ghinhan" kèm hình (ảnh có các vị trí đánh số); mỗi vị trí là một câu
+LABEL_TAG = "ghinhan"
+LABEL_HINT = "Nhìn hình và ghi tên đúng cho vị trí được đánh số."
+
+
+def is_label(it):
+    return it.get("qtype") == "DT" and has_tag(it, LABEL_TAG)
 DEFAULT_COURSE = "Chưa phân loại"
 PORT = int(os.environ.get("QBANK_PORT", "8765"))
 TEXTTS_URL = os.environ.get("TEXTTS_API_URL", "http://127.0.0.1:8000").rstrip("/")  # API của textts (python server.py)
@@ -1392,6 +1401,8 @@ def emit_question(doc, marker, n, it, mode="ruby"):
             add_rich(line, opt, mode=mode)
     elif it["qtype"] == "DT":
         limit = f" (không quá {it['word_limit']} từ)" if it.get("word_limit") else ""
+        if is_label(it):
+            marker.insert_paragraph_before(f"    {LABEL_HINT}")
         marker.insert_paragraph_before(f"    Đáp án{limit}: ……………………………")
     emit_media(doc, marker, it.get("media"))
 
