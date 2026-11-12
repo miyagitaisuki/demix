@@ -1684,27 +1684,42 @@ def make_import_template():
     d.add_paragraph("MẪU NHẬP CÂU HỎI (lưu thành .docx, mỗi bảng là một nhóm câu, dòng 1 là tiêu đề cột)")
     d.add_paragraph("Cột: Mã chương (bắt buộc, phải có trong giáo trình đã chọn) | Nội dung (bắt buộc) | "
                     "Đáp án (bắt buộc) | Loại: TN, DS, DT, TL | Mức: 1–5 | Đoạn văn (tùy chọn, các câu cùng đoạn ghi giống hệt) | "
-                    "Lời giải (tùy chọn) | CLO (tùy chọn, một CLO cho mỗi câu, ví dụ CLO1). Thứ tự cột tùy ý. Furigana viết dạng {試験|しけん}. "
+                    "Lời giải (tùy chọn) | CLO (tùy chọn, một CLO cho mỗi câu, ví dụ CLO1) | "
+                    "Thẻ (tùy chọn, nhiều thẻ cách nhau bằng dấu phẩy: tfng, noitieude, ghinhan) | "
+                    "Số từ (tùy chọn, chỉ cho DT: số từ tối đa 1–20, để trống = không giới hạn). Thứ tự cột tùy ý. "
+                    "Furigana viết dạng {試験|しけん}. "
                     "TN: mỗi phương án một dòng bắt đầu bằng A. B. C. D.; # đầu phương án = cố định vị trí. "
-                    "DS: mỗi ý một dòng bắt đầu a) b) c); đáp án Đ S Đ S. DT: nhiều đáp án cách nhau bằng |.")
+                    "DS: mỗi ý một dòng bắt đầu a) b) c); đáp án Đ S Đ S. DT: nhiều đáp án cách nhau bằng |. "
+                    "TFNG (thẻ tfng): không ghi phương án; Đáp án A = Đúng, B = Sai, C = Không có thông tin. "
+                    "Nối tiêu đề (thẻ noitieude): các câu cùng nhóm ghi cùng Đoạn văn và cùng danh sách tiêu đề A. B. C… "
+                    "(tối đa 12); Đáp án là chữ cái tiêu đề. "
+                    "Ghi nhãn sơ đồ (thẻ ghinhan, loại DT): Đáp án là tên cần ghi cho vị trí đánh số; "
+                    "hình ảnh được thêm trong app sau khi nhập.")
     d.add_paragraph("Hướng dẫn cho AI khi soạn câu hỏi: mỗi câu là một dòng trong bảng; không ghi đáp án hay "
                     "lời giải vào cột Nội dung; giữ đúng tên tiêu đề cột như trên; Mã chương phải lấy từ danh sách "
                     "chương của giáo trình đích; Loại chỉ ghi TN, DS, DT hoặc TL; Mức chỉ ghi số 1 đến 5; "
                     "TN ít nhất 2 phương án và Đáp án là một chữ cái (A, B, C…); DS là các ý a) b) c) và Đáp án "
-                    "gồm Đ/S đủ số ý; DT ghi Đáp án là từ cần điền; TL để trống Đáp án; "
+                    "gồm Đ/S đủ số ý; DT ghi Đáp án là từ cần điền, Số từ chỉ khi giới hạn số từ; TL để trống Đáp án; "
                     "Đoạn văn chỉ điền khi câu thuộc một đoạn, và các câu cùng đoạn phải ghi giống hệt nhau; "
-                    "CLO: ghi một CLO cho mỗi câu, ví dụ CLO1; câu đối đáp hoặc tự luận viết hội thoại ghi CLO3; để trống nếu chưa rõ. "
-                    "không thêm cột, không gộp ô, không để dòng trống giữa các câu.")
-    t = d.add_table(rows=1, cols=8)
+                    "CLO: ghi một CLO cho mỗi câu, ví dụ CLO1; câu đối đáp hoặc tự luận viết hội thoại ghi CLO3; để trống nếu chưa rõ; "
+                    "Thẻ: chỉ dùng tfng, noitieude, ghinhan khi đúng dạng câu, để trống với câu thường; "
+                    "TFNG và nối tiêu đề chỉ dùng cho Loại TN; ghinhan chỉ dùng cho Loại DT. "
+                    "không thêm cột ngoài danh sách trên, không gộp ô, không để dòng trống giữa các câu.")
+    headers = ["Mã chương", "Nội dung", "Đáp án", "Loại", "Mức", "Đoạn văn", "Lời giải", "CLO", "Thẻ", "Số từ"]
+    t = d.add_table(rows=1, cols=len(headers))
     t.style = "Table Grid"
-    for c, h in zip(t.rows[0].cells, ["Mã chương", "Nội dung", "Đáp án", "Loại", "Mức", "Đoạn văn", "Lời giải", "CLO"]):
+    for c, h in zip(t.rows[0].cells, headers):
         c.text = h
     examples = [
-        ("B01", "{試験|しけん}の{結果|けっか}が悪かった。\nA. おけばよかった\nB. おくべきだ", "A", "TN", "1", "", "", "CLO1"),
-        ("B01", "「インターンシップを通して」と同じ意味はどれですか。\nA. 間に\nB. おかげで", "B", "TN", "2", "私は先月、インターンシップに参加しました。", "", "CLO1"),
-        ("B01", "Câu đúng/sai:\na) 私は学生です。\nb) 本を読むです。", "ĐS", "DS", "2", "", "", "CLO1"),
-        ("B02", "学校の___", "がっこう", "DT", "1", "", "", "CLO1"),
-        ("B02", "A: どこへ行きますか。\nB: 駅へ行きます。\n\nこの会話の続きを書いてください。", "", "TL", "3", "", "会話の内容と文法の正確さ", "CLO3"),
+        ("B01", "{試験|しけん}の{結果|けっか}が悪かった。\nA. おけばよかった\nB. おくべきだ", "A", "TN", "1", "", "", "CLO1", "", ""),
+        ("B01", "「インターンシップを通して」と同じ意味はどれですか。\nA. 間に\nB. おかげで", "B", "TN", "2", "私は先月、インターンシップに参加しました。", "", "CLO1", "", ""),
+        ("B01", "Câu đúng/sai:\na) 私は学生です。\nb) 本を読むです。", "ĐS", "DS", "2", "", "", "CLO1", "", ""),
+        ("B01", "Thư viện được xây dựng năm 1990.", "A", "TN", "2", "Thư viện trường được xây dựng năm 1990 và mở rộng năm 2015.", "", "CLO2", "tfng", ""),
+        ("B01", "Đoạn 1\nA. Lợi ích của thư viện\nB. Lịch sử xây dựng\nC. Cách mượn sách", "A", "TN", "2", "Đoạn 1: Nhiều sinh viên chọn học ở thư viện vì yên tĩnh.\nĐoạn 2: Thư viện có nhiều sách mới.", "", "CLO2", "noitieude", ""),
+        ("B02", "Vị trí 1 trên sơ đồ tim", "động mạch chủ", "DT", "1", "", "", "CLO1", "ghinhan", ""),
+        ("B02", "学校の___", "がっこう", "DT", "1", "", "", "CLO1", "", ""),
+        ("B02", "Thư viện có ___ tầng.", "ba|3", "DT", "1", "", "", "CLO1", "", "2"),
+        ("B02", "A: どこへ行きますか。\nB: 駅へ行きます。\n\nこの会話の続きを書いてください。", "", "TL", "3", "", "会話の内容と文法の正確さ", "CLO3", "", ""),
     ]
     for ex in examples:
         cells = t.add_row().cells
