@@ -1,0 +1,51 @@
+name: Release QBank
+
+# Phát hành: push tag qbank-v<version> (ví dụ qbank-v1.0.1) sau khi đã sửa qbank/VERSION cùng số đó.
+on:
+  push:
+    tags:
+      - "qbank-v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Cài thư viện
+        run: python -m pip install --upgrade pip pyinstaller pytest python-docx pykakasi openpyxl
+
+      - name: Kiểm thử
+        working-directory: qbank
+        run: python -m pytest tests -q
+
+      - name: Kiểm tra VERSION khớp tag
+        shell: bash
+        run: |
+          tag="${GITHUB_REF_NAME#qbank-v}"
+          ver="$(tr -d '[:space:]' < qbank/VERSION)"
+          if [ "$tag" != "$ver" ]; then
+            echo "Tag $GITHUB_REF_NAME không khớp qbank/VERSION ($ver). Hãy sửa VERSION rồi tạo tag lại."
+            exit 1
+          fi
+
+      - name: Đóng gói QBank.exe
+        working-directory: qbank
+        run: python tools/build_exe.py
+
+      - name: Tạo GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" qbank/dist/QBank.exe \
+            --title "QBank ${GITHUB_REF_NAME#qbank-v}" \
+            --generate-notes \
+            --verify-tag
