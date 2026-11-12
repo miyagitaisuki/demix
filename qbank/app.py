@@ -232,6 +232,78 @@ def textts_audio(script, engine="voicevox", level=None):
             "tts": norm_tts({"script": raw_script, "engine": engine, "level": level})}
 
 
+def _audio_of(media):
+    return [m for m in media or [] if m["kind"] == "audio" and os.path.isfile(os.path.join(MEDIA_DIR, m["file"]))]
+
+
+def listening_segments(flat, repeat=1, answer_s=10, gap_ms=1500):
+    """Kịch bản ghép đề nghe của một mã đề, theo đúng thứ tự câu trong đề:
+    đọc số câu (n番), phát file của đoạn văn và của câu (lặp `repeat` lần), chừa thời gian làm bài.
+    Câu không có file nghe (và đoạn của nó cũng không có) thì bỏ qua. Trả về [] nếu đề không có file nghe nào."""
+    def speech(text):
+        return {"type": "speech", "text": text}
+
+    def pause(ms):
+        return {"type": "pause", "ms": int(ms)}
+
+    def play(files):
+        out = []
+        for r in range(repeat):
+            for m in files:
+                with open(os.path.join(MEDIA_DIR, m["file"]), "rb") as f:
+                    out.append({"type": "audio", "format": m["file"].rsplit(".", 1)[1],
+                                "audio_b64": base64.b64encode(f.read()).decode()})
+                out.append(pause(gap_ms))
+        return out
+
+    segs, i = [], 0
+    while i < len(flat):
+        n, _, it = flat[i]
+        p_audio = _audio_of(it.get("passage_media")) if it.get("passage") else []
+        if p_audio:  # nhóm câu liền nhau cùng đoạn văn: phát đoạn một lần rồi đến từng câu
+            group = [flat[i]]
+            while i + len(group) < len(flat) and flat[i + len(group)][2].get("passage") == it["passage"]:
+                group.append(flat[i + len(group)])
+            last = group[-1][0]
+            segs += [speech(f"{n}番{{ばん}}から{last}番{{ばん}}。" if last > n else f"{n}番{{ばん}}。"), pause(gap_ms)]
+            segs += play(p_audio)
+            for k, _, g in group:
+                q_audio = _audio_of(g.get("media"))
+                if q_audio:
+                    segs += [speech(f"{k}番{{ばん}}。"), pause(800)] + play(q_audio)
+            segs.append(pause(answer_s * 1000 * len(group)))
+            i += len(group)
+            continue
+        q_audio = _audio_of(it.get("media"))
+        if q_audio:
+            segs += [speech(f"{n}番{{ばん}}。"), pause(800)] + play(q_audio) + [pause(answer_s * 1000)]
+        i += 1
+    return segs
+
+
+def listening_track(code, flat, opts):
+    """Nhờ textts ghép đề nghe của một mã đề; trả về bytes mp3, hoặc None nếu đề không có file nghe."""
+    repeat = 2 if str(opts.get("repeat", 1)) == "2" else 1
+    try:
+        answer_s = max(0, min(120, int(opts.get("answer_s", 10))))
+    except (TypeError, ValueError):
+        raise ValueError("Thời gian làm mỗi câu nghe phải là số giây")
+    segs = listening_segments(flat, repeat, answer_s)
+    if not segs:
+        return None
+    engine = opts.get("engine") if opts.get("engine") in TEXTTS_ENGINES else "voicevox"
+    stem = f"qbank_de_{re.sub(r'[^\w-]', '_', code)}_{os.urandom(3).hex()}"
+    res = textts_call("/api/v1/assemble", {"filename": stem, "engine": engine, "segments": segs, "format": "mp3"},
+                      timeout=1800)
+    url = (res.get("files") or {}).get("audio_url") if isinstance(res, dict) else None
+    if not url:
+        raise ValueError("textts không trả về file đề nghe")
+    data = textts_call(url, timeout=300)
+    if not isinstance(data, bytes) or not data:
+        raise ValueError("Không tải được file đề nghe từ textts")
+    return data
+
+
 def migrate_passages():
     """Đoạn văn cũ (chữ giống hệt trong cùng chương) thành đối tượng riêng có mã. Chạy lại an toàn."""
     for r in q("SELECT DISTINCT chapter_id, passage FROM questions WHERE passage <> '' AND passage_id IS NULL", fetch=True):
@@ -2463,6 +2535,8 @@ class Handler(BaseHTTPRequestHandler):
                                              "matrix": body.get("matrix", [])}]
         fg = str(body.get("furigana", "ruby"))
         furigana = ("paren" if fg.startswith("paren") else "ruby") + ("+auto" if fg.endswith("_auto") else "")
+        listening = body.get("listening") if isinstance(body.get("listening"), dict) else None
+        listening_made = 0
         if furigana.endswith("+auto") and _get_kakasi() is None:
             raise ValueError("Chưa cài pykakasi nên không tự thêm furigana được (pip install pykakasi)")
         key_name = os.path.basename(body.get("key_template") or "phieu_dap_an.docx")
@@ -2521,6 +2595,11 @@ class Handler(BaseHTTPRequestHandler):
                 data = render_docx(tpl_path, body.get("meta", {}), exam, code,
                                    answer_key and not key_separate, furigana)
                 z.writestr(f"De_{code}.docx", data)
+                if listening:  # file đề nghe ghép sẵn theo thứ tự câu của mã đề này
+                    track = listening_track(code, flatten(exam), listening)
+                    if track:
+                        z.writestr(f"Am_thanh/De_{code}_nghe.mp3", track)
+                        listening_made += 1
                 for _, _, it in flatten(exam):  # âm thanh của câu trong đề được đưa vào thư mục Am_thanh
                     for m in (it.get("media") or []) + (it.get("passage_media") or []):
                         path = os.path.join(MEDIA_DIR, m["file"])
@@ -2547,6 +2626,7 @@ class Handler(BaseHTTPRequestHandler):
         fname = export_filename(meta.get("ma_hp"), codes_all, now)
         self._send(200, data, "application/zip",
                    {"X-Reused": str(reused), "X-Variants": str(variants), "X-Seed": str(seed),
+                    "X-Listening": str(listening_made) if listening else "",
                     "Content-Disposition": attachment_header(fname)})
 
 
