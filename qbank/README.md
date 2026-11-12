@@ -35,10 +35,13 @@ Ribbon tab Ngân hàng, nhóm "Reset ra đề": reset câu đang tick, chương 
 ## Định dạng file nhập (chuẩn)
 Tải mẫu bằng nút **Tải mẫu nhập** (ribbon tab Ngân hàng, nhóm "Nhập / Xuất"). File là .docx, mỗi bảng là một nhóm câu:
 - **Dòng 1 là tiêu đề cột**, thứ tự cột tùy ý. Cột bắt buộc: `Mã chương`, `Nội dung`, `Đáp án`, `Loại`, `Mức`.
-- Cột tùy chọn: `Đoạn văn` (các câu cùng đoạn ghi **giống hệt** nhau; app in đoạn một lần cho cả nhóm), `Lời giải`.
+- Cột tùy chọn: `Đoạn văn` (các câu cùng đoạn ghi **giống hệt** nhau; app in đoạn một lần cho cả nhóm), `Lời giải`, `CLO`, `Thẻ` (nhiều thẻ cách nhau bằng dấu phẩy), `Số từ` (chỉ cho DT: số từ tối đa 1–20, để trống = không giới hạn).
 - `Loại`: TN (trắc nghiệm), DS (đúng/sai), DT (điền từ), TL (tự luận). `Mức`: 1–5.
 - Phương án TN: mỗi dòng bắt đầu `A.` `B.`…; `#` đầu phương án = cố định vị trí khi xáo.
 - DS: mỗi ý một dòng `a)` `b)`…; đáp án `Đ S Đ S`. DT: nhiều đáp án cách nhau bằng `|`.
+- Thẻ `tfng` (TN): Đúng / Sai / Không có thông tin. Không ghi phương án; Đáp án `A` = Đúng, `B` = Sai, `C` = Không có thông tin.
+- Thẻ `noitieude` (TN): nối tiêu đề. Các câu cùng nhóm ghi cùng `Đoạn văn` và cùng danh sách tiêu đề `A.` `B.`… (tối đa 12); Đáp án là chữ cái tiêu đề.
+- Thẻ `ghinhan` (DT): ghi nhãn sơ đồ. Đáp án là tên cần ghi cho vị trí được đánh số; hình ảnh thêm trong app sau khi nhập.
 - Furigana: `{試験|しけん}`. Khi xuất đề chọn "tự thêm" thì app tự thêm furigana cho chữ Hán chưa có cú pháp (cần `pip install pykakasi`). Cách đọc tự sinh có thể sai với từ đọc đặc biệt, nên kiểm tra và viết tay `{chữ|cách đọc}` để ghi đè.
 - `Mã chương` phải đã tồn tại trong giáo trình được chọn ở bộ lọc.
 
