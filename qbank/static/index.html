@@ -502,6 +502,13 @@
         <label><input type="checkbox" id="recordUsage" checked> Ghi lịch sử dùng câu</label>
         <label><input type="checkbox" id="saveHistory" checked> Lưu vào lịch sử xuất</label>
       </div>
+      <div class="row">
+        <label title="Ghép file nghe của các câu (và đoạn văn) theo đúng thứ tự trong từng mã đề, có đọc số câu và chừa thời gian làm bài. Cần bật textts.">
+          <input type="checkbox" id="listening"> Tạo file đề nghe (Am_thanh/De_xxx_nghe.mp3) cho từng mã đề</label>
+        <label>Phát</label><select id="lisRepeat"><option value="1">1 lần</option><option value="2">2 lần</option></select>
+        <label>Thời gian làm mỗi câu (giây)</label><input id="lisAnswer" class="n" style="width:60px" value="10">
+        <label>Giọng đọc số câu</label><select id="lisEngine"><option value="voicevox">VOICEVOX</option><option value="aivis">AivisSpeech</option><option value="edge">Edge</option></select>
+      </div>
     </div>
   </div>
 
@@ -1584,7 +1591,8 @@ async function loadExport() {
 // ---------- ghi nhớ biểu mẫu xuất đề (lưu trên trình duyệt)
 const REMEMBER = {mon:"v", maHp:"v", soTc:"v", khoaHoc:"v", hocKy:"v", namHoc:"v", thoiGian:"v", tenDe:"v", soTrang:"v",
                   tpl:"v", keyTpl:"v", furigana:"v", variants:"v", prefix:"v", start:"v",
-                  answerKey:"c", keySeparate:"c", recordUsage:"c", saveHistory:"c"};
+                  answerKey:"c", keySeparate:"c", recordUsage:"c", saveHistory:"c",
+                  listening:"c", lisRepeat:"v", lisAnswer:"v", lisEngine:"v"};
 function saveForm() {
   const data = {};
   for (const [id, kind] of Object.entries(REMEMBER)) {
@@ -2364,8 +2372,10 @@ async function doExportInner() {
     record_usage: $("#recordUsage").checked, save_history: $("#saveHistory").checked,
     seed: $("#seedIn").value.trim(),
     clo_mode: $("#cloMode").checked,
+    listening: $("#listening").checked
+      ? { repeat: $("#lisRepeat").value, answer_s: $("#lisAnswer").value, engine: $("#lisEngine").value } : undefined,
   };
-  $("#exportMsg").textContent = "Đang tạo...";
+  $("#exportMsg").textContent = $("#listening").checked ? "Đang tạo đề và ghép file nghe (có thể mất vài phút)..." : "Đang tạo...";
   try {
     const r = await postJson("/api/export", body);
     const url = URL.createObjectURL(await r.blob());
@@ -2376,7 +2386,8 @@ async function doExportInner() {
     a.click(); URL.revokeObjectURL(url);
     const reused = +r.headers.get("X-Reused") || 0;
     const seed = r.headers.get("X-Seed") || "";
-    toast("Đã tải xuống file đề.");
+    const lis = r.headers.get("X-Listening");
+    toast("Đã tải xuống file đề." + (lis === "0" ? " Không mã đề nào có câu kèm file nghe nên không tạo đề nghe." : lis ? ` Có ${lis} file đề nghe.` : ""), lis === "0");
     // xuất xong: bỏ bản xem trước và ô xác nhận để lần sau không dùng lại đúng các câu cũ
     PREVIEW = null; renderPreview(); setPreviewStatus();
     $("#confirmChk").checked = false;
