@@ -89,8 +89,21 @@ Mã `audio` (`1-01`…) là mã ♪ trong sách, dùng làm tên file âm thanh 
 - `roles.yaml` chỉ có tên vai và mô tả giọng từ sách; giáo viên chọn giọng cụ thể trong textts một lần.
 - Hội thoại: `<mã ♪>.txt`; lời thoại phần nghe (phụ lục E): mỗi ý `(1) (2)…` một câu, nghỉ 1,5 giây.
 
+## Tạo audio bằng AivisSpeech (bộ JVNV)
+
+`--textts` sinh thêm `out/textts/roles.aivis.yaml` (4 giọng JVNV, nhân vật trùng giọng và phân biệt bằng tốc độ). Trên máy có AivisSpeech đang chạy (cổng 10101, đã đặt model JVNV):
+
+```
+python tts.py --list-voices aivis > voices.json          # trong thư mục textts
+python -m gtlesson.resolve_voices out/textts/roles.aivis.yaml voices.json -o out/textts/roles.aivis.resolved.yaml
+python tts.py --batch out/textts --outdir out/audio --srt --roles out/textts/roles.aivis.resolved.yaml
+```
+
+Kết quả `out/audio/<mã ♪>.mp3` và `.srt`. Tải lên eduscan ở form giao bài (mục "Âm thanh").
+
 ## Trạng thái và bước tiếp
 
 - ĐÃ LÀM: docx → lesson.json; lesson.json → kịch bản textts. Đã chạy trên bản thảo Cuốn 8 (8 bài):
   đủ 8 nhân vật, 16 hội thoại, 17 mục ngữ pháp, 117 câu bài tập/đọc hiểu đều gắn được đáp án, không còn khối chưa đọc.
+- ĐÃ LÀM: roles.aivis.yaml (JVNV) và `gtlesson.resolve_voices` đổi tên giọng thành mã style. Chưa tạo audio thật: cần AivisSpeech trên máy thầy.
 - CHƯA LÀM: lesson.json → qbank (câu DT/TL theo chương = bài), → eduscan (bài giao tự chấm), → dominion (game, slide).
