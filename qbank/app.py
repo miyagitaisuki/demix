@@ -148,6 +148,7 @@ def init_storage():
             content TEXT NOT NULL)""")
     ensure_column("courses", "code", "TEXT NOT NULL DEFAULT ''")
     ensure_column("questions", "passage_id", "INTEGER REFERENCES passages(id)")
+    ensure_column("questions", "word_limit", "INTEGER NOT NULL DEFAULT 0")  # điền từ: số từ tối đa (0 = không giới hạn)
     ensure_column("courses", "exam_meta", "TEXT NOT NULL DEFAULT '{}'")
     ensure_column("textbooks", "code", "TEXT NOT NULL DEFAULT ''")
     ensure_column("questions", "code", "TEXT")
@@ -575,6 +576,12 @@ def clean_question(data):
     if qtype not in QTYPES:
         raise ValueError("Loại câu phải là TN, DS, DT hoặc TL")
     tags_norm = norm_tags(data.get("tags", ""))
+    try:
+        word_limit = int(data.get("word_limit") or 0)
+    except (TypeError, ValueError):
+        raise ValueError("Giới hạn số từ phải là số nguyên")
+    if qtype != "DT":
+        word_limit = 0  # chỉ điền từ mới có giới hạn số từ
     if qtype == "TN" and TFNG_TAG in tags_norm.lower():
         # Đúng / sai / không có thông tin (kiểu IELTS): 3 phương án cố định, đáp án là A, B hoặc C
         options = list(TFNG_OPTIONS)
@@ -595,6 +602,8 @@ def clean_question(data):
     elif qtype == "DT":
         if not answer:
             raise ValueError("Thiếu đáp án điền từ (nhiều đáp án chấp nhận cách nhau bằng |)")
+        if word_limit and not 1 <= word_limit <= 20:
+            raise ValueError("Giới hạn số từ điền từ phải từ 1 đến 20 (0 = không giới hạn)")
         options = []
     else:  # TL: giữ đáp án/gợi ý chấm nếu có
         options = []
@@ -635,11 +644,11 @@ def clean_question(data):
     return dict(chapter_id=chapter_id, bloom=bloom, qtype=qtype, content=content,
                 options=json.dumps(options, ensure_ascii=False), answer=answer, solution=solution,
                 passage=passage, points=points, clo=clo, tags=tags, media=json.dumps(media, ensure_ascii=False),
-                status=status, rubric=json.dumps(rubric, ensure_ascii=False))
+                status=status, rubric=json.dumps(rubric, ensure_ascii=False), word_limit=word_limit)
 
 
-INSERT_Q = """INSERT INTO questions(code,chapter_id,bloom,qtype,content,options,answer,solution,passage,passage_id,points,clo,tags,media,status,rubric)
-              VALUES(:code,:chapter_id,:bloom,:qtype,:content,:options,:answer,:solution,:passage,:passage_id,:points,:clo,:tags,:media,:status,:rubric)"""
+INSERT_Q = """INSERT INTO questions(code,chapter_id,bloom,qtype,content,options,answer,solution,passage,passage_id,points,clo,tags,media,status,rubric,word_limit)
+              VALUES(:code,:chapter_id,:bloom,:qtype,:content,:options,:answer,:solution,:passage,:passage_id,:points,:clo,:tags,:media,:status,:rubric,:word_limit)"""
 
 
 def row_to_api(r):
@@ -1382,7 +1391,8 @@ def emit_question(doc, marker, n, it, mode="ruby"):
             line.add_run(f"    {'abcdefgh'[k]}) ")
             add_rich(line, opt, mode=mode)
     elif it["qtype"] == "DT":
-        marker.insert_paragraph_before("    Đáp án: ……………………………")
+        limit = f" (không quá {it['word_limit']} từ)" if it.get("word_limit") else ""
+        marker.insert_paragraph_before(f"    Đáp án{limit}: ……………………………")
     emit_media(doc, marker, it.get("media"))
 
 
@@ -2522,7 +2532,7 @@ class Handler(BaseHTTPRequestHandler):
             conn.execute("PRAGMA foreign_keys = ON")
             cur = conn.execute("""UPDATE questions SET chapter_id=:chapter_id, bloom=:bloom, qtype=:qtype, content=:content,
                  options=:options, answer=:answer, solution=:solution, passage=:passage, passage_id=:passage_id, rubric=:rubric,
-                 points=:points, clo=:clo, tags=:tags, media=:media, status=:status WHERE id=:id""", payload)
+                 points=:points, clo=:clo, tags=:tags, media=:media, status=:status, word_limit=:word_limit WHERE id=:id""", payload)
             conn.commit()
             updated = cur.rowcount
         if not updated:
@@ -2891,7 +2901,8 @@ def print_html(body):
             lines.append("<div class='opts ds'>" + "".join(
                 f"<span>{'abcdefgh'[k]}) {rich_html(o)}</span>" for k, o in enumerate(it["options"])) + "</div>")
         elif it["qtype"] == "DT":
-            lines.append("<div class='fill'>Đáp án: ……………………………</div>")
+            limit = f" (không quá {it['word_limit']} từ)" if it.get("word_limit") else ""
+            lines.append(f"<div class='fill'>Đáp án{limit}: ……………………………</div>")
         else:
             lines.append("<div class='essay'>&nbsp;</div>")
         sec_html.append("".join(lines) + "</div>")

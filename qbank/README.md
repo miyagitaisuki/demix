@@ -258,3 +258,8 @@ textts chạy ở địa chỉ khác thì đặt biến môi trường `TEXTTS_A
 - Khi xáo đề, các câu nối tiêu đề **không xáo phương án**, để danh sách và đáp án luôn khớp.
 - Chưa có: nút chọn mẫu trong form sửa câu, và kiểm tra các câu trong cùng nhóm có cùng danh sách tiêu đề.
 
+## Điền từ có giới hạn số từ
+- Câu **DT** có trường **Số từ tối đa** (1–20; 0 = không giới hạn) trong form sửa câu. Lưu ở cột `word_limit` (tự thêm khi khởi động, không mất dữ liệu cũ).
+- Khi xuất đề, dòng đáp án ghi "Đáp án (không quá N từ): ……". Trường này không ảnh hưởng cách chấm.
+- Chỉ DT có giới hạn; các dạng khác luôn lưu 0.
+
