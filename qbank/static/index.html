@@ -1661,6 +1661,7 @@ function readSections() {
     title: card.querySelector(".st").value,
     qtype: card.querySelector(".sq").value,
     shuffle: card.querySelector(".ss").checked,
+    listening: card.querySelector(".sl").checked,
     matrix: matrixOf(card),
     passages: [...card.querySelectorAll(".prow")]
       .map(r => ({ chapter_id: +r.querySelector(".pch").value, n: +r.querySelector(".pn").value || 0 }))
@@ -1703,6 +1704,7 @@ function applyCfg(cfg) {
     addSection(s.title || "", s.qtype || "");
     const card = $("#sections").lastElementChild;
     card.querySelector(".ss").checked = s.shuffle !== false;
+    card.querySelector(".sl").checked = !!s.listening;
     for (const m of s.matrix || []) {
       if (m.n > 0 && haveFor(m.chapter_id, m.bloom, s.qtype || "") > 0) card._vals.set(valKey(m.chapter_id, m.bloom), m.n);
     }
@@ -1798,6 +1800,7 @@ function addSection(title = "", qtype = "") {
       <select class="sq" onchange="refreshSection(this.closest('.sec'))">${Object.entries(QT).map(([k, v]) => `<option value="${k}" ${k === qtype ? "selected" : ""}>${v}</option>`).join("")}</select>
       <select class="smode" onchange="setMode(this.closest('.sec'), this.value)"><option value="manual">Nhập tay từng ô</option><option value="pct">Theo tỷ lệ %</option></select>
       <label><input type="checkbox" class="ss" checked> Xáo câu & phương án</label>
+      <label title="Chỉ các câu của phần này được ghép vào file đề nghe (De_xxx_nghe.mp3)"><input type="checkbox" class="sl"> Phần nghe</label>
       <span style="flex:1"></span>
       <button class="d" onclick="this.closest('.sec').remove()">Xóa phần</button>
     </div>

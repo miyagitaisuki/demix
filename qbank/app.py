@@ -281,6 +281,12 @@ def listening_segments(flat, repeat=1, answer_s=10, gap_ms=1500):
     return segs
 
 
+def listening_only(exam, flags):
+    """Các câu của phần được đánh dấu "Phần nghe", giữ nguyên số thứ tự toàn đề (n) như trong flatten(exam)."""
+    keep = {id(it) for (_, items), flag in zip(exam, flags) if flag for it in items}
+    return [x for x in flatten(exam) if id(x[2]) in keep]
+
+
 def listening_track(code, flat, opts):
     """Nhờ textts ghép đề nghe của một mã đề; trả về bytes mp3, hoặc None nếu đề không có file nghe."""
     repeat = 2 if str(opts.get("repeat", 1)) == "2" else 1
@@ -2549,7 +2555,7 @@ class Handler(BaseHTTPRequestHandler):
         rng = random.Random(seed)
         taken = set()
         picked = body.get("picked")  # câu đã xem trước và đổi tay, aligned theo sections
-        parts = []  # (tiêu đề, danh sách câu gốc, có xáo)
+        parts = []  # (tiêu đề, danh sách câu gốc, có xáo, là phần nghe)
         for idx, s in enumerate(sections):
             if not section_has_content(s):
                 continue  # phần không có số câu thì bỏ qua
@@ -2562,14 +2568,17 @@ class Handler(BaseHTTPRequestHandler):
                     if len(ids) != want:
                         raise ValueError("Bản xem trước không khớp số câu; hãy xem trước lại")
             base = build_section(s, usage, taken, ids or None, rng, counts)
-            parts.append((str(s.get("title", "")).strip(), base, bool(s.get("shuffle", True))))
+            parts.append((str(s.get("title", "")).strip(), base, bool(s.get("shuffle", True)),
+                          bool(s.get("listening"))))
         if clo_mode:  # đáp án theo CĐR: mọi câu trong đề phải có CLO
-            missing = [it["code"] for _, base, _ in parts for it in base if not it.get("clo")]
+            missing = [it["code"] for _, base, _, _ in parts for it in base if not it.get("clo")]
             if missing:
                 raise ValueError("Đáp án theo CĐR: còn câu chưa gắn CLO: " + ", ".join(missing[:15]))
         if not parts:
             raise ValueError("Chưa có phần nào có số câu")
-        reused = sum(1 for _, base, _ in parts for it in base if it.get("last_used"))
+        if listening and not any(flag for *_, flag in parts):
+            raise ValueError("Chưa đánh dấu phần nào là phần nghe (ô \"Phần nghe\" ở bước Số câu và đoạn)")
+        reused = sum(1 for _, base, *_ in parts for it in base if it.get("last_used"))
         meta = body.get("meta", {})
         so_tc = str(meta.get("so_tc", "")).strip()
         st = str(meta.get("so_trang", "")).strip()
@@ -2591,12 +2600,14 @@ class Handler(BaseHTTPRequestHandler):
             for i in range(variants):
                 code = f"{prefix}{start + i:03d}"
                 codes.append(code)
-                exam = [(t, make_variant(b, sh, rng)) for t, b, sh in parts]
+                exam = [(t, make_variant(b, sh, rng)) for t, b, sh, _ in parts]
+                # file nghe chỉ ghép các câu của phần được đánh dấu "Phần nghe", giữ nguyên số thứ tự trong đề
+                lis_flags = [flag for *_, flag in parts]
                 data = render_docx(tpl_path, body.get("meta", {}), exam, code,
                                    answer_key and not key_separate, furigana)
                 z.writestr(f"De_{code}.docx", data)
                 if listening:  # file đề nghe ghép sẵn theo thứ tự câu của mã đề này
-                    track = listening_track(code, flatten(exam), listening)
+                    track = listening_track(code, listening_only(exam, lis_flags), listening)
                     if track:
                         z.writestr(f"Am_thanh/De_{code}_nghe.mp3", track)
                         listening_made += 1
@@ -2621,7 +2632,7 @@ class Handler(BaseHTTPRequestHandler):
               (now, exam_name, ", ".join(codes),
                json.dumps({"meta": body.get("meta", {}), "variants": variants, "start": start,
                            "prefix": prefix, "template": tpl, "seed": seed,
-                           "picked_ids": [[it["id"] for it in base] for _, base, _ in parts]}, ensure_ascii=False), data))
+                           "picked_ids": [[it["id"] for it in base] for _, base, *_ in parts]}, ensure_ascii=False), data))
 
         fname = export_filename(meta.get("ma_hp"), codes_all, now)
         self._send(200, data, "application/zip",

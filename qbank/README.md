@@ -241,7 +241,7 @@ Câu hỏi dạng nghe có thể tạo âm thanh ngay trong form sửa câu, kh�
 textts chạy ở địa chỉ khác thì đặt biến môi trường `TEXTTS_API_URL` (mặc định `http://127.0.0.1:8000`).
 
 ## Xuất đề nghe trọn bộ theo mã đề
-Ở bước tùy chọn xuất đề, tick **Tạo file đề nghe** (cần bật textts bản có `/api/v1/assemble`). Mỗi mã đề có thêm `Am_thanh/De_xxx_nghe.mp3`, ghép đúng thứ tự câu trong mã đề đó:
+Ở bước **Số câu và đoạn**, tick ô **Phần nghe** ở phần thi nghe (có thể nhiều phần). Ở bước tùy chọn xuất đề, tick **Tạo file đề nghe** (cần bật textts bản có `/api/v1/assemble`). Chỉ các câu của phần được đánh dấu mới được ghép; đề chính (`De_xxx.docx`) giữ nguyên mọi phần. Mỗi mã đề có thêm `Am_thanh/De_xxx_nghe.mp3`, ghép đúng thứ tự câu trong mã đề đó (số câu theo đề chính):
 - Câu thuộc đoạn văn có file nghe: đọc "n番からm番", phát file của đoạn, rồi đến file riêng của từng câu (nếu có), sau đó chừa thời gian làm bài cho cả nhóm.
 - Câu lẻ có file nghe: đọc "n番", phát file, chừa thời gian làm bài.
-- Câu không có file nghe thì bỏ qua. Chọn được số lần phát (1 hoặc 2), số giây làm mỗi câu và giọng đọc số câu.
+- Câu không có file nghe thì bỏ qua. Nếu bật file đề nghe mà chưa đánh dấu phần nghe nào thì báo lỗi, không xuất. Chọn được số lần phát (1 hoặc 2), số giây làm mỗi câu và giọng đọc số câu.
