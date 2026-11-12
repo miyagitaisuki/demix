@@ -867,7 +867,9 @@ async function editQ(id) {
     </div>
     <div class="row"><label>Đoạn văn (tùy chọn). Chọn đoạn có sẵn trong chương, hoặc nhập đoạn mới; đoạn giống hệt trong chương sẽ được dùng chung.</label></div>
     <div class="row"><select id="ePassPick" style="min-width:260px"></select></div>
-    <div class="row"><textarea id="ePassage" rows="2" placeholder="Để trống nếu câu không thuộc đoạn văn nào">${esc(q.passage || "")}</textarea></div>
+    <div class="row"><textarea id="ePassage" rows="2" placeholder="Để trống nếu câu không thuộc đoạn văn nào" oninput="renderEditMedia()">${esc(q.passage || "")}</textarea></div>
+    <div class="row" id="ePMediaRow"><label>File của đoạn văn (dùng chung cho mọi câu thuộc đoạn):</label>
+      <span id="ePMediaList" class="row" style="gap:6px"></span></div>
     <div class="row"><label>Nội dung câu hỏi (furigana viết {漢字|かな})</label></div>
     <div class="row"><textarea id="eContent" rows="3" placeholder="Nội dung câu hỏi">${esc(q.content)}</textarea></div>
     <div class="row"><label>Phương án (TN: mỗi dòng một phương án, # đầu dòng = cố định vị trí; ĐS: mỗi dòng một ý; ĐT/TL: để trống)</label></div>
@@ -877,9 +879,23 @@ async function editQ(id) {
     <div id="eRubricBox" style="display:none"></div>
     <div class="row"><label>Hình ảnh hoặc âm thanh (tùy chọn, tối đa 4 file):</label>
       <input type="file" accept="image/*,audio/*" onchange="uploadMedia(this)">
-      <span id="eMediaList" class="row" style="gap:6px"></span></div>
+      <span id="eMediaList" class="row" style="gap:6px"></span>
+      <button class="g" onclick="openTts()">🔊 Tạo file nghe (textts)</button></div>
+    <div id="eTtsBox" style="display:none;border:1px dashed var(--line);border-radius:6px;padding:8px;margin:6px 0">
+      <div class="row"><label>Kịch bản nghe. Mỗi dòng một lượt nói: <code>[1] ...</code>, <code>[2] ...</code> (dòng không ghi vai được gán [1]); furigana viết {漢字|かな} hoặc 漢字{かな}; nghỉ: <code>[pause=800]</code></label></div>
+      <div class="row"><textarea id="eTtsScript" rows="5" placeholder="[1] すみません、駅はどこですか。&#10;[2] あそこです。"></textarea></div>
+      <div class="row"><label>Gắn vào</label><select id="eTtsTarget" onchange="TTS_EDIT=null;fillTtsScript()"><option value="q">Câu hỏi này</option><option value="p">Đoạn văn (dùng chung)</option></select>
+        <label>Engine</label><select id="eTtsEngine"><option value="voicevox">VOICEVOX</option><option value="aivis">AivisSpeech</option><option value="edge">Edge (cần Internet)</option></select>
+        <label>Trình độ</label><select id="eTtsLevel"><option value="">Mặc định</option>${["N5","N4","N3","N2","N1"].map(l => `<option>${l}</option>`).join("")}</select>
+        <button class="g" onclick="fillTtsScript()">Điền lại từ nội dung</button>
+        <button class="p" id="eTtsBtn" onclick="makeTts()">Tạo và đính kèm</button>
+        <button class="g" onclick="$('#eTtsBox').style.display='none';TTS_EDIT=null">Đóng</button>
+        <span id="eTtsMsg" class="sub"></span></div>
+    </div>
     <div class="row"><button class="p" onclick="saveQ()">Lưu</button><button class="g" onclick="$('#editor').style.display='none'">Đóng</button><span id="eMsg" class="err"></span></div>`;
   EDIT_MEDIA = (q.media || []).slice();
+  EDIT_PMEDIA = (q.passage_media || []).slice();
+  TTS_EDIT = null;
   EDIT_RUBRIC = (q.rubric || []).map(c => ({ text: c.text || "", points: c.points ?? "", levels: [...(c.levels || []), "", "", "", "", ""].slice(0, 5) }));
   renderRubricEditor();
   renderEditMedia();
@@ -954,9 +970,20 @@ const mediaHtml = list => (list && list.length)
   ? `<div class="row" style="gap:6px;margin:4px 0">${list.map(m => m.kind === "image"
       ? `<img src="/media/${esc(m.file)}" alt="${esc(m.name)}" style="height:48px;border:1px solid var(--line);border-radius:4px">`
       : `<audio controls preload="none" src="/media/${esc(m.file)}" style="height:30px"></audio>`).join("")}</div>` : "";
+let EDIT_PMEDIA = [];  // file của đoạn văn đang chọn (lưu cùng câu, áp dụng cho mọi câu của đoạn)
+const mediaList = t => t === "p" ? EDIT_PMEDIA : EDIT_MEDIA;
+function mediaTags(list, t) {
+  return list.map((m, i) => `<span class="tag">${m.kind === "image" ? "🖼" : "🔊"} ${esc(m.name)}
+    ${m.tts ? `<button class="g" style="padding:0 6px;border:0" title="Sửa kịch bản và tạo lại" onclick="openTts('${t}',${i})">✎</button>` : ""}
+    <button class="g" style="padding:0 6px;border:0" onclick="mediaList('${t}').splice(${i},1);renderEditMedia()">×</button></span>`).join("");
+}
 function renderEditMedia() {
-  $("#eMediaList").innerHTML = EDIT_MEDIA.map((m, i) => `<span class="tag">${m.kind === "image" ? "🖼" : "🔊"} ${esc(m.name)}
-    <button class="g" style="padding:0 6px;border:0" onclick="EDIT_MEDIA.splice(${i},1);renderEditMedia()">×</button></span>`).join("");
+  $("#eMediaList").innerHTML = mediaTags(EDIT_MEDIA, "q");
+  const hasPassage = !!$("#ePassage").value.trim();
+  $("#ePMediaRow").style.display = hasPassage ? "" : "none";
+  $("#ePMediaList").innerHTML = EDIT_PMEDIA.length ? mediaTags(EDIT_PMEDIA, "p") : `<span class="sub">Chưa có</span>`;
+  const opt = $("#eTtsTarget") && $("#eTtsTarget").querySelector("option[value=p]");
+  if (opt) opt.disabled = !hasPassage;
 }
 async function uploadMedia(input) {
   const f = input.files[0]; input.value = "";
@@ -971,6 +998,64 @@ async function uploadMedia(input) {
   } catch (e) { toast(e.message, true); }
 }
 
+// ---------- tạo file nghe bằng textts (API chạy trên cùng máy)
+let TTS_EDIT = null;  // {t, i}: đang sửa file đã tạo bằng textts (tạo lại sẽ thay file đó)
+async function openTts(t, i) {
+  const box = $("#eTtsBox");
+  box.style.display = "block";
+  if (t) {  // sửa kịch bản của file đã có
+    const m = mediaList(t)[i];
+    TTS_EDIT = { t, i };
+    $("#eTtsTarget").value = t;
+    $("#eTtsScript").value = m.tts.script;
+    $("#eTtsEngine").value = m.tts.engine || "voicevox";
+    $("#eTtsLevel").value = m.tts.level || "";
+    $("#eTtsBtn").textContent = "Tạo lại (thay file cũ)";
+  } else {
+    TTS_EDIT = null;
+    $("#eTtsTarget").value = $("#ePassage").value.trim() && !EDIT_PMEDIA.some(m => m.kind === "audio") ? "p" : "q";
+    $("#eTtsBtn").textContent = "Tạo và đính kèm";
+    fillTtsScript();
+  }
+  renderEditMedia();
+  box.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  const msg = $("#eTtsMsg");
+  msg.className = "sub"; msg.textContent = "Đang kiểm tra textts…";
+  try {
+    const st = await api("/api/tts/status");
+    if (!st.ok) { msg.textContent = `Chưa bật textts (${st.url}). Mở textts hoặc chạy: python server.py`; msg.className = "err"; return; }
+    if (!t) {
+      if (!st.voicevox && st.aivis) $("#eTtsEngine").value = "aivis";
+      else if (!st.voicevox && !st.aivis) $("#eTtsEngine").value = "edge";
+    }
+    msg.textContent = `textts sẵn sàng · VOICEVOX ${st.voicevox ? "✓" : "✗"} · AivisSpeech ${st.aivis ? "✓" : "✗"}`;
+  } catch (e) { msg.textContent = e.message; msg.className = "err"; }
+}
+function fillTtsScript() {
+  $("#eTtsBtn").textContent = "Tạo và đính kèm";
+  if ($("#eTtsTarget").value === "p") { $("#eTtsScript").value = $("#ePassage").value.trim(); return; }
+  const parts = [$("#eContent").value.trim()].filter(Boolean);  // đoạn văn có file riêng (Gắn vào: Đoạn văn)
+  const opts = $("#eType").value === "TN" ? $("#eOpts").value.split("\n").map(x => x.replace(/^#/, "").trim()).filter(Boolean) : [];
+  $("#eTtsScript").value = [...parts, ...opts.map((o, i) => `${i + 1}、${o}`)].join("\n");
+}
+async function makeTts() {
+  const t = $("#eTtsTarget").value, list = mediaList(t);
+  if (t === "p" && !$("#ePassage").value.trim()) { toast("Câu chưa có đoạn văn.", true); return; }
+  if (!TTS_EDIT && list.length >= 4) { toast("Tối đa 4 file đính kèm.", true); return; }
+  const btn = $("#eTtsBtn"), msg = $("#eTtsMsg");
+  btn.disabled = true; msg.className = "sub"; msg.textContent = "Đang tạo âm thanh… (có thể mất vài chục giây)";
+  try {
+    const d = await postJson("/api/tts", { script: $("#eTtsScript").value, engine: $("#eTtsEngine").value, level: $("#eTtsLevel").value });
+    const item = { kind: d.kind, file: d.file, name: d.name, tts: d.tts };
+    if (TTS_EDIT && TTS_EDIT.t === t) list[TTS_EDIT.i] = item; else list.push(item);
+    TTS_EDIT = { t, i: list.indexOf(item) };
+    btn.textContent = "Tạo lại (thay file cũ)";
+    renderEditMedia();
+    msg.textContent = `Đã đính kèm vào ${t === "p" ? "đoạn văn" : "câu"}: ${d.name}${d.duration_s ? ` (${d.duration_s}s)` : ""}. Nhớ bấm Lưu.`;
+  } catch (e) { msg.textContent = e.message; msg.className = "err"; }
+  finally { btn.disabled = false; }
+}
+
 // ---------- đoạn văn
 let PASSAGES = [];
 async function loadPassages() { PASSAGES = await api("/api/passages"); }
@@ -981,7 +1066,7 @@ function fillPassPick(selectedId) {
     list.map(p => `<option value="${p.id}" ${p.id == selectedId ? "selected" : ""}>${esc(p.code)}: ${esc(p.content.slice(0, 50))}</option>`).join("");
   $("#ePassPick").onchange = () => {
     const p = PASSAGES.find(x => x.id == $("#ePassPick").value);
-    if (p) $("#ePassage").value = p.content;
+    if (p) { $("#ePassage").value = p.content; EDIT_PMEDIA = (p.media || []).slice(); renderEditMedia(); }
   };
 }
 
@@ -992,15 +1077,16 @@ async function renderPassages() {
       <td>${esc(p.code)}</td><td>${esc(p.chapter)}</td>
       <td style="white-space:pre-line">${esc(p.content.slice(0, 160))}${p.content.length > 160 ? "…" : ""}</td>
       <td class="num">${p.count}</td>
+      <td>${mediaHtml(p.media)}</td>
       <td style="white-space:nowrap"><button class="g" onclick="editPassage(${p.id})">Sửa</button>
         <button class="d" onclick="delPassage(${p.id})">Xóa</button></td></tr>`).join("");
   $("#passBox").innerHTML = PASSAGES.length
-    ? `<table><thead><tr><th>Mã đoạn</th><th>Chương</th><th>Nội dung</th><th class="num">Số câu</th><th></th></tr></thead><tbody>${rows}</tbody></table>`
+    ? `<table><thead><tr><th>Mã đoạn</th><th>Chương</th><th>Nội dung</th><th class="num">Số câu</th><th>File</th><th></th></tr></thead><tbody>${rows}</tbody></table>`
     : `<span class="msg">Chưa có đoạn văn nào.</span>`;
 }
 function editPassage(id) {
   const p = PASSAGES.find(x => x.id === id);
-  $("#pr" + id).innerHTML = `<td colspan="5">
+  $("#pr" + id).innerHTML = `<td colspan="6">
     <textarea id="pe${id}" rows="4">${esc(p.content)}</textarea>
     <div class="row"><button class="p" onclick="savePassage(${id})">Lưu</button>
     <button class="g" onclick="renderPassages()">Hủy</button>
@@ -1030,6 +1116,7 @@ async function saveQ(confirmPassage = false) {
     content: $("#eContent").value, answer: $("#eAns").value, solution: $("#eSol").value, points: $("#ePoints").value,
     clo: $("#eClo").value, tags: $("#eTags").value, media: EDIT_MEDIA, status: $("#eStatus").value,
     passage: $("#ePassage").value,
+    ...($("#ePassage").value.trim() ? { passage_media: EDIT_PMEDIA } : {}),
     rubric: $("#eType").value === "TL" ? (rbSync(), EDIT_RUBRIC.filter(c => c.text.trim()).map(c => ({ text: c.text, points: c.points, levels: c.levels }))) : [],
     options: $("#eOpts").value.split("\n").map(s => s.trim()).filter(Boolean).map(s => s.replace(/^[A-Ha-h][\.\)]\s*/, "")),
   };

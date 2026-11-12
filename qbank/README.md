@@ -227,3 +227,15 @@ Chi tiết từng lỗi và cách tái hiện: `docs/bao_cao_kiem_thu_2026-11-02
   - **Trạng thái duyệt câu:** Nháp (câu mới) → Đã duyệt (được ra đề) → Ngưng dùng (không ra đề, vẫn còn trong ngân hàng). Câu có sẵn trước đợt này được đặt là "Đã duyệt" để đề đang dùng không thiếu câu. Ma trận và xem trước chỉ chọn câu đã duyệt. Đổi trạng thái hàng loạt bằng các nút trong thanh chọn; lọc theo trạng thái ở thanh lọc ngân hàng. Sửa một câu đã duyệt không tự đưa về Nháp: người dùng tự đổi nếu cần.
   - **Xuất Moodle XML:** chọn câu rồi bấm "Xuất Moodle XML"; không chọn thì xuất mọi câu đã duyệt. Trắc nghiệm → multichoice (một đáp án); đúng/sai nhiều ý → mỗi ý là một câu truefalse; điền từ → shortanswer (mọi đáp án chấp nhận); tự luận → essay, hướng dẫn chấm đặt vào graderinfo. Danh mục Moodle theo học phần/giáo trình/chương. Ảnh và âm thanh được nhúng vào câu Moodle. Chưa thử nhập vào Moodle thật: cần kiểm tra trên máy có Moodle trước khi dùng cho lớp.
 - **Chưa làm (tính năng mới):** QTI; dùng chung qua mạng nội bộ có đăng nhập; cấu hình tên trường và khoa.
+
+## Tạo file nghe bằng textts
+Câu hỏi dạng nghe có thể tạo âm thanh ngay trong form sửa câu, không cần thu âm.
+1. Bật API textts trên cùng máy: mở app textts, hoặc chạy `python server.py` trong repo textts (cổng 8000). Muốn dùng VOICEVOX hoặc AivisSpeech thì bật engine đó trước; Edge cần Internet.
+2. Trong form sửa câu, bấm **🔊 Tạo file nghe (textts)**. Nút "Lấy từ đoạn văn + câu hỏi" điền sẵn kịch bản (TN có kèm phương án đọc số 1、2、3…).
+3. Sửa kịch bản: mỗi dòng một lượt nói `[1] ...`, `[2] ...` (dòng không ghi vai được gán `[1]`), furigana `{漢字|かな}` tự đổi sang cú pháp textts, nghỉ bằng `[pause=800]`.
+4. Chọn engine, trình độ (N5 đọc chậm nhất), bấm **Tạo và đính kèm**. File mp3 được lưu vào `data/media` như file tải lên; bấm **Lưu** để gắn vào câu.
+
+5. **Gắn vào đoạn văn:** câu có đoạn văn (ví dụ hội thoại 聴解 dùng cho nhiều câu) thì chọn "Gắn vào: Đoạn văn". File nghe lưu ở đoạn, mọi câu thuộc đoạn dùng chung; chọn đoạn có sẵn ở câu khác sẽ thấy ngay file đó. Khi xuất đề, file của đoạn được ghi một lần trước câu đầu tiên của đoạn và chép vào thư mục `Am_thanh`; bản Moodle gắn file của đoạn vào từng câu.
+6. **Sửa và tạo lại:** kịch bản được lưu cùng file. Bấm ✎ cạnh file để mở lại kịch bản, sửa rồi bấm "Tạo lại" để thay file cũ (bấm Lưu để giữ thay đổi).
+
+textts chạy ở địa chỉ khác thì đặt biến môi trường `TEXTTS_API_URL` (mặc định `http://127.0.0.1:8000`).
