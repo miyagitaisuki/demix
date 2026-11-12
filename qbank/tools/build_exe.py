@@ -17,6 +17,7 @@ cmd = [
     "--name", "QBank",
     "--add-data", f"static{SEP}static",
     "--add-data", f"templates{SEP}templates",
+    "--add-data", f"VERSION{SEP}.",  # số phiên bản để nút Cập nhật so sánh với GitHub Releases
     "--collect-data", "pykakasi",  # từ điển chữ Hán (.db) để tự thêm furigana
     "app.py",
 ]

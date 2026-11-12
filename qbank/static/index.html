@@ -253,6 +253,9 @@
 
   /* ===== ribbon kiểu MS Word: hàng tab + nhóm lệnh, thu gọn được ===== */
   .rbar-top { display:flex; align-items:center; height:50px; padding:0 16px 0 20px; }
+  .upd-btn { margin-left:auto; margin-right:8px; display:inline-flex; align-items:center; gap:6px; border:1px solid var(--line); background:#fff; color:#334155; border-radius:6px; padding:4px 10px; font-size:13px; cursor:pointer; }
+  .upd-btn:hover { border-color:#94a3b8; }
+  .upd-btn.has-update { background:#2563eb; border-color:#2563eb; color:#fff; font-weight:600; }
   header.topbar nav.ribbon-tabs { margin-left:24px; overflow-x:auto; }
   .rcollapse { margin-left:auto; border:0; background:none; color:var(--mut); padding:6px 9px; flex:none; }
   .rcollapse:hover { color:var(--b); background:#eff6ff; }
@@ -291,6 +294,7 @@
       <button data-tab="stats">Thống kê</button>
       <button data-tab="export">Xuất đề</button>
     </nav>
+    <button class="upd-btn" id="updBtn" onclick="checkUpdate(true)" title="Kiểm tra và cài bản cập nhật QBank"><i class="fa-solid fa-cloud-arrow-down"></i><span id="updLabel">Cập nhật</span></button>
     <button class="rcollapse" id="ribbonToggle" title="Thu gọn/mở ribbon (Ctrl+F1)"><i class="fa-solid fa-chevron-up"></i></button>
   </div>
   <div class="ribbon-body">
@@ -2629,6 +2633,51 @@ document.addEventListener("DOMContentLoaded", () => {
   colsScan(document.body);
   new MutationObserver(list => list.forEach(m => m.addedNodes.forEach(n => colsScan(n)))).observe(document.body, { childList: true, subtree: true });
 });
+
+// ---------- cập nhật ứng dụng (GitHub Releases) ----------
+let UPDATE = null;
+async function checkUpdate(manual = false) {
+  let info;
+  try {
+    info = await api("/api/update");
+  } catch (e) {
+    if (manual) toast(e.message, true);
+    return;
+  }
+  UPDATE = info;
+  const btn = document.getElementById("updBtn");
+  btn.classList.toggle("has-update", info.available);
+  document.getElementById("updLabel").textContent = info.available ? `Có bản v${info.latest}` : "Cập nhật";
+  btn.title = info.available ? `Có bản v${info.latest} (đang dùng v${info.current}). Bấm để cập nhật.` : `Đang dùng v${info.current}`;
+  if (!manual) return;
+  if (!info.available) return toast(`Đang dùng bản mới nhất (v${info.current})`);
+  installUpdate();
+}
+async function installUpdate() {
+  if (!UPDATE?.available) return;
+  if (!UPDATE.can_install) {
+    if (confirm(`Có bản v${UPDATE.latest}. Tự cập nhật chỉ dùng cho QBank.exe trên Windows.\n\nMở trang tải bản mới?`))
+      window.open(UPDATE.releases_url, "_blank");
+    return;
+  }
+  if (!confirm(`Cập nhật từ v${UPDATE.current} lên v${UPDATE.latest}?\n\nDữ liệu được giữ nguyên. Ứng dụng sẽ tự khởi động lại.`)) return;
+  toast("Đang tải bản cập nhật…");
+  try {
+    await postJson("/api/update/install", {});
+  } catch (e) {
+    return toast(e.message, true);
+  }
+  toast("Đang khởi động lại…");
+  const t0 = Date.now();
+  const timer = setInterval(async () => {
+    try {
+      const r = await fetch("/api/version", { cache: "no-store" });
+      if (r.ok && (await r.json()).version === UPDATE.latest) { clearInterval(timer); location.reload(); return; }
+    } catch (_) { /* máy chủ đang khởi động lại */ }
+    if (Date.now() - t0 > 60000) { clearInterval(timer); toast("Khởi động lại lâu quá. Hãy mở lại QBank.", true); }
+  }, 1000);
+}
+checkUpdate(false);  // lặng lẽ kiểm tra khi mở trang
 </script>
 </body>
 </html>

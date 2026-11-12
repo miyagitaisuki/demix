@@ -9,6 +9,7 @@ Dữ liệu: data/qbank.db (SQLite). Template Word: templates/*.docx
 """
 import base64
 import csv
+import hashlib
 import io
 import statistics
 import json
@@ -17,8 +18,10 @@ import random
 import re
 import sqlite3
 import shutil
+import subprocess
 import sys
 import threading
+import time
 import unicodedata
 import webbrowser
 import zipfile
@@ -2101,6 +2104,10 @@ class NeedConfirm(ValueError):
     """Thao tác cần người dùng xác nhận (trả về HTTP 409 kèm confirm=true); gửi lại với confirm_passage=true để tiếp tục."""
 
 
+class UpdateError(Exception):
+    """Lỗi khi kiểm tra hoặc tải bản cập nhật từ GitHub (trả về HTTP 502)."""
+
+
 def similar_passage(chapter_id, text, threshold=SIMILAR_THRESHOLD):
     """Đoạn văn khác trong chương có nội dung gần giống nhất (>= threshold). Trả về (mã đoạn, tỷ lệ) hoặc None."""
     ka = dup_key(text, [])
@@ -2168,6 +2175,8 @@ class Handler(BaseHTTPRequestHandler):
         except sqlite3.IntegrityError as e:
             msg = "Đã tồn tại (trùng tên/mã trong cùng cấp)" if "UNIQUE" in str(e) else "Dữ liệu bị ràng buộc"
             self._json(400, {"error": msg})
+        except UpdateError as e:
+            self._json(502, {"error": str(e)})
         except Exception as e:  # lỗi bất ngờ: trả về thông báo, không làm sập server
             self._json(500, {"error": f"{type(e).__name__}: {e}"})
 
@@ -2218,6 +2227,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, f.read(), "text/html; charset=utf-8")
         if p == "/favicon.ico":
             return self._send(204, b"", "image/x-icon")
+        if p == "/api/version":
+            return self._json(200, {"version": APP_VERSION})
+        if p == "/api/update":  # so sánh với GitHub Releases, không ghi gì
+            return self._json(200, check_update())
         if p == "/api/questions":
             sql, args = QUESTION_SQL + " WHERE 1=1", []
             if arg("chapter_id"):
@@ -2327,6 +2340,11 @@ class Handler(BaseHTTPRequestHandler):
     def _post(self):
         u = urlparse(self.path)
         p = u.path
+        if p == "/api/update/install":
+            version = install_update()
+            self._json(200, {"ok": True, "version": version})
+            threading.Timer(1.0, lambda: os._exit(0)).start()  # tắt bản cũ để bản mới nhận cổng
+            return
         if p == "/api/questions":
             body = self._json_body()
             payload = clean_question(body)
@@ -3030,14 +3048,164 @@ def moodle_xml(ids=None):
     return '<?xml version="1.0" encoding="UTF-8"?>\n<quiz>\n' + "\n".join(out) + "\n</quiz>\n"
 
 
+# ---------------------------------------------------------------- cập nhật từ GitHub Releases
+UPDATE_REPO = os.environ.get("QBANK_UPDATE_REPO", "miyagitaisuki/demix")
+UPDATE_TAG_PREFIX = "qbank-v"  # release của QBank có tag dạng qbank-v1.2.3
+UPDATE_ASSET = "QBank.exe"
+UPDATE_HOSTS = ("github.com", "objects.githubusercontent.com", "release-assets.githubusercontent.com")
+RELEASES_PAGE = f"https://github.com/{UPDATE_REPO}/releases"
+UPDATE_DIR = os.path.join(DATA_DIR, "data", "update")  # file tải về tạm, nằm cạnh dữ liệu nên không mất khi cập nhật
+
+
+def read_version():
+    try:
+        with open(os.path.join(RES_DIR, "VERSION"), encoding="utf-8") as f:
+            return f.read().strip() or "0.0.0"
+    except OSError:
+        return "0.0.0"
+
+
+APP_VERSION = read_version()
+
+
+def parse_version(v):
+    """'1.2.3' hoặc 'qbank-v1.2.3' thành (1, 2, 3); không đọc được thì None."""
+    m = re.fullmatch(r"(?:qbank-)?v?(\d+)\.(\d+)\.(\d+)", (v or "").strip())
+    return tuple(int(x) for x in m.groups()) if m else None
+
+
+def safe_download_url(url):
+    """Chỉ tải từ HTTPS và các máy chủ file của GitHub."""
+    u = urlparse(url or "")
+    return u.scheme == "https" and (u.hostname or "") in UPDATE_HOSTS
+
+
+def pick_update(releases, current):
+    """Chọn bản mới nhất (bỏ qua nháp, bản thử, tag không phải qbank-v*, release thiếu QBank.exe).
+    Trả về dict nếu mới hơn bản đang chạy, không thì None."""
+    cur = parse_version(current)
+    best = None
+    for r in releases:
+        tag = r.get("tag_name") or ""
+        ver = parse_version(tag)
+        if r.get("draft") or r.get("prerelease") or ver is None or not tag.startswith(UPDATE_TAG_PREFIX):
+            continue
+        asset = next((a for a in r.get("assets") or [] if a.get("name") == UPDATE_ASSET), None)
+        if asset is None or not safe_download_url(asset.get("browser_download_url")):
+            continue
+        if best is None or ver > best[0]:
+            best = (ver, asset, r)
+    if best is None or cur is None or best[0] <= cur:
+        return None
+    ver, asset, r = best
+    return {"version": ".".join(map(str, ver)), "url": asset["browser_download_url"],
+            "size": asset.get("size") or 0, "digest": asset.get("digest") or "", "notes": r.get("body") or ""}
+
+
+def fetch_releases():
+    req = urlreq.Request(f"https://api.github.com/repos/{UPDATE_REPO}/releases?per_page=30",
+                         headers={"Accept": "application/vnd.github+json", "User-Agent": "QBank-updater"})
+    with urlreq.urlopen(req, timeout=10) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+
+def latest_update():
+    try:
+        releases = fetch_releases()
+    except (URLError, HTTPError, OSError, ValueError) as e:
+        raise UpdateError(f"Không kiểm tra được bản cập nhật ({e}). Hãy kiểm tra kết nối mạng.")
+    return pick_update(releases, APP_VERSION)
+
+
+def can_self_update():
+    """Chỉ tự thay file khi đang chạy QBank.exe đóng gói trên Windows."""
+    return bool(getattr(sys, "frozen", False)) and os.name == "nt"
+
+
+def check_update():
+    upd = latest_update()
+    return {"current": APP_VERSION, "available": upd is not None,
+            "latest": upd["version"] if upd else APP_VERSION,
+            "notes": upd["notes"] if upd else "", "can_install": can_self_update(), "releases_url": RELEASES_PAGE}
+
+
+def download_update(upd):
+    os.makedirs(UPDATE_DIR, exist_ok=True)
+    new_path = os.path.join(UPDATE_DIR, "QBank.new.exe")
+    h, size = hashlib.sha256(), 0
+    try:
+        with urlreq.urlopen(urlreq.Request(upd["url"], headers={"User-Agent": "QBank-updater"}), timeout=60) as resp, \
+                open(new_path, "wb") as f:
+            while chunk := resp.read(1 << 16):
+                f.write(chunk)
+                h.update(chunk)
+                size += len(chunk)
+    except (URLError, HTTPError, OSError) as e:
+        raise UpdateError(f"Tải bản cập nhật thất bại ({e}).")
+    with open(new_path, "rb") as f:
+        head = f.read(2)
+    digest = upd.get("digest") or ""
+    bad = head != b"MZ" or (upd["size"] and size != upd["size"]) or (
+        digest.startswith("sha256:") and digest[len("sha256:"):] != h.hexdigest())
+    if bad:
+        os.remove(new_path)
+        raise UpdateError("File tải về không đúng (sai định dạng, kích thước hoặc checksum). Đã hủy cập nhật.")
+    return new_path
+
+
+def swap_exe(new_path, current_path):
+    """Windows cho đổi tên file .exe đang chạy nhưng không ghi đè được: đổi bản cũ thành .old rồi đưa bản mới vào chỗ cũ."""
+    old_path = current_path + ".old"
+    if os.path.exists(old_path):
+        os.remove(old_path)  # bản .old của lần cập nhật trước, không còn chạy
+    os.replace(current_path, old_path)
+    try:
+        os.replace(new_path, current_path)
+    except OSError:
+        os.replace(old_path, current_path)  # lỗi thì trả lại bản cũ
+        raise
+    return old_path
+
+
+def install_update():
+    if not can_self_update():
+        raise ValueError("Chỉ cập nhật tự động khi chạy QBank.exe trên Windows. Hãy tải bản mới từ trang Releases.")
+    upd = latest_update()
+    if upd is None:
+        raise ValueError("Đang là bản mới nhất, không có gì để cài.")
+    auto_backup()  # sao lưu dữ liệu của hôm nay trước khi thay file
+    new_path = download_update(upd)
+    swap_exe(new_path, sys.executable)
+    flags = getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+    subprocess.Popen([sys.executable, "--after-update"], close_fds=True, creationflags=flags)
+    return upd["version"]
+
+
+def cleanup_old_exe():
+    """Xóa bản .old của lần cập nhật trước (nếu đã tắt được)."""
+    if getattr(sys, "frozen", False):
+        try:
+            os.remove(sys.executable + ".old")
+        except OSError:
+            pass
+
+
 def main():
     init_storage()
     backup_loop()
+    cleanup_old_exe()
     url = f"http://127.0.0.1:{PORT}"
-    try:
-        srv = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
-    except OSError:
-        srv = None
+    # bản vừa cập nhật khởi động khi bản cũ còn giữ cổng: chờ tối đa 30 giây rồi mới báo lỗi
+    deadline = time.time() + (30 if "--after-update" in sys.argv else 0)
+    srv = None
+    while True:
+        try:
+            srv = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
+            break
+        except OSError:
+            if time.time() >= deadline:
+                break
+            time.sleep(0.5)
     if srv is None:  # ra ngoài khối except để không in kèm traceback lồng nhau
         print(f"Cổng {PORT} đang được dùng. Hãy đóng chương trình QBank đang chạy khác rồi thử lại.")
         if getattr(sys, "frozen", False):
