@@ -53,11 +53,23 @@ MEDIA_EXT = {"png": "image", "jpg": "image", "jpeg": "image", "gif": "image", "w
 MEDIA_MAX = {"image": 5 * 1024 * 1024, "audio": 15 * 1024 * 1024}
 MEDIA_NAME = re.compile(r"[a-f0-9]{32}\.(png|jpe?g|gif|webp|mp3|wav|ogg|m4a)")
 BLOOM = {1: "Biết", 2: "Hiểu", 3: "Vận dụng", 4: "Phân tích", 5: "Đánh giá"}
-LETTERS = "ABCDEFGH"
+LETTERS = "ABCDEFGHIJKL"  # tối đa 12 phương án (nối tiêu đề); TN thường vẫn tối đa 8
 QTYPES = ("TN", "DS", "DT", "TL")  # trắc nghiệm, đúng/sai, điền từ, tự luận
 # Câu TN có thẻ "TFNG" là dạng Đúng / Sai / Không có thông tin (IELTS Reading), dùng phương án cố định
 TFNG_TAG = ",tfng,"
 TFNG_OPTIONS = ("正（真）", "誤（偽）", "情報なし（書かれていない）")
+# Câu TN có thẻ "noitieude" là nối tiêu đề (matching headings): nhiều đoạn dùng chung một danh sách tiêu đề,
+# danh sách in một lần trước nhóm câu và không xáo thứ tự phương án
+MATCH_TAG = "noitieude"
+MATCH_MAX_OPTIONS = 12
+
+
+def has_tag(it, name):
+    return name in [str(t).lower() for t in (it.get("tags") or [])]
+
+
+def is_match(it):
+    return it.get("qtype") == "TN" and has_tag(it, MATCH_TAG)
 DEFAULT_COURSE = "Chưa phân loại"
 PORT = int(os.environ.get("QBANK_PORT", "8765"))
 TEXTTS_URL = os.environ.get("TEXTTS_API_URL", "http://127.0.0.1:8000").rstrip("/")  # API của textts (python server.py)
@@ -571,8 +583,9 @@ def clean_question(data):
     if qtype == "TN":
         if len(options) < 2:
             raise ValueError("Trắc nghiệm cần ít nhất 2 phương án")
-        if len(options) > 8:
-            raise ValueError("Trắc nghiệm tối đa 8 phương án")
+        limit = MATCH_MAX_OPTIONS if MATCH_TAG in tags_norm.lower() else 8
+        if len(options) > limit:
+            raise ValueError(f"Trắc nghiệm tối đa {limit} phương án")
         if answer not in LETTERS[:len(options)]:
             raise ValueError("Đáp án không hợp lệ")
     elif qtype == "DS":
@@ -1168,7 +1181,7 @@ def make_variant(base, shuffle, rng):
     if shuffle:
         rng.shuffle(units)
         counts = {}  # cân bằng đáp án trong cùng một mã đề
-        return [shuffle_question(it, rng, counts)[0] for g in units for it in g]
+        return [it if is_match(it) else shuffle_question(it, rng, counts)[0] for g in units for it in g]
     return [it for g in units for it in g]
 
 
@@ -1336,6 +1349,16 @@ def emit_options(doc, marker, options, mode="ruby"):
     marker._p.addprevious(tbl._tbl)
 
 
+def emit_heading_list(doc, marker, options, mode="ruby"):
+    """Danh sách tiêu đề dùng chung cho một nhóm nối tiêu đề, in một lần trước câu đầu của nhóm."""
+    head = marker.insert_paragraph_before("")
+    head.add_run("Danh sách tiêu đề (chọn một tiêu đề cho mỗi đoạn):").bold = True
+    for i, opt in enumerate(options):
+        line = marker.insert_paragraph_before("")
+        line.add_run(f"    {LETTERS[i]}. ")
+        add_rich(line, opt, mode=mode)
+
+
 def emit_question(doc, marker, n, it, mode="ruby"):
     """Nội dung câu: mỗi dòng trong nội dung xuống hàng. Nếu có từ hai dòng trở lên, dòng đầu là
     câu dẫn nhập và in đậm; các dòng sau (câu hỏi, lời đáp đối thoại) in thường."""
@@ -1349,7 +1372,9 @@ def emit_question(doc, marker, n, it, mode="ruby"):
         add_rich(p, ln, bold=(bold_lead and i == 0), mode=mode)
     if it.get("points") is not None:
         p.add_run(f" ({fmt_points(it['points'])} điểm)").italic = True
-    if it["qtype"] == "TN":
+    if is_match(it):
+        marker.insert_paragraph_before("    Đáp án (chữ cái tiêu đề): ……")
+    elif it["qtype"] == "TN":
         emit_options(doc, marker, it["options"], mode)
     elif it["qtype"] == "DS":
         for k, opt in enumerate(it["options"]):
@@ -1407,7 +1432,7 @@ def render_docx(template_path, meta, exam, code, answer_key, mode="ruby"):
     marker = next((p for p in _every_paragraph(doc) if "{{CAU_HOI}}" in p.text), None)
     if marker is None:
         marker = doc.add_paragraph()
-    last_title, last_passage = None, None
+    last_title, last_passage, last_match = None, None, None
     for n, title, it in flat:
         if title and title != last_title:  # tiêu đề phần: "I. ...", in một lần trước câu đầu của phần
             head = marker.insert_paragraph_before(title)
@@ -1417,6 +1442,13 @@ def render_docx(template_path, meta, exam, code, answer_key, mode="ruby"):
             emit_passage(doc, marker, it["passage"], mode)
             emit_media(doc, marker, it.get("passage_media"))
         last_passage = it.get("passage") or None
+        if is_match(it):
+            key = (it.get("passage_id"), tuple(it["options"]))
+            if key != last_match:
+                emit_heading_list(doc, marker, it["options"], mode)
+                last_match = key
+        else:
+            last_match = None
         emit_question(doc, marker, n, it, mode)
     _set_text(marker, "")
 
@@ -2833,7 +2865,7 @@ def print_html(body):
     meta = body.get("meta", {})
     code = f"{body.get('prefix', '')}{int(body.get('start', 1) or 1):03d}"
     sec_html = []
-    last_title, last_passage = None, None
+    last_title, last_passage, last_match = None, None, None
     for n, title, it in flat:
         if title and title != last_title:
             sec_html.append(f"<h2>{hesc(title)}</h2>")
@@ -2845,7 +2877,14 @@ def print_html(body):
         last_passage = it.get("passage") or None
         lines = [f"<div class='q'><b>Câu {n}.</b> {rich_html(it['content'])}{pts}"]
         lines += _print_media(it.get("media"))
-        if it["qtype"] == "TN":
+        if is_match(it):  # danh sách tiêu đề in một lần trước nhóm câu (xem bản xuất đề)
+            key = (it.get("passage_id"), tuple(it["options"]))
+            if key != last_match:
+                sec_html.append("<div class='q'><b>Danh sách tiêu đề:</b> " + " ".join(
+                    f"{LETTERS[k]}. {rich_html(o)}" for k, o in enumerate(it["options"])) + "</div>")
+                last_match = key
+            lines.append("<div class='fill'>Đáp án (chữ cái tiêu đề): ……</div>")
+        elif it["qtype"] == "TN":
             lines.append("<div class='opts'>" + "".join(
                 f"<span>{LETTERS[k]}. {rich_html(o)}</span>" for k, o in enumerate(it["options"])) + "</div>")
         elif it["qtype"] == "DS":

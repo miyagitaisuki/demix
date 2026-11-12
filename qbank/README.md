@@ -252,3 +252,9 @@ textts chạy ở địa chỉ khác thì đặt biến môi trường `TEXTTS_A
 - Lọc theo thẻ `tfng` ở tab Ngân hàng để gom các câu dạng này.
 - Chưa có: nút chọn mẫu trong form sửa câu, và tiêu đề riêng cho dạng này khi xuất đề (các bước sau của kế hoạch IELTS).
 
+## Nối tiêu đề (matching headings)
+- Câu **TN** có thẻ `noitieude`. Mỗi đoạn là một câu; phương án là danh sách tiêu đề (2–12 tiêu đề, tiêu đề thừa được phép). Đáp án là chữ cái của tiêu đề đúng (A–L).
+- Các câu cùng đoạn (cùng đoạn văn và cùng danh sách tiêu đề) được in thành một nhóm: danh sách tiêu đề in **một lần** trước câu đầu, mỗi câu chỉ có dòng "Đáp án (chữ cái tiêu đề)".
+- Khi xáo đề, các câu nối tiêu đề **không xáo phương án**, để danh sách và đáp án luôn khớp.
+- Chưa có: nút chọn mẫu trong form sửa câu, và kiểm tra các câu trong cùng nhóm có cùng danh sách tiêu đề.
+
