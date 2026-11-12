@@ -84,6 +84,7 @@ def write_all(book: dict, out_dir: str) -> list[str]:
         written.append(path)
 
     put("roles.yaml", roles_yaml(book))
+    put("roles.aivis.yaml", aivis_roles_yaml(book))
     for lesson in book["lessons"]:
         for k, dlg in enumerate(lesson["dialogues"], start=1):
             name = dlg.get("audio") or f"{lesson['no']}-kaiwa{k}"
@@ -92,3 +93,49 @@ def write_all(book: dict, out_dir: str) -> list[str]:
         if sc.get("audio") and sc.get("text"):
             put(f"{sc['audio']}.txt", script_text(sc))
     return written
+
+
+# ---------------------------------------------------------------- giọng AivisSpeech (JVNV)
+# Bộ JVNV chỉ có 4 giọng: F1, F2 (nữ), M1, M2 (nam). Nhân vật trùng giọng và được phân biệt bằng tốc độ.
+JVNV_VOICES = ("jvnv-F1", "jvnv-F2", "jvnv-M1", "jvnv-M2")
+NARRATOR_VOICE = "jvnv-F2"
+SLOW_ROLES = {"高山", "玉屋"}  # người lớn tuổi, điềm đạm
+FAST_ROLES = {"けんじ"}  # thiếu niên, hoạt bát
+
+
+def _gender(profile: str) -> str:
+    """'Nam, 19 tuổi…' -> 'nam'; 'Nữ, 24 tuổi…' -> 'nữ'; không rõ thì coi là nữ."""
+    head = plain(profile).strip().lower()
+    return "nam" if head.startswith("nam") else "nữ"
+
+
+def aivis_roles_yaml(book: dict) -> str:
+    """roles.aivis.yaml: giọng ghi tên JVNV (vd jvnv-F1). Chạy resolve_voices để đổi thành mã style trước khi tạo audio."""
+    out = [
+        "# Sinh từ trang Nhân vật. Chưa có mã style: chạy `python -m gtlesson.resolve_voices` trước khi tạo audio.\n",
+        "engine: aivis\n",
+        "pause_default_ms: 600\n",
+        "roles:\n",
+        f'  "{NARRATOR}":\n    name: ナレーター\n    voice: "{NARRATOR_VOICE}"\n    emotion: neutral\n    speed: slow\n    pitch: 0\n    gain_db: 0\n',
+    ]
+    next_idx = {"nam": 0, "nữ": 0}
+    pools = {"nam": ("jvnv-M1", "jvnv-M2"), "nữ": ("jvnv-F1", "jvnv-F2")}
+    for i, ch in enumerate(book.get("characters", []), start=1):
+        name = plain(ch["name"]).strip()
+        g = _gender(ch.get("profile", ""))
+        voice = pools[g][next_idx[g] % 2]
+        next_idx[g] += 1
+        speed = "slow" if any(k in name for k in SLOW_ROLES) else "fast" if any(k in name for k in FAST_ROLES) else "normal"
+        out.append(
+            f'  "{i}":\n    name: {name}\n    voice: "{voice}"\n    emotion: neutral\n'
+            f"    speed: {speed}\n    pitch: 0\n    gain_db: 0\n"
+        )
+    return "".join(out)
+
+
+def write_aivis_roles(book: dict, out_dir: str) -> str:
+    os.makedirs(out_dir, exist_ok=True)
+    path = os.path.join(out_dir, "roles.aivis.yaml")
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(aivis_roles_yaml(book))
+    return path

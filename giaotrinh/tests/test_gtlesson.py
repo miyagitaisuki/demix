@@ -181,3 +181,34 @@ def test_furigana_helpers():
 def test_split_answers():
     assert split_answers("(1) A。　(2) B。") == ["A。", "B。"]
     assert split_answers("1. ３，０００円です。　2. ５０食です。") == ["３，０００円です。", "５０食です。"]
+
+
+# ---------------------------------------------------------------- giọng AivisSpeech
+
+def test_aivis_roles_pick_voice_by_gender(sample):
+    from gtlesson.export_textts import aivis_roles_yaml
+    import yaml
+    doc = yaml.safe_load(aivis_roles_yaml(sample))
+    assert doc["engine"] == "aivis"
+    r = doc["roles"]
+    assert r["0"]["voice"] == "jvnv-F2" and r["0"]["speed"] == "slow"  # ナレーター
+    assert r["1"]["voice"] == "jvnv-M1"  # ミン (nam)
+    assert r["2"]["voice"] == "jvnv-F1"  # まき (nữ)
+
+
+def test_resolve_voices_maps_jvnv_to_style_id():
+    import pytest
+    from gtlesson.resolve_voices import resolve, VoiceError
+    roles = {"engine": "aivis", "roles": {"1": {"name": "ミン", "voice": "jvnv-M1", "speed": "normal"},
+                                           "0": {"name": "ナレーター", "voice": "jvnv-F2", "speed": "slow"}}}
+    voices = [
+        {"value": "100", "label": "jvnv-M1 (ノーマル)"},
+        {"value": "101", "label": "jvnv-M1 (幸せ)"},
+        {"value": "200", "label": "jvnv-F2 (ノーマル)"},
+    ]
+    out = resolve(roles, voices)
+    assert out["roles"]["1"]["voice"] == "100"
+    assert out["roles"]["0"]["voice"] == "200"
+    assert out["roles"]["1"]["speed"] == "normal"
+    with pytest.raises(VoiceError, match="jvnv-F1"):
+        resolve({"roles": {"1": {"voice": "jvnv-F1"}}}, voices)
