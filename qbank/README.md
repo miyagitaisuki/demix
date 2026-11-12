@@ -17,7 +17,7 @@ python3 app.py                 # rồi mở http://127.0.0.1:8765
 ## Trùng lặp và lịch sử dùng
 - **Trùng khi nhập Word hoặc sao lưu:** so khớp nội dung sau khi bỏ hoa/thường, khoảng trắng và dấu câu. Trùng trong cùng chương thì bỏ qua; trùng ở chương khác thì vẫn thêm nhưng báo cảnh báo.
 - **Thêm câu bằng tay:** câu trùng trong cùng chương bị từ chối; trùng chương khác được lưu kèm cảnh báo.
-- **Nút "Kiểm tra trùng"** (tab Ngân hàng) liệt kê các nhóm câu giống nhau. Với mỗi nhóm, chọn câu giữ lại rồi bấm "Gộp": các câu còn lại bị xóa, lịch sử dùng chuyển sang câu giữ lại.
+- **Nút "Kiểm tra trùng"** (ribbon tab Ngân hàng, nhóm "Rà soát") liệt kê các nhóm câu giống nhau. Với mỗi nhóm, chọn câu giữ lại rồi bấm "Gộp": các câu còn lại bị xóa, lịch sử dùng chuyển sang câu giữ lại.
 - **"Tự gộp trùng trong cùng chương"**: gộp tự động mọi nhóm trùng nằm trong cùng một chương, giữ câu có mã nhỏ nhất. Trùng khác chương không bị gộp tự động.
 - **Lịch sử dùng:** mỗi lần xuất đề ghi lại câu nào đã vào mã đề nào. Khi xuất, app ưu tiên câu chưa dùng, rồi đến câu dùng lâu nhất. Bảng ngân hàng hiện số lần đã dùng. Bỏ tick "Ghi lịch sử dùng câu" ở tab Xuất đề nếu không muốn ghi lại lần xuất đó.
 - Xóa một câu sẽ xóa luôn lịch sử dùng của câu đó.
@@ -30,10 +30,10 @@ python3 app.py                 # rồi mở http://127.0.0.1:8765
 - Thống kê → "Chưa từng ra đề" cho biết số câu còn có thể chọn không trùng, theo chương × mức Bloom và dạng câu.
 
 ## Reset tình trạng ra đề
-Tab Ngân hàng, mục "Công cụ" (nút "Nhập, xuất, rà soát"), dòng "Reset tình trạng ra đề": reset câu đang tick, chương đang lọc, hoặc toàn bộ CSDL (phải gõ `RESET`). Reset chỉ xóa số lần đã ra đề, không xóa câu hay file đề đã xuất. Trước khi xóa, app ghi bản sao lưu vào thư mục `data/backup` (`truoc_reset_<thời điểm>.json` chứa lịch sử bị xóa; khi reset toàn bộ còn có `qbank_<ngày>.json`).
+Ribbon tab Ngân hàng, nhóm "Reset ra đề": reset câu đang tick, chương đang lọc, hoặc toàn bộ CSDL (phải gõ `RESET`). Reset chỉ xóa số lần đã ra đề, không xóa câu hay file đề đã xuất. Trước khi xóa, app ghi bản sao lưu vào thư mục `data/backup` (`truoc_reset_<thời điểm>.json` chứa lịch sử bị xóa; khi reset toàn bộ còn có `qbank_<ngày>.json`).
 
 ## Định dạng file nhập (chuẩn)
-Tải mẫu bằng nút **Tải mẫu nhập** (tab Ngân hàng). File là .docx, mỗi bảng là một nhóm câu:
+Tải mẫu bằng nút **Tải mẫu nhập** (ribbon tab Ngân hàng, nhóm "Nhập / Xuất"). File là .docx, mỗi bảng là một nhóm câu:
 - **Dòng 1 là tiêu đề cột**, thứ tự cột tùy ý. Cột bắt buộc: `Mã chương`, `Nội dung`, `Đáp án`, `Loại`, `Mức`.
 - Cột tùy chọn: `Đoạn văn` (các câu cùng đoạn ghi **giống hệt** nhau; app in đoạn một lần cho cả nhóm), `Lời giải`.
 - `Loại`: TN (trắc nghiệm), DS (đúng/sai), DT (điền từ), TL (tự luận). `Mức`: 1–5.

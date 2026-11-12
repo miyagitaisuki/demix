@@ -88,7 +88,7 @@
   :root { --b:#2563eb; --line:#e2e8f0; --bg:#f8fafc; --mut:#64748b; --ink:#0f172a; }
   body { font-family:Inter,system-ui,"Segoe UI",Roboto,sans-serif; font-size:13.5px; color:var(--ink); background:#f1f5f9; }
   main { max-width:1320px; padding:20px; }
-  header.topbar { display:flex; align-items:center; gap:0; height:56px; padding:0 20px; background:#fff; border-bottom:1px solid var(--line); position:sticky; top:0; z-index:20; }
+  header.topbar { display:block; height:auto; padding:0; background:#fff; border-bottom:1px solid var(--line); position:sticky; top:0; z-index:20; }
   .brand { display:flex; align-items:center; gap:10px; }
   .logo { width:30px; height:30px; border-radius:9px; background:linear-gradient(135deg,#2563eb,#6366f1); color:#fff; display:flex; align-items:center; justify-content:center; font-weight:700; }
   .bn { font-weight:700; font-size:16px; letter-spacing:-.01em; }
@@ -250,17 +250,124 @@
   table.rz-on { table-layout:fixed; }
   @media (max-width:1100px) { .filters { grid-template-columns:repeat(3,minmax(0,1fr)); } }
   @media (max-width:640px) { .filters { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+
+  /* ===== ribbon kiểu MS Word: hàng tab + nhóm lệnh, thu gọn được ===== */
+  .rbar-top { display:flex; align-items:center; height:50px; padding:0 16px 0 20px; }
+  header.topbar nav.ribbon-tabs { margin-left:24px; overflow-x:auto; }
+  .rcollapse { margin-left:auto; border:0; background:none; color:var(--mut); padding:6px 9px; flex:none; }
+  .rcollapse:hover { color:var(--b); background:#eff6ff; }
+  .rcollapse i { transition:transform .15s; }
+  body.ribbon-min .rcollapse i { transform:rotate(180deg); }
+  .ribbon-body { display:flex; align-items:stretch; padding:6px 12px 0; border-top:1px solid var(--line); background:#f8fafc; overflow-x:auto; min-height:98px; }
+  .ribbon-page { display:none; align-items:stretch; }
+  .ribbon-page.on { display:flex; }
+  .rgroup { display:flex; flex-direction:column; justify-content:space-between; flex:none; padding:0 12px; border-right:1px solid #e2e8f0; }
+  .rgroup:first-child { padding-left:0; }
+  .rgroup:last-child { border-right:0; }
+  .rgroup-items { display:flex; gap:4px; align-items:center; flex:1; }
+  .rgroup-name { font-size:11px; color:var(--mut); text-align:center; padding:4px 0 6px; white-space:nowrap; }
+  .rhint { display:block; font-size:11px; color:var(--mut); max-width:230px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-align:center; }
+  .rcol { display:flex; flex-direction:column; gap:3px; justify-content:center; }
+  .rbtn { display:inline-flex; flex-direction:column; align-items:center; justify-content:center; gap:5px; min-width:66px; padding:6px 8px; border:1px solid transparent; border-radius:7px; background:none; color:#334155; font-size:12px; font-weight:500; line-height:1.2; text-decoration:none; white-space:nowrap; cursor:pointer; }
+  .rbtn i { font-size:18px; color:var(--b); }
+  .rbtn:hover { background:#fff; border-color:#cbd5e1; }
+  .rbtn.sm { flex-direction:row; min-width:0; justify-content:flex-start; gap:6px; padding:3px 8px; }
+  .rbtn.sm i { font-size:12px; width:14px; text-align:center; }
+  .rbtn.d, .rbtn.d i { color:#b91c1c; }
+  .hfile { display:none; }
+  body.ribbon-min .ribbon-body { display:none; }
+  body.ribbon-min.peek .ribbon-body { display:flex; position:absolute; left:0; right:0; top:100%; box-shadow:0 10px 24px rgba(15,23,42,.14); z-index:25; }
+  .side { top:calc(var(--hdr,56px) + 10px); max-height:calc(100vh - var(--hdr,56px) - 30px); }
+  @media (max-width:800px) { .bn { display:none; } .ribbon-body { flex-wrap:nowrap; } }
 </style>
 </head>
 <body>
 <header class="topbar">
-  <div class="brand"><span class="logo">Q</span><span class="bn">QBank</span></div>
-  <nav>
-    <button data-tab="bank" class="on">Ngân hàng</button>
-    <button data-tab="struct">Cấu trúc</button>
-    <button data-tab="stats">Thống kê</button>
-    <button data-tab="export">Xuất đề</button>
-  </nav>
+  <div class="rbar-top">
+    <div class="brand"><span class="logo">Q</span><span class="bn">QBank</span></div>
+    <nav class="ribbon-tabs">
+      <button data-tab="bank" class="on">Ngân hàng</button>
+      <button data-tab="struct">Cấu trúc</button>
+      <button data-tab="stats">Thống kê</button>
+      <button data-tab="export">Xuất đề</button>
+    </nav>
+    <button class="rcollapse" id="ribbonToggle" title="Thu gọn/mở ribbon (Ctrl+F1)"><i class="fa-solid fa-chevron-up"></i></button>
+  </div>
+  <div class="ribbon-body">
+    <div class="ribbon-page on" data-page="bank">
+      <div class="rgroup">
+        <div class="rgroup-items">
+          <button class="rbtn" onclick="editQ(null)"><i class="fa-solid fa-plus"></i><span>Câu mới</span></button>
+          <button class="rbtn" onclick="loadQuestions()"><i class="fa-solid fa-filter"></i><span>Lọc</span></button>
+        </div>
+        <div class="rgroup-name">Câu hỏi</div>
+      </div>
+      <div class="rgroup">
+        <div class="rhint"><span id="importTarget"></span></div>
+        <div class="rgroup-items">
+          <label class="rbtn" for="importFile" title="Nhập từ .docx hoặc .csv vào giáo trình đã chọn"><i class="fa-solid fa-file-import"></i><span>Nhập</span></label>
+          <a class="rbtn" href="/api/backup" download title="Sao lưu toàn bộ CSDL ra .json"><i class="fa-solid fa-download"></i><span>Sao lưu</span></a>
+          <div class="rcol">
+            <a class="rbtn sm" href="/api/import-template" download><i class="fa-solid fa-file-lines"></i>Tải mẫu nhập</a>
+            <label class="rbtn sm" for="restoreFile"><i class="fa-solid fa-upload"></i>Khôi phục .json</label>
+            <button class="rbtn sm" onclick="togglePaste()"><i class="fa-solid fa-paste"></i>Dán từ Excel</button>
+          </div>
+        </div>
+        <div class="rgroup-name">Nhập / Xuất</div>
+      </div>
+      <div class="rgroup">
+        <div class="rgroup-items">
+          <div class="rcol">
+            <button class="rbtn sm" onclick="showDuplicates()"><i class="fa-solid fa-clone"></i>Kiểm tra trùng</button>
+            <button class="rbtn sm" onclick="withBusy(this, showSimilar)"><i class="fa-solid fa-magnifying-glass"></i>Tìm câu gần giống</button>
+            <button class="rbtn sm" onclick="toggleTrash()"><i class="fa-solid fa-trash-can"></i>Thùng rác</button>
+          </div>
+        </div>
+        <div class="rgroup-name">Rà soát</div>
+      </div>
+      <div class="rgroup">
+        <div class="rgroup-items">
+          <div class="rcol">
+            <button class="rbtn sm d" onclick="resetUsage('questions')" title="Chỉ xóa số lần đã ra đề, không xóa câu"><i class="fa-solid fa-rotate-left"></i>Câu đang tick</button>
+            <button class="rbtn sm d" onclick="resetUsage('chapters')" title="Chỉ xóa số lần đã ra đề, không xóa câu"><i class="fa-solid fa-rotate-left"></i>Chương đang lọc</button>
+            <button class="rbtn sm d" onclick="resetUsage('all')" title="Chỉ xóa số lần đã ra đề, không xóa câu"><i class="fa-solid fa-rotate-left"></i>Toàn bộ CSDL</button>
+          </div>
+        </div>
+        <div class="rgroup-name">Reset ra đề</div>
+      </div>
+      <input type="file" id="importFile" class="hfile" accept=".docx,.csv,.txt" onchange="importDocx(this)">
+      <input type="file" id="restoreFile" class="hfile" accept=".json" onchange="restoreJson(this)">
+    </div>
+    <div class="ribbon-page" data-page="struct">
+      <div class="rgroup">
+        <div class="rgroup-items">
+          <button class="rbtn" onclick="ribbonFocus('newCourse')"><i class="fa-solid fa-folder-plus"></i><span>Học phần</span></button>
+          <button class="rbtn" onclick="ribbonFocus('newTb')"><i class="fa-solid fa-book"></i><span>Giáo trình</span></button>
+          <button class="rbtn" onclick="ribbonFocus('newChCode')"><i class="fa-solid fa-list-ol"></i><span>Chương</span></button>
+        </div>
+        <div class="rgroup-name">Thêm vào cấu trúc</div>
+      </div>
+    </div>
+    <div class="ribbon-page" data-page="stats">
+      <div class="rgroup">
+        <div class="rgroup-items">
+          <button class="rbtn" onclick="loadStats(); loadDifficulty()"><i class="fa-solid fa-rotate"></i><span>Làm mới</span></button>
+          <button class="rbtn" onclick="withBusy(this, analyzeScores)"><i class="fa-solid fa-chart-column"></i><span>Phân tích bảng điểm</span></button>
+        </div>
+        <div class="rgroup-name">Dữ liệu</div>
+      </div>
+    </div>
+    <div class="ribbon-page" data-page="export">
+      <div class="rgroup">
+        <div class="rgroup-items">
+          <button class="rbtn" onclick="loadConfig()"><i class="fa-solid fa-folder-open"></i><span>Tải</span></button>
+          <button class="rbtn" onclick="saveConfig()"><i class="fa-solid fa-floppy-disk"></i><span>Lưu</span></button>
+          <button class="rbtn d" onclick="deleteConfig()"><i class="fa-solid fa-trash-can"></i><span>Xóa</span></button>
+        </div>
+        <div class="rgroup-name">Cấu trúc đề</div>
+      </div>
+    </div>
+  </div>
 </header>
 <main>
 
@@ -290,35 +397,13 @@
   <div class="filterbar">
     <div class="search"><i class="fa-solid fa-magnifying-glass"></i><input id="fSearch" placeholder="Tìm nội dung hoặc mã câu"></div>
     <input id="fTag" list="tagList" placeholder="Thẻ" style="width:120px" title="Lọc theo thẻ (ngữ pháp, trợ từ…)"><datalist id="tagList"></datalist>
-    <button class="g" onclick="loadQuestions()">Lọc</button>
-    <span class="sp"></span>
-    <button class="g" onclick="document.getElementById('toolsBox').open=!document.getElementById('toolsBox').open"><i class="fa-solid fa-file-import"></i> Nhập, xuất, rà soát</button>
-    <button class="p" onclick="editQ(null)"><i class="fa-solid fa-plus"></i> Câu mới</button>
   </div>
-  <details class="tools" id="toolsBox">
-    <summary>Công cụ: nhập và xuất file, sao lưu, rà soát trùng, thùng rác, reset tình trạng ra đề</summary>
-    <div class="row"><label>Nhập từ .docx hoặc .csv vào:</label><span id="importTarget" class="sub"></span>
-      <input type="file" id="importFile" accept=".docx,.csv,.txt" onchange="importDocx(this)">
-      <a href="/api/import-template" download><button class="g">Tải mẫu nhập</button></a></div>
-    <div class="row"><a href="/api/backup" download><button class="g">Sao lưu .json</button></a>
-      <label for="restoreFile">Khôi phục từ .json:</label>
-      <input type="file" id="restoreFile" accept=".json" onchange="restoreJson(this)"></div>
-    <details class="row"><summary class="sub">Dán từ Excel</summary>
-      <textarea id="pasteBox" rows="4" style="flex:1" placeholder="Chọn các ô trong Excel (kèm dòng tiêu đề), Ctrl+C rồi dán vào đây"></textarea>
-      <button class="g" onclick="importPaste()">Xem trước dữ liệu dán</button>
-    </details>
-    <div class="row"><label>Rà soát:</label>
-      <button class="g" onclick="showDuplicates()">Kiểm tra trùng</button>
-      <button class="g" onclick="withBusy(this, showSimilar)">Tìm câu gần giống</button>
-      <button class="g" onclick="toggleTrash()">Thùng rác</button></div>
-    <div class="row"><label>Reset tình trạng ra đề:</label>
-      <button class="d" onclick="resetUsage('questions')">Câu đang tick</button>
-      <button class="d" onclick="resetUsage('chapters')">Chương đang lọc</button>
-      <button class="d" onclick="resetUsage('all')">Toàn bộ CSDL</button>
-      <span class="sub">Chỉ xóa số lần đã ra đề, không xóa câu.</span></div>
-  </details>
   <div id="importMsg" class="msg"></div>
   <div id="importPreview" class="card" style="display:none"></div>
+  <div id="pasteCard" class="card" style="display:none">
+    <div class="row"><textarea id="pasteBox" rows="4" style="flex:1" placeholder="Chọn các ô trong Excel (kèm dòng tiêu đề), Ctrl+C rồi dán vào đây"></textarea></div>
+    <div class="row"><button class="g" onclick="importPaste()">Xem trước dữ liệu dán</button></div>
+  </div>
   <div id="dupBox" class="card" style="display:none"></div>
   <div id="trashBox" class="card" style="display:none"></div>
   <div id="editor" class="card" style="display:none"></div>
@@ -426,10 +511,7 @@
       <div class="row"><b>Cấu trúc đề đã lưu</b> <span class="sub">(lưu các phần, số câu, mẫu, furigana; không lưu mã đề, số mã đề, thông tin đề)</span></div>
       <div class="row">
         <select id="cfgSelect" style="min-width:220px"></select>
-        <button class="g" onclick="loadConfig()">Tải</button>
-        <button class="d" onclick="deleteConfig()">Xóa</button>
         <input id="cfgName" placeholder="Tên cấu trúc (để trống = ghi đè cấu trúc đang chọn)" style="width:300px">
-        <button class="g" onclick="saveConfig()">Lưu cấu trúc</button>
         <span id="cfgMsg" class="msg"></span>
       </div>
     </div>
@@ -572,13 +654,48 @@ async function api(path, opts = {}) {
 }
 const postJson = (path, body, method = "POST") => api(path, { method, headers: {"Content-Type":"application/json"}, body: JSON.stringify(body) });
 
-document.querySelectorAll("nav:not(.stepper) button").forEach(b => b.onclick = () => {
-  document.querySelectorAll("nav:not(.stepper) button").forEach(x => x.classList.toggle("on", x === b));
+// ---------- ribbon ----------
+const RIBBON_KEY = "qbank.ribbonMin";
+const isRibbonMin = () => document.body.classList.contains("ribbon-min");
+function updateHdrVar() {
+  document.documentElement.style.setProperty("--hdr", document.querySelector("header.topbar").offsetHeight + "px");
+}
+function setRibbonMin(on) {
+  document.body.classList.toggle("ribbon-min", on);
+  document.body.classList.remove("peek");
+  localStorage.setItem(RIBBON_KEY, on ? "1" : "0");
+  updateHdrVar();
+}
+function togglePaste() {
+  const c = document.getElementById("pasteCard");
+  c.style.display = c.style.display === "none" ? "block" : "none";
+}
+function ribbonFocus(id) {
+  const el = document.getElementById(id);
+  el.scrollIntoView({ behavior: "smooth", block: "center" });
+  el.focus();
+}
+
+document.querySelectorAll(".ribbon-tabs button").forEach(b => b.onclick = () => {
+  document.querySelectorAll(".ribbon-tabs button").forEach(x => x.classList.toggle("on", x === b));
+  document.querySelectorAll(".ribbon-page").forEach(p => p.classList.toggle("on", p.dataset.page === b.dataset.tab));
   document.querySelectorAll("section").forEach(s => s.classList.toggle("on", s.id === b.dataset.tab));
+  if (isRibbonMin()) document.body.classList.add("peek"); // thu gọn: bấm tab thì mở tạm ribbon
   if (b.dataset.tab === "struct") renderStruct();
   if (b.dataset.tab === "stats") { loadStats(); loadDifficulty(); }
   if (b.dataset.tab === "export") loadExport();
 });
+document.getElementById("ribbonToggle").onclick = () => setRibbonMin(!isRibbonMin());
+document.addEventListener("keydown", e => {
+  if (e.ctrlKey && e.key === "F1") { e.preventDefault(); setRibbonMin(!isRibbonMin()); }
+});
+document.addEventListener("click", e => {
+  // bấm ngoài header, hoặc bấm một lệnh trong ribbon, thì ẩn ribbon đang mở tạm
+  if (!e.target.closest("header.topbar") || e.target.closest(".ribbon-body .rbtn")) document.body.classList.remove("peek");
+});
+window.addEventListener("resize", updateHdrVar);
+if (localStorage.getItem(RIBBON_KEY) === "1") document.body.classList.add("ribbon-min");
+updateHdrVar();
 
 // ---------- cây học phần / giáo trình / chương
 async function loadTree() {
@@ -718,7 +835,7 @@ async function loadQuestions(page = 0) {
   renderBankTree();
   loadTagList();
   if (TRASH_OPEN) loadTrash();  // thùng rác đang mở: làm mới sau mỗi thay đổi
-  $("#qBody").innerHTML = list.map(qRowHtml).join("") || `<tr><td colspan="9" class="msg" style="padding:24px;text-align:center">Chưa có câu hỏi nào. Nhấn “Câu mới” hoặc nhập từ .docx trong mục Công cụ.</td></tr>`;
+  $("#qBody").innerHTML = list.map(qRowHtml).join("") || `<tr><td colspan="9" class="msg" style="padding:24px;text-align:center">Chưa có câu hỏi nào. Nhấn “Câu mới” hoặc nhập từ .docx ở ribbon, nhóm “Nhập / Xuất”.</td></tr>`;
 }
 
 const OPT_L = "ABCDEFGH";
