@@ -27,6 +27,8 @@ from datetime import datetime
 from difflib import SequenceMatcher
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs, quote
+from urllib import request as urlreq
+from urllib.error import HTTPError, URLError
 
 from docx import Document
 from html import escape as hesc
@@ -55,6 +57,8 @@ LETTERS = "ABCDEFGH"
 QTYPES = ("TN", "DS", "DT", "TL")  # trắc nghiệm, đúng/sai, điền từ, tự luận
 DEFAULT_COURSE = "Chưa phân loại"
 PORT = int(os.environ.get("QBANK_PORT", "8765"))
+TEXTTS_URL = os.environ.get("TEXTTS_API_URL", "http://127.0.0.1:8000").rstrip("/")  # API của textts (python server.py)
+TEXTTS_ENGINES = ("voicevox", "aivis", "edge")
 
 
 # ---------------------------------------------------------------- database
@@ -159,6 +163,70 @@ def init_storage():
         make_sample_templates()
     if not os.path.exists(os.path.join(TPL_DIR, "de_thi_chuan.docx")):
         make_official_templates()
+
+
+# ---------------------------------------------------------------- textts (tạo file nghe)
+# textts chạy trên cùng máy nên không đi qua proxy hệ thống.
+_textts = urlreq.build_opener(urlreq.ProxyHandler({}))
+
+
+def textts_call(path, body=None, timeout=10):
+    """Gọi API textts; trả về JSON (hoặc bytes nếu không phải JSON). Lỗi kết nối thành ValueError dễ hiểu."""
+    url = path if path.startswith("http") else TEXTTS_URL + path
+    data = json.dumps(body, ensure_ascii=False).encode("utf-8") if body is not None else None
+    req = urlreq.Request(url, data=data, headers={"Content-Type": "application/json"} if data else {})
+    try:
+        with _textts.open(req, timeout=timeout) as r:
+            raw = r.read()
+            return json.loads(raw) if "json" in r.headers.get("Content-Type", "") else raw
+    except HTTPError as e:
+        try:
+            detail = json.loads(e.read()).get("detail")
+        except Exception:
+            detail = None
+        raise ValueError(f"textts báo lỗi: {detail or e.reason}")
+    except (URLError, TimeoutError, OSError) as e:
+        raise ValueError(f"Không kết nối được textts tại {TEXTTS_URL}. Hãy bật textts (python server.py) rồi thử lại. ({e})")
+
+
+def to_textts_script(text):
+    """Furigana của qbank {漢字|かな} thành cú pháp textts 漢字{かな}; dòng chưa có vai thì gán vai [1]."""
+    text = re.sub(r"\{([^{}|]+)\|([^{}]+)\}", r"\1{\2}", text or "")
+    lines = []
+    for ln in text.splitlines():
+        ln = ln.strip()
+        if not ln:
+            continue
+        lines.append(ln if re.match(r"^(\[[^\]]+\]|\d+[\s.:：])", ln) else f"[1] {ln}")
+    return "\n".join(lines)
+
+
+def textts_audio(script, engine="voicevox", level=None):
+    """Nhờ textts đọc kịch bản, lưu mp3 vào thư mục media; trả về {kind, file, name} để gắn vào câu."""
+    script = to_textts_script(script)
+    if not script:
+        raise ValueError("Kịch bản trống")
+    if engine not in TEXTTS_ENGINES:
+        raise ValueError("Engine không hợp lệ")
+    stem = f"qbank_{datetime.now():%Y%m%d_%H%M%S}_{os.urandom(3).hex()}"
+    res = textts_call("/api/v1/dialogue", {
+        "title": stem, "filename": stem, "script": script, "engine": engine,
+        "options": {"format": "mp3", "slow": False, "srt": False, "worksheet": False,
+                    "level": level if level in ("N5", "N4", "N3", "N2", "N1") else None},
+    }, timeout=600)
+    url = (res.get("files") or {}).get("audio_url") if isinstance(res, dict) else None
+    if not url:
+        raise ValueError("textts không trả về file âm thanh")
+    audio = textts_call(url, timeout=120)
+    if not isinstance(audio, bytes) or not audio:
+        raise ValueError("Không tải được file âm thanh từ textts")
+    if len(audio) > MEDIA_MAX["audio"]:
+        raise ValueError("File âm thanh quá lớn (tối đa 15 MB)")
+    os.makedirs(MEDIA_DIR, exist_ok=True)
+    fname = f"{os.urandom(16).hex()}.mp3"
+    with open(os.path.join(MEDIA_DIR, fname), "wb") as f:
+        f.write(audio)
+    return {"kind": "audio", "file": fname, "name": f"{stem}.mp3", "duration_s": res.get("duration_s")}
 
 
 def migrate_passages():
@@ -1991,6 +2059,13 @@ class Handler(BaseHTTPRequestHandler):
             if not rows:
                 return self._json(404, {"error": "Câu này không còn trong ngân hàng"})
             return self._json(200, row_to_api(rows[0]))
+        if p == "/api/tts/status":  # textts có đang chạy không, engine nào dùng được
+            try:
+                h = textts_call("/api/v1/health", timeout=4)
+                return self._json(200, {"ok": True, "url": TEXTTS_URL, "voicevox": h.get("voicevox_connected", False),
+                                        "aivis": h.get("aivis_connected", False)})
+            except ValueError as e:
+                return self._json(200, {"ok": False, "url": TEXTTS_URL, "error": str(e)})
         if p == "/api/tags":  # thẻ đang dùng và số câu của từng thẻ
             count = {}
             for r in q("SELECT tags FROM questions WHERE tags <> ''", fetch=True):
@@ -2076,6 +2151,9 @@ class Handler(BaseHTTPRequestHandler):
             if not rows:
                 raise ValueError("Không có dữ liệu để nhập")
             return self._json(200, parse_rows([rows], textbook_id, dry_run=dry, docx=False))
+        if p == "/api/tts":  # tạo file nghe bằng textts từ kịch bản; trả về file đính kèm như /api/media
+            b = self._json_body()
+            return self._json(201, textts_audio(b.get("script", ""), b.get("engine") or "voicevox", b.get("level")))
         if p == "/api/media":  # tải file đính kèm lên; trả về tên file để gắn vào câu
             raw = self._raw()
             name = parse_qs(u.query).get("name", ["file"])[0]

@@ -877,7 +877,17 @@ async function editQ(id) {
     <div id="eRubricBox" style="display:none"></div>
     <div class="row"><label>Hình ảnh hoặc âm thanh (tùy chọn, tối đa 4 file):</label>
       <input type="file" accept="image/*,audio/*" onchange="uploadMedia(this)">
-      <span id="eMediaList" class="row" style="gap:6px"></span></div>
+      <span id="eMediaList" class="row" style="gap:6px"></span>
+      <button class="g" onclick="toggleTts()">🔊 Tạo file nghe (textts)</button></div>
+    <div id="eTtsBox" style="display:none;border:1px dashed var(--line);border-radius:6px;padding:8px;margin:6px 0">
+      <div class="row"><label>Kịch bản nghe. Mỗi dòng một lượt nói: <code>[1] ...</code>, <code>[2] ...</code> (dòng không ghi vai được gán [1]); furigana viết {漢字|かな} hoặc 漢字{かな}; nghỉ: <code>[pause=800]</code></label></div>
+      <div class="row"><textarea id="eTtsScript" rows="5" placeholder="[1] すみません、駅はどこですか。&#10;[2] あそこです。"></textarea></div>
+      <div class="row"><label>Engine</label><select id="eTtsEngine"><option value="voicevox">VOICEVOX</option><option value="aivis">AivisSpeech</option><option value="edge">Edge (cần Internet)</option></select>
+        <label>Trình độ</label><select id="eTtsLevel"><option value="">Mặc định</option>${["N5","N4","N3","N2","N1"].map(l => `<option>${l}</option>`).join("")}</select>
+        <button class="g" onclick="fillTtsScript()">Lấy từ đoạn văn + câu hỏi</button>
+        <button class="p" id="eTtsBtn" onclick="makeTts()">Tạo và đính kèm</button>
+        <span id="eTtsMsg" class="sub"></span></div>
+    </div>
     <div class="row"><button class="p" onclick="saveQ()">Lưu</button><button class="g" onclick="$('#editor').style.display='none'">Đóng</button><span id="eMsg" class="err"></span></div>`;
   EDIT_MEDIA = (q.media || []).slice();
   EDIT_RUBRIC = (q.rubric || []).map(c => ({ text: c.text || "", points: c.points ?? "", levels: [...(c.levels || []), "", "", "", "", ""].slice(0, 5) }));
@@ -969,6 +979,41 @@ async function uploadMedia(input) {
     EDIT_MEDIA.push({ kind: d.kind, file: d.file, name: d.name });
     renderEditMedia();
   } catch (e) { toast(e.message, true); }
+}
+
+// ---------- tạo file nghe bằng textts (API chạy trên cùng máy)
+async function toggleTts() {
+  const box = $("#eTtsBox"), open = box.style.display === "none";
+  box.style.display = open ? "block" : "none";
+  if (!open) return;
+  if (!$("#eTtsScript").value.trim()) fillTtsScript();
+  const msg = $("#eTtsMsg");
+  msg.textContent = "Đang kiểm tra textts…";
+  try {
+    const st = await api("/api/tts/status");
+    if (!st.ok) { msg.textContent = `Chưa bật textts (${st.url}). Mở textts hoặc chạy: python server.py`; msg.className = "err"; return; }
+    if (!st.voicevox && st.aivis) $("#eTtsEngine").value = "aivis";
+    else if (!st.voicevox && !st.aivis) $("#eTtsEngine").value = "edge";
+    msg.className = "sub";
+    msg.textContent = `textts sẵn sàng · VOICEVOX ${st.voicevox ? "✓" : "✗"} · AivisSpeech ${st.aivis ? "✓" : "✗"}`;
+  } catch (e) { msg.textContent = e.message; msg.className = "err"; }
+}
+function fillTtsScript() {
+  const parts = [$("#ePassage").value, $("#eContent").value].map(x => x.trim()).filter(Boolean);
+  const opts = $("#eType").value === "TN" ? $("#eOpts").value.split("\n").map(x => x.replace(/^#/, "").trim()).filter(Boolean) : [];
+  $("#eTtsScript").value = [...parts, ...opts.map((o, i) => `${i + 1}、${o}`)].join("\n");
+}
+async function makeTts() {
+  if (EDIT_MEDIA.length >= 4) { toast("Mỗi câu tối đa 4 file đính kèm.", true); return; }
+  const btn = $("#eTtsBtn"), msg = $("#eTtsMsg");
+  btn.disabled = true; msg.className = "sub"; msg.textContent = "Đang tạo âm thanh… (có thể mất vài chục giây)";
+  try {
+    const d = await postJson("/api/tts", { script: $("#eTtsScript").value, engine: $("#eTtsEngine").value, level: $("#eTtsLevel").value });
+    EDIT_MEDIA.push({ kind: d.kind, file: d.file, name: d.name });
+    renderEditMedia();
+    msg.textContent = `Đã đính kèm ${d.name}${d.duration_s ? ` (${d.duration_s}s)` : ""}. Nhớ bấm Lưu.`;
+  } catch (e) { msg.textContent = e.message; msg.className = "err"; }
+  finally { btn.disabled = false; }
 }
 
 // ---------- đoạn văn
