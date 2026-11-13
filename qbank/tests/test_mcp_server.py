@@ -143,3 +143,60 @@ def test_create_question_with_audio_attaches_to_passage(stub):
 def test_create_question_audio_needs_passage_when_target_passage(stub):
     err, msg = call("create_question", {"chapter_id": 5, "content": "x", "audio_script": "[1] a", "audio_target": "passage"})
     assert err and "passage" in msg
+
+
+def test_new_tools_are_listed():
+    names = [t["name"] for t in mcp_server.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/list"})["result"]["tools"]]
+    assert {"import_questions", "attach_audio"} <= set(names)
+
+
+def test_import_questions_dry_run_default_and_extension_check(tmp_path, monkeypatch):
+    f = tmp_path / "de.docx"
+    f.write_bytes(b"PK-fake")
+    seen = []
+
+    def fake_api(method, path, params=None, body=None, content_type="application/json"):
+        seen.append((method, path, params, body))
+        return {"added": 1, "errors": [], "rows": [{"where": "B1", "code": "B01", "status": "ok", "note": ""}]}
+
+    monkeypatch.setattr(mcp_server, "api", fake_api)
+    err, res = call("import_questions", {"textbook_id": 3, "file_path": str(f)})
+    assert not err and res["dry_run"] is True and seen[-1][2]["dry_run"] == "1" and seen[-1][3] == b"PK-fake"
+    err, res = call("import_questions", {"textbook_id": 3, "file_path": str(f), "dry_run": False})
+    assert not err and res["dry_run"] is False and seen[-1][2]["dry_run"] is None
+    txt = tmp_path / "a.txt"
+    txt.write_text("x")
+    err, msg = call("import_questions", {"textbook_id": 3, "file_path": str(txt)})
+    assert err and ".docx" in msg
+
+
+def test_attach_audio_keeps_fields_and_old_media(tmp_path, monkeypatch):
+    mp3 = tmp_path / "ban1.mp3"
+    mp3.write_bytes(b"ID3")
+    calls = []
+    question = {"code": "X-001", "chapter_id": 5, "bloom": 2, "qtype": "TN", "content": "c", "options": ["a", "b"],
+                "answer": "B", "solution": "s", "passage": "p", "rubric": [], "points": 1, "clo": "CLO2", "tags": [],
+                "status": "nhap", "word_limit": 0, "media": [{"kind": "image", "file": "old.png", "name": "old.png"}],
+                "passage_id": None, "extra_ignored": 1}
+
+    def fake_api(method, path, params=None, body=None, content_type="application/json"):
+        calls.append((method, path, params, body))
+        if method == "GET":
+            return question
+        if path == "/api/media":
+            return {"kind": "audio", "file": "abc.mp3", "name": "ban1.mp3"}
+        return {"ok": True}
+
+    monkeypatch.setattr(mcp_server, "api", fake_api)
+    err, res = call("attach_audio", {"question_id": 7, "file_path": str(mp3)})
+    assert not err and res["code"] == "X-001"
+    method, path, _, body = calls[-1]
+    assert (method, path) == ("PUT", "/api/questions/7")
+    assert body["status"] == "nhap" and body["answer"] == "B" and "extra_ignored" not in body
+    assert [m["file"] for m in body["media"]] == ["old.png", "abc.mp3"]
+    err, msg = call("attach_audio", {"question_id": 7, "file_path": str(mp3), "target": "passage"})
+    assert err and "đoạn văn" in msg  # câu không có đoạn văn
+    bad = tmp_path / "a.png"
+    bad.write_bytes(b"x")
+    err, msg = call("attach_audio", {"question_id": 7, "file_path": str(bad)})
+    assert err and ".mp3" in msg
