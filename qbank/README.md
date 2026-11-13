@@ -272,6 +272,14 @@ Chi tiết từng lỗi và cách tái hiện: `docs/bao_cao_kiem_thu_2026-11-02
 ### Kiểm trùng trước khi tạo câu
 Công cụ MCP `check_duplicates` (API `POST /api/check-candidates`, không ghi gì) nhận tối đa 100 câu dự định tạo và trả về từng câu: `mới`, `gần giống` (>= 90%, cùng dạng), `trùng chương khác` hoặc `trùng` (cùng chương, app sẽ từ chối), kèm mã câu đã có và các câu trùng nhau trong chính lô. Dùng chỉ mục 3-ký-tự nên 30 câu đối chiếu 3000 câu mất ~0,2 giây. Cần build lại `QBank.exe` để có route này.
 
+### Rà soát, sửa, ra đề và sao lưu qua MCP
+Nguyên tắc: không có công cụ xóa câu thông thường; mọi công cụ ghi mặc định `dry_run=true` (chỉ xem trước), ghi thật khi đặt `dry_run=false`.
+- **Chỉ đọc:** `bank_stats`, `find_duplicates`, `find_similar`, `difficulty_report`, `preview_exam`, `list_trash`, `preview_restore` (xem file sao lưu .json có bao nhiêu câu đã có/mới).
+- **Sửa và duyệt:** `update_question` (chỉ trường được nêu, giữ nguyên file nghe và trạng thái), `set_status` (nhap / da_duyet / ngung, theo lô; chỉ duyệt khi người dùng bảo).
+- **Xuất đề:** `export_exam` xuất thật ghi file zip vào `out_dir` và ghi lịch sử dùng câu, nên cần `dry_run=false` và `confirm=true`; thư mục được kiểm tra ghi được trước khi gọi app.
+- **Sao lưu/khôi phục:** `backup_bank` (JSON vào `out_dir`), `restore_from_trash`. Khôi phục từ file sao lưu chỉ xem trước, làm thật trong app.
+- **Gộp câu trùng:** `merge_duplicates` xóa hẳn các câu bị gộp (không vào thùng rác): tự lưu bản sao vào `out_dir` trước, chỉ gộp câu thật sự cùng nội dung, cần `confirm=true` từng lần.
+
 ### MCP luôn đi kèm bản cập nhật
 - `python3 tools/build_exe.py` tạo `dist/QBank(.exe)` và `dist/QBankMCP(.exe)`; khai báo bản đóng gói bằng `claude mcp add qbank -- /duong/dan/QBankMCP.exe`. Phát hành bản mới thì đính kèm cả hai file.
 - Khi app đổi cấu trúc (thêm/đổi tên/xóa route API, thêm cột câu hỏi), MCP phải đổi theo. `tools/check_mcp_sync.py` kiểm tra: mọi đường dẫn MCP gọi còn tồn tại, mọi cột câu hỏi có trong `QUESTION_FIELDS`, và so route với `mcp_manifest.json`. Lệch thì kiểm tra báo lỗi; sửa `mcp_server.py` và tests rồi chạy `python3 tools/check_mcp_sync.py --update`.

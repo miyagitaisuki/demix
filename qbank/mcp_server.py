@@ -9,6 +9,7 @@ Biến môi trường: QBANK_URL (mặc định http://127.0.0.1:8765).
 """
 import json
 import os
+import re
 import sys
 import urllib.error
 import urllib.parse
@@ -16,7 +17,7 @@ import urllib.request
 
 BASE_URL = os.environ.get("QBANK_URL", "http://127.0.0.1:8765").rstrip("/")
 PROTOCOL = "2024-11-05"
-SERVER_INFO = {"name": "qbank", "version": "1.2.0"}
+SERVER_INFO = {"name": "qbank", "version": "1.3.0"}
 
 
 class ApiError(Exception):
@@ -313,6 +314,276 @@ def tool_get_question_audio(args):
             "passage_audio": f(q.get("passage_media"))}
 
 
+# ---------------------------------------------------------------- công cụ rà soát, sửa, ra đề, sao lưu
+STATUS_VALUES = ("nhap", "da_duyet", "ngung")
+EDITABLE_FIELDS = ("content", "options", "answer", "solution", "passage", "bloom", "qtype", "clo", "tags", "points",
+                   "word_limit", "transcript", "translation", "rubric")
+
+
+def api_raw(method, path, body=None):
+    """Như api() nhưng trả về (bytes, headers): dùng cho file zip đề và file sao lưu."""
+    data = json.dumps(body, ensure_ascii=False).encode("utf-8") if body is not None else None
+    req = urllib.request.Request(BASE_URL + path, data=data, method=method)
+    if data is not None:
+        req.add_header("Content-Type", "application/json")
+    try:
+        with urllib.request.urlopen(req, timeout=300) as resp:
+            return resp.read(), resp.headers
+    except urllib.error.HTTPError as e:
+        try:
+            msg = json.loads(e.read().decode("utf-8")).get("error", str(e))
+        except Exception:
+            msg = str(e)
+        raise ApiError(msg)
+    except urllib.error.URLError:
+        raise ApiError(f"Không kết nối được app tại {BASE_URL}. Hãy mở app (python3 app.py) trước.")
+
+
+def _out_dir(args):
+    """Thư mục ghi file do người dùng chỉ định (bắt buộc). Kiểm tra ghi được TRƯỚC khi làm việc có tác dụng phụ."""
+    d = str(args.get("out_dir") or "").strip()
+    if not d:
+        raise ApiError("Thiếu out_dir: hãy hỏi người dùng muốn lưu file ở thư mục nào")
+    d = os.path.abspath(d)
+    try:
+        os.makedirs(d, exist_ok=True)
+        probe = os.path.join(d, ".qbank_write_test")
+        with open(probe, "w") as f:
+            f.write("ok")
+        os.remove(probe)
+    except OSError as e:
+        raise ApiError(f"Không ghi được vào thư mục {d}: {e}")
+    return d
+
+
+def _stamp():
+    import datetime
+    return datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+
+
+def _ids(args, key="ids", limit=200):
+    ids = args.get(key)
+    if not isinstance(ids, list) or not ids:
+        raise ApiError(f"Thiếu danh sách {key}")
+    if len(ids) > limit:
+        raise ApiError(f"Tối đa {limit} mục mỗi lần")
+    return [_int(i, key) for i in ids]
+
+
+def _writes(args):
+    """Công cụ ghi: mặc định dry_run (chỉ xem trước). dry_run=false mới ghi thật."""
+    return args.get("dry_run", True) is False
+
+
+# --- rà soát (chỉ đọc)
+def tool_bank_stats(args):
+    """Thống kê ngân hàng: tổng số câu, theo dạng, và theo từng chương (số câu theo mức Bloom)."""
+    s = api("GET", "/api/stats")
+    return {"total": s["total"], "by_type": s["by_type"],
+            "chapters": [{"id": c["id"], "label": c["label"], "total": c["total"], "by_bloom": c["counts"]}
+                         for c in s["chapters"]]}
+
+
+def tool_find_duplicates(args):
+    """Các nhóm câu trùng nội dung y hệt trong ngân hàng (chỉ báo cáo, không gộp)."""
+    limit = min(max(int(args.get("limit", 20)), 1), 100)
+    groups = api("GET", "/api/duplicates")
+    groups = groups if isinstance(groups, list) else groups.get("groups", [])
+    return {"groups": len(groups), "shown": groups[:limit]}
+
+
+def tool_find_similar(args):
+    """Các cặp câu gần giống (>= 90%, cùng dạng) để rà soát (chỉ báo cáo)."""
+    limit = min(max(int(args.get("limit", 20)), 1), 100)
+    pairs = api("GET", "/api/similar")
+    pairs = pairs if isinstance(pairs, list) else pairs.get("pairs", [])
+    return {"pairs": len(pairs), "shown": pairs[:limit]}
+
+
+def tool_difficulty_report(args):
+    """Độ khó thực tế từ kết quả thi đã nhập: trung bình theo mức Bloom và các câu dễ/khó bất thường."""
+    return api("GET", "/api/difficulty")
+
+
+# --- sửa và duyệt
+def tool_update_question(args):
+    """Sửa một câu: chỉ các trường được nêu thay đổi; trường khác, file đính kèm và trạng thái giữ nguyên.
+    Mặc định dry_run: chỉ cho xem thay đổi. Không đổi trạng thái (dùng set_status)."""
+    qid = _int(args.get("question_id"), "question_id")
+    changes = {k: args[k] for k in EDITABLE_FIELDS if k in args}
+    if not changes:
+        raise ApiError("Chưa nêu trường nào cần sửa: " + ", ".join(EDITABLE_FIELDS))
+    q = api("GET", f"/api/questions/{qid}")
+    diff = {k: {"cũ": q.get(k), "mới": v} for k, v in changes.items() if q.get(k) != v}
+    if diff and _writes(args):
+        body = {k: q[k] for k in QUESTION_FIELDS if k in q}
+        body.update(changes)
+        body["media"] = q.get("media") or []
+        body["confirm_passage"] = args.get("confirm_passage") is True
+        api("PUT", f"/api/questions/{qid}", body=body)
+    return {"ok": True, "dry_run": not _writes(args), "question_id": qid, "code": q.get("code"), "changed": diff}
+
+
+def tool_set_status(args):
+    """Đổi trạng thái hàng loạt (nhap, da_duyet, ngung). Chuyển sang da_duyet CHỈ khi người dùng đã bảo duyệt các câu này.
+    Mặc định dry_run: liệt kê các câu sẽ đổi."""
+    ids = _ids(args)
+    status = args.get("status")
+    if status not in STATUS_VALUES:
+        raise ApiError("status phải là nhap, da_duyet hoặc ngung")
+    rows = []
+    for i in ids[:100]:
+        q = api("GET", f"/api/questions/{i}")
+        rows.append({"id": i, "code": q.get("code"), "từ": q.get("status")})
+    if _writes(args):
+        r = api("POST", "/api/questions/status", body={"status": status, "ids": ids})
+        return {"ok": True, "dry_run": False, "status": status, "changed": r.get("updated", r.get("changed", len(ids))),
+                "questions": rows}
+    return {"ok": True, "dry_run": True, "status": status, "would_change": len(ids), "questions": rows}
+
+
+# --- ra đề và xuất đề
+def _sections(args):
+    s = args.get("sections")
+    if not isinstance(s, list) or not s:
+        raise ApiError("Thiếu sections (mỗi phần có matrix [{chapter_id, bloom, n}] và/hoặc passages)")
+    return s
+
+
+def tool_preview_exam(args):
+    """Xem trước các câu sẽ được chọn cho đề (không ghi lịch sử dùng, không tạo file)."""
+    r = api("POST", "/api/exam/preview", body={"sections": _sections(args)})
+    parts = []
+    for i, s in enumerate(r["sections"]):
+        parts.append({"section": i + 1, "count": len(s["items"]),
+                      "items": [{"id": it.get("id"), "code": it.get("code"), "qtype": it.get("qtype"), "bloom": it.get("bloom"),
+                                 "last_used": it.get("last_used"), "content": (it.get("content") or "")[:80]}
+                                for it in s["items"]]})
+    return {"sections": parts}
+
+
+def _filename(headers, fallback):
+    cd = headers.get("Content-Disposition", "") or ""
+    m = re.search(r"filename\*=UTF-8''([^;]+)", cd) or re.search(r'filename="?([^";]+)"?', cd)
+    name = urllib.parse.unquote(m.group(1)) if m else fallback
+    return os.path.basename(name) or fallback
+
+
+def tool_export_exam(args):
+    """Xuất đề (zip gồm .docx, đáp án, âm thanh) vào out_dir. Xuất THẬT ghi file và GHI LỊCH SỬ DÙNG CÂU (câu bị đánh dấu đã ra đề),
+    nên cần dry_run=false VÀ confirm=true sau khi người dùng đồng ý. Mặc định dry_run: chỉ xem trước các câu sẽ chọn."""
+    sections = _sections(args)
+    body = {k: args[k] for k in ("template", "variants", "start", "prefix", "meta", "answer_key", "key_separate", "furigana",
+                                 "shuffle", "seed", "clo_mode", "listening", "picked", "key_template") if k in args}
+    body["sections"] = sections
+    if not _writes(args):
+        return {"dry_run": True, "note": "Chưa ghi gì. Để xuất thật: dry_run=false và confirm=true, kèm out_dir.",
+                "preview": tool_preview_exam({"sections": sections})}
+    if args.get("confirm") is not True:
+        raise ApiError("Xuất thật cần confirm=true (sẽ ghi file và đánh dấu các câu đã ra đề). Hãy hỏi người dùng trước.")
+    d = _out_dir(args)  # kiểm tra ghi được TRƯỚC khi app ghi lịch sử dùng câu
+    if "record_usage" in args:
+        body["record_usage"] = bool(args["record_usage"])
+    data, headers = api_raw("POST", "/api/export", body)
+    path = os.path.join(d, _filename(headers, f"de_{_stamp()}.zip"))
+    with open(path, "wb") as f:
+        f.write(data)
+    return {"ok": True, "dry_run": False, "file": path, "bytes": len(data), "variants": headers.get("X-Variants"),
+            "seed": headers.get("X-Seed"), "reused_questions": headers.get("X-Reused")}
+
+
+# --- sao lưu và khôi phục
+def tool_backup_bank(args):
+    """Sao lưu toàn bộ ngân hàng ra file JSON trong out_dir (không đổi gì trong app). Mặc định dry_run: chỉ báo số câu sẽ sao lưu."""
+    data, _ = api_raw("GET", "/api/backup")
+    info = json.loads(data.decode("utf-8"))
+    n = len(info.get("questions", []))
+    if not _writes(args):
+        return {"dry_run": True, "questions": n, "bytes": len(data)}
+    d = _out_dir(args)
+    path = os.path.join(d, f"qbank_backup_{_stamp()}.json")
+    with open(path, "wb") as f:
+        f.write(data)
+    return {"ok": True, "dry_run": False, "file": path, "questions": n, "bytes": len(data)}
+
+
+def tool_list_trash(args):
+    """Câu trong thùng rác (đã xóa trong app) có thể khôi phục."""
+    return {"items": api("GET", "/api/trash")}
+
+
+def tool_restore_from_trash(args):
+    """Khôi phục câu từ thùng rác (câu trùng nội dung sẽ không khôi phục được và ở lại thùng rác). Mặc định dry_run."""
+    ids = _ids(args)
+    trash = {t["id"]: t for t in api("GET", "/api/trash")}
+    found = [{"id": i, "code": trash[i]["code"], "content": trash[i]["content"][:80]} for i in ids if i in trash]
+    missing = [i for i in ids if i not in trash]
+    if not _writes(args):
+        return {"dry_run": True, "would_restore": found, "not_in_trash": missing}
+    r = api("POST", "/api/trash/restore", body={"ids": [t["id"] for t in found]})
+    return {"ok": True, "dry_run": False, "result": r, "not_in_trash": missing}
+
+
+def tool_preview_restore(args):
+    """Xem trước việc nhập lại một file sao lưu JSON: bao nhiêu câu đã có sẵn trong ngân hàng, bao nhiêu câu mới. KHÔNG ghi gì;
+    khôi phục thật từ file sao lưu làm trong app."""
+    path = str(args.get("file_path") or "").strip()
+    if not path.lower().endswith(".json") or not os.path.isfile(path):
+        raise ApiError("file_path phải là file sao lưu .json có thật")
+    with open(path, encoding="utf-8") as f:
+        data = json.load(f)
+    items = data.get("questions") if isinstance(data, dict) else data
+    if not isinstance(items, list):
+        raise ApiError("File sao lưu không đúng định dạng")
+    present, new, near = 0, 0, 0
+    for i in range(0, len(items), 100):
+        batch = [{"chapter_id": 0, "qtype": it.get("qtype", "TN"), "content": it.get("content", ""),
+                  "options": it.get("options") or []} for it in items[i:i + 100]]
+        for r in api("POST", "/api/check-candidates", body={"items": batch})["results"]:
+            if r["status"] in ("trùng", "trùng chương khác"):
+                present += 1
+            elif r["status"] == "gần giống":
+                near += 1
+            else:
+                new += 1
+    return {"file": path, "questions_in_file": len(items), "already_in_bank": present, "near_duplicates": near, "new": new}
+
+
+DUP_IGNORE = re.compile(r"[\s。、，．,.!?！？「」『』“”\"'()（）]+")  # cùng quy tắc với dup_key của app (app vẫn kiểm lại)
+
+
+def _dup_key(q):
+    return DUP_IGNORE.sub("", (str(q.get("content") or "") + "".join(q.get("options") or [])).lower())
+
+
+def tool_merge_duplicates(args):
+    """Gộp câu trùng: giữ keep_id, XÓA HẲN các câu remove_ids (cùng nội dung; không vào thùng rác; lịch sử dùng chuyển sang câu giữ).
+    Trước khi xóa tự lưu bản sao các câu sẽ mất vào out_dir. Mặc định dry_run; xóa thật cần dry_run=false VÀ confirm=true
+    sau khi người dùng đồng ý từng lần."""
+    keep = _int(args.get("keep_id"), "keep_id")
+    removes = _ids(args, "remove_ids", limit=20)
+    if keep in removes:
+        raise ApiError("keep_id không được nằm trong remove_ids")
+    kept = api("GET", f"/api/questions/{keep}")
+    gone = [api("GET", f"/api/questions/{i}") for i in removes]
+    for i, g in zip(removes, gone):
+        if _dup_key(g) != _dup_key(kept):
+            raise ApiError(f"Câu {g.get('code')} không trùng nội dung với câu giữ {kept.get('code')}: không gộp.")
+    plan = {"keep": {"id": keep, "code": kept.get("code")}, "remove": [{"id": i, "code": g.get("code")} for i, g in zip(removes, gone)]}
+    if not _writes(args):
+        return {"dry_run": True, "plan": plan, "note": "Chưa xóa gì. Xóa thật: dry_run=false, confirm=true, kèm out_dir để lưu bản sao."}
+    if args.get("confirm") is not True:
+        raise ApiError("Gộp thật cần confirm=true (câu bị gộp bị xóa hẳn). Hãy hỏi người dùng trước.")
+    d = _out_dir(args)
+    backup = os.path.join(d, f"truoc_gop_{_stamp()}.json")
+    with open(backup, "w", encoding="utf-8") as f:
+        json.dump({"app": "QBank", "version": 4, "note": "Câu bị xóa khi gộp", "keep": keep, "questions": gone}, f, ensure_ascii=False, indent=1)
+    if os.path.getsize(backup) == 0:
+        raise ApiError("Không lưu được bản sao, hủy gộp")
+    r = api("POST", "/api/duplicates/merge", body={"keep": keep, "remove": removes})
+    return {"ok": True, "dry_run": False, "result": r, "backup": backup}
+
+
 def _obj(props, required=()):
     return {"type": "object", "properties": props, "required": list(required), "additionalProperties": False}
 
@@ -406,6 +677,78 @@ TOOLS = [
      "inputSchema": _obj({"question_id": {"type": "integer"},
                           "target": {"type": "string", "enum": ["question", "passage", "both"], "default": "question"},
                           "file": {"type": "string"}, "dry_run": {"type": "boolean", "default": False}}, ["question_id"])},
+    # ---- rà soát (chỉ đọc)
+    {"name": "bank_stats", "handler": tool_bank_stats,
+     "description": "CHỈ ĐỌC. Thống kê ngân hàng: tổng số câu, theo dạng, và theo chương (số câu theo mức Bloom).",
+     "inputSchema": _obj({})},
+    {"name": "find_duplicates", "handler": tool_find_duplicates,
+     "description": "CHỈ ĐỌC. Các nhóm câu trùng nội dung y hệt trong ngân hàng. Chỉ báo cáo; gộp bằng merge_duplicates khi người dùng đồng ý.",
+     "inputSchema": _obj({"limit": {"type": "integer", "minimum": 1, "maximum": 100}})},
+    {"name": "find_similar", "handler": tool_find_similar,
+     "description": "CHỈ ĐỌC. Các cặp câu gần giống (>= 90%, cùng dạng) để rà soát. Chỉ báo cáo.",
+     "inputSchema": _obj({"limit": {"type": "integer", "minimum": 1, "maximum": 100}})},
+    {"name": "difficulty_report", "handler": tool_difficulty_report,
+     "description": "CHỈ ĐỌC. Độ khó thực tế từ kết quả thi đã nhập: trung bình theo mức Bloom và các câu dễ/khó bất thường.",
+     "inputSchema": _obj({})},
+    # ---- sửa và duyệt
+    {"name": "update_question", "handler": tool_update_question,
+     "description": "Sửa một câu: chỉ các trường được nêu thay đổi, trường khác/file đính kèm/trạng thái giữ nguyên. Mặc định dry_run=true "
+                    "(chỉ cho xem thay đổi cũ/mới); dry_run=false mới ghi. KHÔNG đổi trạng thái (dùng set_status).",
+     "inputSchema": _obj({"question_id": {"type": "integer"}, "content": {"type": "string"},
+                          "options": {"type": "array", "items": {"type": "string"}}, "answer": {"type": "string"},
+                          "solution": {"type": "string"}, "passage": {"type": "string"},
+                          "bloom": {"type": "integer", "minimum": 1, "maximum": 5},
+                          "qtype": {"type": "string", "enum": ["TN", "DS", "DT", "TL"]}, "clo": {"type": "string"},
+                          "tags": {"type": "string"}, "points": {"type": "number"}, "word_limit": {"type": "integer"},
+                          "transcript": {"type": "string"}, "translation": {"type": "string"},
+                          "rubric": {"type": "array", "items": {}}, "confirm_passage": {"type": "boolean"},
+                          "dry_run": {"type": "boolean", "default": True}}, ["question_id"])},
+    {"name": "set_status", "handler": tool_set_status,
+     "description": "Đổi trạng thái hàng loạt (nhap, da_duyet, ngung; tối đa 200 câu). Chuyển sang da_duyet CHỈ khi người dùng đã bảo duyệt "
+                    "đúng các câu này; không tự duyệt câu Claude vừa tạo. Mặc định dry_run=true: liệt kê các câu sẽ đổi.",
+     "inputSchema": _obj({"ids": {"type": "array", "items": {"type": "integer"}, "maxItems": 200},
+                          "status": {"type": "string", "enum": ["nhap", "da_duyet", "ngung"]},
+                          "dry_run": {"type": "boolean", "default": True}}, ["ids", "status"])},
+    # ---- ra đề và xuất đề
+    {"name": "preview_exam", "handler": tool_preview_exam,
+     "description": "CHỈ ĐỌC. Xem trước các câu sẽ được chọn cho đề theo cấu trúc sections (matrix chương x mức Bloom x số câu, passages). "
+                    "Không ghi lịch sử dùng câu, không tạo file.",
+     "inputSchema": _obj({"sections": {"type": "array", "items": {"type": "object"}}}, ["sections"])},
+    {"name": "export_exam", "handler": tool_export_exam,
+     "description": "Xuất đề thành file zip vào out_dir. Xuất THẬT ghi file và GHI LỊCH SỬ DÙNG CÂU (câu bị đánh dấu đã ra đề): cần dry_run=false "
+                    "VÀ confirm=true sau khi người dùng đồng ý. Mặc định dry_run=true: chỉ xem trước các câu sẽ chọn. out_dir bắt buộc khi xuất thật.",
+     "inputSchema": _obj({"sections": {"type": "array", "items": {"type": "object"}}, "template": {"type": "string"},
+                          "variants": {"type": "integer", "minimum": 1}, "start": {"type": "integer"}, "prefix": {"type": "string"},
+                          "meta": {"type": "object"}, "answer_key": {"type": "boolean"}, "key_separate": {"type": "boolean"},
+                          "furigana": {"type": "string"}, "shuffle": {"type": "boolean"}, "seed": {"type": "integer"},
+                          "clo_mode": {"type": "boolean"}, "listening": {"type": "object"}, "picked": {"type": "array"},
+                          "key_template": {"type": "string"}, "record_usage": {"type": "boolean"},
+                          "out_dir": {"type": "string", "description": "thư mục lưu file zip (do người dùng chỉ định)"},
+                          "dry_run": {"type": "boolean", "default": True}, "confirm": {"type": "boolean", "default": False}},
+                         ["sections"])},
+    # ---- sao lưu và khôi phục
+    {"name": "backup_bank", "handler": tool_backup_bank,
+     "description": "Sao lưu toàn bộ ngân hàng ra file JSON trong out_dir (không đổi gì trong app). Mặc định dry_run=true: chỉ báo số câu.",
+     "inputSchema": _obj({"out_dir": {"type": "string"}, "dry_run": {"type": "boolean", "default": True}})},
+    {"name": "list_trash", "handler": tool_list_trash,
+     "description": "CHỈ ĐỌC. Câu trong thùng rác (đã xóa trong app) có thể khôi phục.",
+     "inputSchema": _obj({})},
+    {"name": "restore_from_trash", "handler": tool_restore_from_trash,
+     "description": "Khôi phục câu từ thùng rác (id lấy từ list_trash). Câu trùng nội dung không khôi phục được. Mặc định dry_run=true.",
+     "inputSchema": _obj({"ids": {"type": "array", "items": {"type": "integer"}, "maxItems": 200},
+                          "dry_run": {"type": "boolean", "default": True}}, ["ids"])},
+    {"name": "preview_restore", "handler": tool_preview_restore,
+     "description": "CHỈ ĐỌC. Xem trước việc nhập lại file sao lưu .json: bao nhiêu câu đã có trong ngân hàng, gần giống, mới. Không ghi gì; "
+                    "khôi phục thật từ file sao lưu do người dùng làm trong app.",
+     "inputSchema": _obj({"file_path": {"type": "string"}}, ["file_path"])},
+    {"name": "merge_duplicates", "handler": tool_merge_duplicates,
+     "description": "NGUY HIỂM, không hoàn tác trong app. Gộp câu trùng: giữ keep_id, XÓA HẲN remove_ids (cùng nội dung, tối đa 20; không vào "
+                    "thùng rác). Tự lưu bản sao các câu sẽ mất vào out_dir trước khi xóa. Mặc định dry_run=true; xóa thật cần dry_run=false "
+                    "VÀ confirm=true sau khi người dùng đồng ý từng lần.",
+     "inputSchema": _obj({"keep_id": {"type": "integer"},
+                          "remove_ids": {"type": "array", "items": {"type": "integer"}, "maxItems": 20},
+                          "out_dir": {"type": "string"}, "dry_run": {"type": "boolean", "default": True},
+                          "confirm": {"type": "boolean", "default": False}}, ["keep_id", "remove_ids"])},
 ]
 TOOL_BY_NAME = {t["name"]: t for t in TOOLS}
 
