@@ -264,6 +264,8 @@ Chi tiết từng lỗi và cách tái hiện: `docs/bao_cao_kiem_thu_2026-11-02
   - **Xuất Moodle XML:** chọn câu rồi bấm "Xuất Moodle XML"; không chọn thì xuất mọi câu đã duyệt. Trắc nghiệm → multichoice (một đáp án); đúng/sai nhiều ý → mỗi ý là một câu truefalse; điền từ → shortanswer (mọi đáp án chấp nhận); tự luận → essay, hướng dẫn chấm đặt vào graderinfo. Danh mục Moodle theo học phần/giáo trình/chương. Ảnh và âm thanh được nhúng vào câu Moodle. Chưa thử nhập vào Moodle thật: cần kiểm tra trên máy có Moodle trước khi dùng cho lớp.
 - **Chưa làm (tính năng mới):** QTI; dùng chung qua mạng nội bộ có đăng nhập; cấu hình tên trường và khoa.
 
+`create_question` còn tự kiểm trùng trước khi ghi (và trước khi tốn thời gian tạo audio): câu trùng cùng chương bị từ chối, câu gần giống (>= 90%) bị chặn kèm mã câu đã có; chỉ tạo khi gọi lại với `allow_similar=true` sau khi người dùng đồng ý. App cũ chưa có route kiểm trùng thì bỏ qua bước này và ghi cảnh báo.
+
 ### Thay và xóa file nghe qua MCP
 `attach_audio` mặc định thay file nghe cũ cùng cấp (câu hoặc đoạn văn) để mỗi câu chỉ có một file nghe (`replace=false` để gắn thêm). `get_question_audio` liệt kê file nghe của câu và đoạn văn; `remove_audio` gỡ file được chọn (hoặc mọi file nghe ở cấp đó) khỏi dữ liệu câu/đoạn văn, có `dry_run`. Chỉ sửa danh sách đính kèm trong CSDL qua API sẵn có; không cần build lại app.
 

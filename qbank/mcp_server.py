@@ -135,6 +135,27 @@ def tool_import_chapters(args):
                       "note": x["note"]} for x in r["rows"] if x["status"] != "thêm" or dry]}
 
 
+def _auto_check(body, allow_similar):
+    """Kiểm trùng TỰ ĐỘNG trước khi tạo câu (và trước khi tốn thời gian tạo audio). Trả về cảnh báo (list) hoặc raise ApiError.
+    App cũ chưa có route kiểm trùng thì bỏ qua và báo trong cảnh báo."""
+    item = {k: body[k] for k in ("chapter_id", "qtype", "content", "options")}
+    try:
+        res = api("POST", "/api/check-candidates", body={"items": [item]})["results"][0]
+    except ApiError as e:
+        if "không tìm thấy" in str(e):
+            return ["Chưa kiểm câu gần giống: app chưa có route kiểm trùng (cần build lại QBank.exe)."]
+        raise
+    codes = lambda lst: ", ".join(f"{x['code']}" + (f" ({round(x['ratio'] * 100)}%)" if "ratio" in x else "") for x in lst)
+    if res["status"] == "trùng":
+        raise ApiError(f"Câu đã có trong cùng chương ({codes(res['exact'])}). Không tạo; hãy viết câu khác.")
+    if res["status"] == "gần giống" and not allow_similar:
+        raise ApiError(f"Câu gần giống câu đã có: {codes(res['similar'])}. Hãy đổi chủ đề/số liệu/hội thoại, hoặc hỏi người dùng "
+                       "rồi gọi lại với allow_similar=true.")
+    if res["status"] == "trùng chương khác":
+        return [f"Trùng nội dung với câu {codes(res['exact'])} ở chương khác"]
+    return []
+
+
 def tool_create_question(args):
     """Tạo một câu hỏi (mặc định trạng thái Nháp). Có audio_script thì nhờ textts đọc kịch bản thành mp3 rồi đính kèm:
     audio_target="passage" gắn vào đoạn văn (dùng chung cho mọi câu của đoạn, cần có passage), "question" gắn riêng vào câu."""
@@ -147,6 +168,7 @@ def tool_create_question(args):
         body["points"] = args["points"]
     if args.get("confirm_passage") is True:  # nhãn đoạn văn gần giống đoạn có sẵn: chỉ tạo đoạn mới khi người dùng đã xác nhận
         body["confirm_passage"] = True
+    check_warnings = _auto_check(body, args.get("allow_similar") is True)
     script = str(args.get("audio_script") or "").strip()
     audio = None
     if script and not str(body["transcript"]).strip():
@@ -161,7 +183,7 @@ def tool_create_question(args):
                                               "level": args.get("audio_level")})
         body["passage_media" if target == "passage" else "media"] = [audio]
     r = api("POST", "/api/questions", body=body)
-    out = {"ok": True, "id": r.get("id"), "code": r.get("code"), "warnings": r.get("warnings", [])}
+    out = {"ok": True, "id": r.get("id"), "code": r.get("code"), "warnings": r.get("warnings", []) + check_warnings}
     if audio:
         out["audio"] = {"file": audio.get("name"), "duration_s": audio.get("duration_s")}
     return out
@@ -330,7 +352,7 @@ TOOLS = [
      "inputSchema": _obj({"textbook_id": {"type": "integer"}, "csv": {"type": "string"},
                           "dry_run": {"type": "boolean", "default": True}}, ["textbook_id", "csv"])},
     {"name": "create_question", "handler": tool_create_question,
-     "description": "Tạo một câu hỏi (mặc định Nháp, chờ người dùng duyệt). Câu nghe (聴解): đặt kịch bản hội thoại vào audio_script "
+     "description": "Tạo một câu hỏi (mặc định Nháp, chờ người dùng duyệt). TỰ KIỂM TRÙNG trước khi ghi: câu trùng cùng chương bị từ chối, câu gần giống (>= 90%) bị chặn trừ khi allow_similar=true sau khi người dùng đồng ý. Câu nghe (聴解): đặt kịch bản hội thoại vào audio_script "
                     "(mỗi dòng một lượt nói, [1] ..., [2] ...; furigana {漢字|かな}; nghỉ [pause=800]); QBank gọi textts tạo mp3 và đính kèm. "
                     "Cần bật textts (cổng 8000). Nếu báo đoạn văn gần giống đoạn có sẵn: dùng đúng chữ của đoạn đó để dùng chung, hoặc hỏi người dùng rồi gọi lại với confirm_passage=true. Hội thoại dùng chung nhiều câu: điền passage và audio_target=passage.",
      "inputSchema": _obj({
@@ -348,6 +370,7 @@ TOOLS = [
          "audio_target": {"type": "string", "enum": ["question", "passage"], "default": "question"},
          "audio_engine": {"type": "string", "description": "voicevox (mặc định), aivis, edge… theo textts"},
          "audio_level": {"type": "string", "enum": ["N5", "N4", "N3", "N2", "N1"]},
+         "allow_similar": {"type": "boolean", "default": False, "description": "Chỉ đặt true khi người dùng đồng ý tạo câu dù gần giống câu đã có"},
          "confirm_passage": {"type": "boolean", "default": False, "description": "Đặt true khi app báo nhãn/đoạn văn gần giống đoạn có sẵn trong chương và người dùng đồng ý tạo đoạn mới (hoặc dùng đúng chữ của đoạn có sẵn để dùng chung)"}},
          ["chapter_id", "content"])},
     {"name": "check_duplicates", "handler": tool_check_duplicates,
