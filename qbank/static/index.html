@@ -709,10 +709,20 @@ async function loadTree() {
   $("#fCourse").innerHTML = `<option value="">Mọi học phần</option>` + TREE.courses.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join("");
   $("#fCourse").value = keepC;
   fillTextbookFilter();
-  $("#newTbCourse").innerHTML = TREE.courses.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join("");
-  $("#newChTb").innerHTML = TREE.textbooks.map(t => `<option value="${t.id}">${esc(coursesOf(t))} / ${esc(t.name)}</option>`).join("");
+  fillAddSelects();
   $("#fBloom").innerHTML = `<option value="">Mọi mức</option>` + Object.entries(BLOOM).map(([k,v]) => `<option value="${k}">${k}. ${v}</option>`).join("");
   renderCourseChips();
+}
+// đổ lại các ô chọn của form thêm (học phần, giáo trình) nhưng giữ mục đang chọn,
+// để nhập nhiều chương/giáo trình liên tiếp không phải chọn lại sau mỗi lần thêm
+function fillSelectKeep(sel, html) {
+  const el = $(sel), v = el.value;
+  el.innerHTML = html;
+  if ([...el.options].some(o => o.value === v)) el.value = v;
+}
+function fillAddSelects() {
+  fillSelectKeep("#newTbCourse", TREE.courses.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join(""));
+  fillSelectKeep("#newChTb", TREE.textbooks.map(t => `<option value="${t.id}">${esc(coursesOf(t))} / ${esc(t.name)}</option>`).join(""));
 }
 const courseName = id => (TREE.courses.find(c => c.id == id) || {}).name || "";
 const textbookName = id => (TREE.textbooks.find(t => t.id == id) || {}).name || "";
@@ -1524,8 +1534,7 @@ async function renderStruct() {
     html += `</li>`;
   }
   $("#treeBox").innerHTML = TREE.courses.length ? `<ul>${html}</ul>` : `<span class="msg">Chưa có học phần nào.</span>`;
-  $("#newTbCourse").innerHTML = TREE.courses.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join("");
-  $("#newChTb").innerHTML = TREE.textbooks.map(t => `<option value="${t.id}">${esc(coursesOf(t))} / ${esc(t.name)}</option>`).join("");
+  fillAddSelects();
 }
 
 // cấu trúc: học phần và giáo trình thu gọn như tab Ngân hàng; trạng thái nhớ trên máy
@@ -1570,7 +1579,7 @@ const addTextbook = () => structAction(async () => {
 });
 const addChapter = () => structAction(async () => {
   await postJson("/api/chapters", { textbook_id: $("#newChTb").value, code: $("#newChCode").value, title: $("#newChTitle").value });
-  $("#newChCode").value = ""; $("#newChTitle").value = "";
+  $("#newChCode").value = ""; $("#newChTitle").value = ""; $("#newChCode").focus();
 });
 // sửa tên/mã học phần, giáo trình, chương ngay trong cây (không dùng prompt)
 let EDIT_NODE = null;  // {kind, id} của mục đang sửa
