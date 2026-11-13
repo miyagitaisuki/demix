@@ -1,22 +1,22 @@
-﻿Mã chương,Nội dung,Đáp án,Loại,Mức,Đoạn văn,Lời giải,Transcript,Dịch,CLO,Thẻ,Số từ
+﻿Mã chương,Nội dung,Đáp án,Loại,Mức,Đoạn văn,Lời giải,Transcript,Dịch,CLO,Thẻ,Số từ,Dạng bài
 B01,"{試験|しけん}の{結果|けっか}が悪かった。
 A. おけばよかった
-B. おくべきだ",A,TN,1,,,,,CLO1,,
+B. おくべきだ",A,TN,1,,,,,CLO1,,,np-chon
 B01,"「インターンシップを通して」と同じ意味はどれですか。
 A. 間に
-B. おかげで",B,TN,2,私は先月、インターンシップに参加しました。,,,,CLO1,,
+B. おかげで",B,TN,2,私は先月、インターンシップに参加しました。,,,,CLO1,,,doc-noidung
 B01,"Câu đúng/sai:
 a) 私は学生です。
-b) 本を読むです。",ĐS,DS,2,,,,,CLO1,,
-B01,Thư viện được xây dựng năm 1990.,A,TN,2,Thư viện trường được xây dựng năm 1990 và mở rộng năm 2015.,,,,CLO2,tfng,
+b) 本を読むです。",ĐS,DS,2,,,,,CLO1,,,np-dungsai
+B01,Thư viện được xây dựng năm 1990.,A,TN,2,Thư viện trường được xây dựng năm 1990 và mở rộng năm 2015.,,,,CLO2,tfng,,doc-tfng
 B01,"Đoạn 1
 A. Lợi ích của thư viện
 B. Lịch sử xây dựng
 C. Cách mượn sách",A,TN,2,"Đoạn 1: Nhiều sinh viên chọn học ở thư viện vì yên tĩnh.
-Đoạn 2: Thư viện có nhiều sách mới.",,,,CLO2,noitieude,
-B02,Vị trí 1 trên sơ đồ tim,động mạch chủ,DT,1,,,,,CLO1,ghinhan,
-B02,学校の___,がっこう,DT,1,,,,,CLO1,,
-B02,Thư viện có ___ tầng.,ba|3,DT,1,,,,,CLO1,,2
+Đoạn 2: Thư viện có nhiều sách mới.",,,,CLO2,noitieude,,doc-tieude
+B02,Vị trí 1 trên sơ đồ tim,động mạch chủ,DT,1,,,,,CLO1,ghinhan,,doc-ghinhan
+B02,学校の___,がっこう,DT,1,,,,,CLO1,,,np-dien
+B02,Thư viện có ___ tầng.,ba|3,DT,1,,,,,CLO1,,2,doc-dien
 B02,"女{おんな}の人{ひと}は これから どこへ 行{い}きますか。
 A. 1かい
 B. 2かい
@@ -25,8 +25,8 @@ D. 4かい",B,TN,1,,くつうりば = quầy giày dép,"[3] デパートで 女
 [1] すみません、くつうりばは どこですか。
 [2] 2階{かい}に なりました。","[3] Ở cửa hàng, người phụ nữ và nhân viên đang nói chuyện.
 [1] Xin lỗi, quầy giày ở đâu?
-[2] Đã chuyển xuống tầng 2.",CLO1,,
+[2] Đã chuyển xuống tầng 2.",CLO1,,,nghe-kadai
 B02,"A: どこへ行きますか。
 B: 駅へ行きます。
 
-この会話の続きを書いてください。",,TL,3,,会話の内容と文法の正確さ,,,CLO3,,
+この会話の続きを書いてください。",,TL,3,,会話の内容と文法の正確さ,,,CLO3,,,viet-traloi

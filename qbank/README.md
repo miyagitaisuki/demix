@@ -36,10 +36,11 @@ Ribbon tab Ngân hàng, nhóm "Reset ra đề": reset câu đang tick, chương 
 ## Định dạng file nhập (chuẩn)
 Tải mẫu bằng nút **Tải mẫu nhập** (ribbon tab Ngân hàng, nhóm "Nhập / Xuất"). File là .docx, mỗi bảng là một nhóm câu:
 - **Dòng 1 là tiêu đề cột**, thứ tự cột tùy ý. Cột bắt buộc: `Mã chương`, `Nội dung`, `Đáp án`, `Loại`, `Mức`.
-- Cột tùy chọn: `Đoạn văn` (các câu cùng đoạn ghi **giống hệt** nhau; app in đoạn một lần cho cả nhóm), `Lời giải`, `Transcript` (câu nghe: kịch bản/lời thoại, mỗi lượt nói một dòng, vai `[1]` `[2]`), `Dịch` (bản dịch tiếng Việt của transcript, cùng số dòng), `CLO`, `Thẻ` (nhiều thẻ cách nhau bằng dấu phẩy), `Số từ` (chỉ cho DT: số từ tối đa 1–20, để trống = không giới hạn).
+- Cột tùy chọn: `Đoạn văn` (các câu cùng đoạn ghi **giống hệt** nhau; app in đoạn một lần cho cả nhóm), `Lời giải`, `Transcript` (câu nghe: kịch bản/lời thoại, mỗi lượt nói một dòng, vai `[1]` `[2]`), `Dịch` (bản dịch tiếng Việt của transcript, cùng số dòng), `CLO`, `Thẻ` (nhiều thẻ cách nhau bằng dấu phẩy), `Số từ` (chỉ cho DT: số từ tối đa 1–20, để trống = không giới hạn), `Dạng bài` (mã dạng bài, ví dụ `kanji-doc`, `np-sapxep`, `doc-tieude`; để trống = app tự nhận dạng).
 - `Loại`: TN (trắc nghiệm), DS (đúng/sai), DT (điền từ), TL (tự luận). `Mức`: 1–5.
 - Phương án TN: mỗi dòng bắt đầu `A.` `B.`…; `#` đầu phương án = cố định vị trí khi xáo.
 - DS: mỗi ý một dòng `a)` `b)`…; đáp án `Đ S Đ S`. DT: nhiều đáp án cách nhau bằng `|`.
+- **Dạng bài** (khác với Loại TN/DS/DT/TL): mỗi câu thuộc một dạng bài trong danh mục chia theo kỹ năng (Chữ Hán, Từ vựng, Ngữ pháp, Hội thoại, Đọc hiểu, Nghe hiểu, Viết, Chuyên ngành), dựng theo cấu trúc đề JLPT. Giáo viên thêm được dạng riêng trong form câu hỏi. Lần đầu mở bản mới, app tự nhận dạng bài cho mọi câu đã có; câu không nhận được để "Chưa phân loại". Khi xuất đề, mỗi phần chọn được một hoặc nhiều dạng bài (nút "Dạng bài"), chỉ câu và đoạn văn đúng dạng mới được bốc. Chọn dạng `doc-tfng`, `doc-tieude`, `doc-ghinhan` thì app tự thêm thẻ tương ứng.
 - Thẻ `tfng` (TN): Đúng / Sai / Không có thông tin. Không ghi phương án; Đáp án `A` = Đúng, `B` = Sai, `C` = Không có thông tin.
 - Thẻ `noitieude` (TN): nối tiêu đề. Các câu cùng nhóm ghi cùng `Đoạn văn` và cùng danh sách tiêu đề `A.` `B.`… (tối đa 12); Đáp án là chữ cái tiêu đề.
 - Thẻ `ghinhan` (DT): ghi nhãn sơ đồ. Đáp án là tên cần ghi cho vị trí được đánh số; hình ảnh thêm trong app sau khi nhập.
@@ -77,6 +78,15 @@ Tab **Luyện nghe** là tab đầu tiên và là trang mặc định khi mở Q
 - **Hiển thị:** bật/tắt furigana, dịch tiếng Việt; cỡ chữ A-/A+.
 - **Phím tắt (giống VLC):** Space phát/dừng, S dừng về đầu, N/P câu sau/trước, Trái/Phải tua 5s (Shift 3s, Alt 10s, Ctrl 1 phút), Ctrl+Lên/Xuống âm lượng, M tắt tiếng, [ và ] chậm/nhanh hơn, = tốc độ 1×, 1/2/3 tốc độ 0.6/0.8/1.0, L lặp lại câu, Enter nghe lại, Ctrl+T nhảy tới thời điểm, R bốc bài ngẫu nhiên, F toàn màn hình, T transcript, G giải nghĩa, A đáp án, H furigana, V dịch, O đổi font, +/- cỡ chữ. Mỗi thao tác có thông báo nhỏ ở góc phải.
 - API (chỉ đọc): `GET /api/listening/sets`, `GET /api/listening/sets/<chapter_id>`. File `/media/...` hỗ trợ HTTP Range để tua.
+
+## Chấm phiếu trắc nghiệm (tab Chấm bài, trang /cham-bai)
+1. **Ra đề:** xuất đề như thường, nên chọn mẫu `de_trac_nghiem.docx`. Mẫu này in mã đề to, có ô họ tên/số báo danh, nhắc thí sinh làm bài trên phiếu và không in đáp án. Mỗi lần xuất, app lưu sẵn đáp án chấm máy của từng mã đề: câu TN (2–8 phương án) và câu DS (tối đa 4 ý). Câu DT, TL và nối tiêu đề hơn 8 tiêu đề không có trên phiếu, phải chấm tay. Đề xuất từ trước khi có chức năng này không có đáp án chấm máy: xuất lại đề hoặc nhập đáp án tay (`001: ABCD…`).
+2. **In phiếu:** bấm **In phiếu trả lời** để in phiếu trắng khổ A4 đúng bố cục của đề. Phiếu có 4 ô vuông đen ở góc, ô số báo danh, ô mã đề, lưới A–D đánh số theo số câu trong đề và khối Đ/S. Một trang chứa khoảng 100 câu 4 phương án. Có thể in phiếu trắng không theo đề nào. In ở tỷ lệ 100%.
+3. **Tờ đáp án đục lỗ:** bấm **In tờ đáp án đục lỗ**: mỗi mã đề một trang, ô đúng tô đen. In trên giấy cứng, đục lỗ ở các ô đen rồi đặt chồng lên phiếu của thí sinh để chấm tay.
+4. **Quét:** kéo thả ảnh phiếu (JPG/PNG, chụp bằng điện thoại hoặc máy scan 200–300 dpi; ảnh phải thấy đủ 4 ô góc). Ảnh xoay, nghiêng, sáng không đều vẫn đọc được. App đọc ảnh bằng kênh đỏ nên chữ in màu hồng trên phiếu gần như biến mất, chỉ còn vết bút chì hoặc mực. Ảnh chỉ xử lý trong trình duyệt, không tải lên đâu cả. App đọc số báo danh, mã đề và từng câu, rồi chấm theo đáp án của mã đề đó. Câu TN đúng mới có điểm; câu DS tính theo tỷ lệ ý đúng; điểm mỗi câu lấy theo điểm trong ngân hàng (mặc định 1), quy về hệ 10.
+5. **Kiểm tra:** cột *Cần xem* báo phiếu thiếu mốc, SBD chưa rõ, SBD trùng, mã đề không khớp, câu tô nhiều ô (tính sai) và câu không chắc. Bấm ảnh để xem phiếu, trên đó tô xanh là đúng, đỏ là sai, viền xanh dương là đáp án đúng thí sinh chưa tô. Bấm vào một ô để sửa câu đó, hoặc sửa trực tiếp chuỗi bài làm (`1A 2_ 3* 31[ĐSĐS]`).
+6. **Kết quả:** có ba lựa chọn. **Tải bảng điểm (CSV)**. **Tải bảng cho Phân tích câu hỏi**: mỗi cột là một mã câu, dùng được ngay ở tab Thống kê. **Lưu tỷ lệ đúng vào ngân hàng**: ghi độ khó thực tế của từng câu.
+- API: `GET /api/omr/exports`, `GET /api/omr/export?id=`, `GET /api/omr/layout?tn=&ds=&opts=&sbd=&made=`, `GET /api/omr/sheet?export_id=|tn=…[&key=all|mã đề]`, `POST /api/omr/grade`, `POST /api/omr/results`. Bố cục phiếu nằm ở `omr.py`; trang đọc phiếu dùng đúng bố cục đó.
 
 ## Template
 Đặt file `.docx` vào `templates/`, dùng các placeholder:

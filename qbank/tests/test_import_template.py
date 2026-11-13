@@ -37,7 +37,7 @@ def template_header():
 
 def test_template_has_tag_and_word_limit_columns():
     assert template_header() == ["Mã chương", "Nội dung", "Đáp án", "Loại", "Mức",
-                                 "Đoạn văn", "Lời giải", "Transcript", "Dịch", "CLO", "Thẻ", "Số từ"]
+                                 "Đoạn văn", "Lời giải", "Transcript", "Dịch", "CLO", "Thẻ", "Số từ", "Dạng bài"]
 
 
 def test_template_guidance_mentions_new_types():

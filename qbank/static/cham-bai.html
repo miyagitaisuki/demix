@@ -1,0 +1,647 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>QBank - Chấm phiếu trắc nghiệm</title>
+<style>
+  :root { --b:#2563eb; --line:#e2e8f0; --mut:#64748b; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:14px/1.45 "Segoe UI", Arial, sans-serif; color:#0f172a; background:#f1f5f9; }
+  body.embed { background:transparent; }
+  .wrap { max-width:1280px; margin:0 auto; padding:14px; }
+  .card { background:#fff; border:1px solid var(--line); border-radius:12px; padding:14px 16px; margin-bottom:12px; }
+  h2 { font-size:16px; margin:0 0 10px; } h2 .n { display:inline-block; width:22px; height:22px; border-radius:50%; background:var(--b); color:#fff; text-align:center; font-size:13px; line-height:22px; margin-right:6px; }
+  .row { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin:6px 0; }
+  label { color:#334155; }
+  input, select, textarea, button { font:inherit; }
+  input[type=number] { width:70px; }
+  select, input, textarea { border:1px solid #cbd5e1; border-radius:8px; padding:5px 8px; background:#fff; }
+  textarea { width:100%; font-family:Consolas, monospace; }
+  button { border:1px solid #cbd5e1; background:#fff; border-radius:8px; padding:6px 12px; cursor:pointer; }
+  button.p { background:var(--b); color:#fff; border-color:var(--b); }
+  button:disabled { opacity:.5; cursor:default; }
+  .sub { color:var(--mut); font-size:12.5px; }
+  .err { color:#b91c1c; } .ok { color:#15803d; } .warn { color:#b45309; }
+  .drop { border:2px dashed #93c5fd; border-radius:12px; padding:22px; text-align:center; color:#1e40af; background:#eff6ff; cursor:pointer; }
+  .drop.over { background:#dbeafe; }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th, td { border-bottom:1px solid var(--line); padding:6px 6px; text-align:left; vertical-align:middle; }
+  th { background:#f8fafc; position:sticky; top:0; z-index:1; }
+  td.num, th.num { text-align:right; }
+  td input.ans { width:100%; min-width:220px; font-family:Consolas, monospace; font-size:12.5px; }
+  td input.sbd { width:96px; font-family:Consolas, monospace; }
+  .thumb { width:54px; height:70px; object-fit:cover; border:1px solid var(--line); border-radius:4px; cursor:pointer; }
+  .tag { display:inline-block; padding:1px 7px; border-radius:10px; font-size:12px; margin:1px 2px 1px 0; }
+  .tag.w { background:#fef3c7; color:#92400e; } .tag.e { background:#fee2e2; color:#991b1b; } .tag.g { background:#dcfce7; color:#166534; }
+  .viewer { display:none; position:fixed; inset:0; background:rgba(15,23,42,.75); z-index:50; padding:18px; }
+  .viewer .box { background:#fff; border-radius:12px; max-width:1100px; margin:0 auto; height:100%; display:flex; flex-direction:column; }
+  .viewer .hd { padding:10px 14px; border-bottom:1px solid var(--line); display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  .viewer .bd { flex:1; overflow:auto; padding:10px; text-align:center; }
+  .viewer canvas { max-width:100%; cursor:crosshair; }
+  .legend span { margin-right:12px; } .dot { display:inline-block; width:11px; height:11px; border-radius:50%; vertical-align:-1px; margin-right:4px; }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:12px; } @media (max-width:900px) { .grid2 { grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="grid2">
+    <div class="card">
+      <h2><span class="n">1</span>Đáp án để chấm</h2>
+      <div class="row"><label><input type="radio" name="src" value="export" checked onchange="srcChanged()"> Đề đã xuất từ QBank</label>
+        <label><input type="radio" name="src" value="manual" onchange="srcChanged()"> Nhập đáp án tay</label></div>
+      <div id="srcExport">
+        <div class="row"><select id="exportSel" style="flex:1;min-width:260px" onchange="loadExport()"></select></div>
+        <div class="sub" id="exportInfo"></div>
+      </div>
+      <div id="srcManual" style="display:none">
+        <div class="sub">Mỗi dòng một mã đề: <code>001: ABCDABCD…</code> (câu 1, 2, 3…; dấu <code>-</code> = câu không chấm máy).</div>
+        <textarea id="manualKeys" rows="5" placeholder="001: ABCDDCBAAB&#10;002: BCDAABDCCA" oninput="manualChanged()"></textarea>
+        <div class="sub" id="manualInfo"></div>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <button onclick="printSheet()" title="Phiếu trắng đúng bố cục của đề này, phát cho thí sinh">In phiếu trả lời</button>
+        <button onclick="printKey()" id="btnKey" title="Mỗi mã đề một trang, ô đáp án đúng tô đen: in giấy cứng, đục lỗ rồi đặt chồng lên phiếu để chấm tay">In tờ đáp án đục lỗ</button>
+        <label class="sub">Số báo danh <input type="number" id="sbdDigits" value="6" min="0" max="10" onchange="specChanged()"> chữ số</label>
+      </div>
+    </div>
+    <div class="card">
+      <h2><span class="n">·</span>Phiếu trắng không theo đề</h2>
+      <div class="row">
+        <label>Trắc nghiệm <input type="number" id="gTn" value="40" min="0" max="200"> câu</label>
+        <label><input type="number" id="gOpts" value="4" min="2" max="8"> phương án</label>
+        <label>Đúng/sai <input type="number" id="gDs" value="0" min="0" max="40"> câu</label>
+        <label>Mã đề <input type="number" id="gMade" value="3" min="1" max="4"> chữ số</label>
+      </div>
+      <div class="row"><button onclick="printGeneric()">In phiếu trắng</button>
+        <span class="sub">Một trang A4 tối đa khoảng 100 câu 4 phương án.</span></div>
+      <div class="sub" style="margin-top:8px">In đúng khổ A4, tỷ lệ 100%. Thí sinh tô bằng bút chì 2B hoặc bút mực đen/xanh đậm.
+        Quét hoặc chụp cả tờ thấy đủ 4 ô vuông đen ở góc; ảnh JPG/PNG (máy scan nên đặt 200–300 dpi).</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2><span class="n">2</span>Quét bài làm</h2>
+    <div class="drop" id="drop" onclick="$('#files').click()">Kéo thả ảnh phiếu vào đây, hoặc bấm để chọn nhiều ảnh (JPG, PNG)
+      <input type="file" id="files" accept="image/*" multiple style="display:none" onchange="addFiles(this.files); this.value=''"></div>
+    <div class="row"><span id="progress" class="sub"></span><span style="flex:1"></span>
+      <button onclick="clearAll()">Xóa danh sách</button></div>
+  </div>
+
+  <div class="card">
+    <h2><span class="n">3</span>Kết quả</h2>
+    <div class="row" id="summary" class="sub"></div>
+    <div style="overflow:auto;max-height:70vh">
+    <table>
+      <thead><tr><th>#</th><th>Ảnh</th><th>Số báo danh</th><th>Mã đề</th><th>Bài làm đọc được (sửa được)</th>
+        <th class="num">Đúng</th><th class="num">Điểm (10)</th><th>Cần xem</th><th></th></tr></thead>
+      <tbody id="tb"><tr><td colspan="9" class="sub" style="text-align:center;padding:20px">Chưa có phiếu nào.</td></tr></tbody>
+    </table>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <button class="p" onclick="downloadScores()">Tải bảng điểm (CSV)</button>
+      <button onclick="downloadItems()" title="Mỗi dòng một thí sinh, mỗi cột một mã câu (1 = đúng, 0 = sai): dùng cho Phân tích câu hỏi ở tab Thống kê">Tải bảng cho Phân tích câu hỏi</button>
+      <button onclick="saveResults()" id="btnSave" title="Lưu tỷ lệ làm đúng từng câu vào ngân hàng (độ khó thực tế)">Lưu tỷ lệ đúng vào ngân hàng</button>
+      <span id="saveMsg" class="sub"></span>
+    </div>
+    <div class="sub">Ký hiệu trong ô bài làm: chữ cái = phương án đã tô, <code>_</code> = bỏ trống, <code>*</code> = tô nhiều ô (tính sai);
+      câu đúng/sai ghi 4 ký tự Đ/S theo ý a–d trong ngoặc, ví dụ <code>31[ĐSĐ?]</code>, <code>?</code> = không đọc được.
+      Ảnh chỉ xử lý trên máy này, không tải lên đâu cả.</div>
+  </div>
+</div>
+
+<div class="viewer" id="viewer" onclick="if(event.target===this) closeViewer()">
+  <div class="box">
+    <div class="hd"><b id="vTitle"></b>
+      <span class="legend sub"><span><i class="dot" style="background:#16a34a"></i>tô đúng</span><span><i class="dot" style="background:#dc2626"></i>tô sai</span>
+        <span><i class="dot" style="border:2px solid #2563eb"></i>đáp án đúng (chưa tô)</span><span><i class="dot" style="background:#f59e0b"></i>không chắc</span></span>
+      <span class="sub">Bấm vào một ô để sửa câu đó.</span><span style="flex:1"></span>
+      <button onclick="stepViewer(-1)">‹ Trước</button><button onclick="stepViewer(1)">Sau ›</button><button onclick="closeViewer()">Đóng</button></div>
+    <div class="bd"><canvas id="vCanvas"></canvas></div>
+  </div>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+if (new URLSearchParams(location.search).get("embed")) document.body.classList.add("embed");
+async function api(url, opts = {}) {
+  const r = await fetch(url, opts);
+  const t = await r.text();
+  let d; try { d = JSON.parse(t); } catch (e) { d = { error: t }; }
+  if (!r.ok) throw new Error(d.error || r.statusText);
+  return d;
+}
+const postJson = (url, body) => api(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+
+// ============================================================ đọc phiếu (OMR)
+// Bố cục (mm) lấy từ server (omr.py). Ảnh -> kênh đỏ (mực hồng của phiếu gần như trắng, vết bút chì/mực đen vẫn tối)
+// -> tìm 4 ô vuông góc -> ma trận phối cảnh mm -> điểm ảnh -> đo độ đậm từng ô tô.
+const OMR = (() => {
+  const MAXDIM = 2200;
+  async function loadCanvas(src) {
+    let bmp;
+    if (src instanceof HTMLCanvasElement) bmp = src;
+    else bmp = await createImageBitmap(src, { imageOrientation: "from-image" });
+    const k = Math.min(1, MAXDIM / Math.max(bmp.width, bmp.height));
+    const c = document.createElement("canvas");
+    c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k);
+    const g = c.getContext("2d", { willReadFrequently: true });
+    g.fillStyle = "#fff"; g.fillRect(0, 0, c.width, c.height);
+    g.drawImage(bmp, 0, 0, c.width, c.height);
+    return c;
+  }
+  function redChannel(c) {
+    const d = c.getContext("2d", { willReadFrequently: true }).getImageData(0, 0, c.width, c.height).data;
+    const out = new Uint8Array(c.width * c.height);
+    for (let i = 0, j = 0; j < out.length; i += 4, j++) out[j] = d[i];
+    return { w: c.width, h: c.height, px: out };
+  }
+  function downscale(img, maxd) {
+    const k = Math.max(1, Math.ceil(Math.max(img.w, img.h) / maxd));
+    const w = Math.floor(img.w / k), h = Math.floor(img.h / k), px = new Uint8Array(w * h);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      let s = 0;
+      for (let dy = 0; dy < k; dy++) { const row = (y * k + dy) * img.w + x * k; for (let dx = 0; dx < k; dx++) s += img.px[row + dx]; }
+      px[y * w + x] = s / (k * k);
+    }
+    return { w, h, px, k };
+  }
+  // ô tối: tối hơn hẳn vùng xung quanh (ngưỡng thích nghi, chịu được ảnh chụp sáng không đều)
+  function darkMask(img) {
+    const { w, h, px } = img, W = w + 1;
+    const ii = new Float64Array(W * (h + 1));
+    for (let y = 0; y < h; y++) { let s = 0; for (let x = 0; x < w; x++) { s += px[y * w + x]; ii[(y + 1) * W + x + 1] = ii[y * W + x + 1] + s; } }
+    const r = Math.max(8, Math.round(Math.min(w, h) / 12)), m = new Uint8Array(w * h);
+    for (let y = 0; y < h; y++) {
+      const y0 = Math.max(0, y - r), y1 = Math.min(h, y + r + 1);
+      for (let x = 0; x < w; x++) {
+        const x0 = Math.max(0, x - r), x1 = Math.min(w, x + r + 1);
+        const mean = (ii[y1 * W + x1] - ii[y0 * W + x1] - ii[y1 * W + x0] + ii[y0 * W + x0]) / ((y1 - y0) * (x1 - x0));
+        const v = px[y * w + x];
+        m[y * w + x] = (v < mean * 0.62 && v < 150) ? 1 : 0;
+      }
+    }
+    return m;
+  }
+  function blobs(mask, w, h) {
+    const seen = new Uint8Array(w * h), out = [], st = new Int32Array(w * h);
+    for (let i = 0; i < w * h; i++) {
+      if (!mask[i] || seen[i]) continue;
+      let top = 0, n = 0, sx = 0, sy = 0, x0 = w, y0 = h, x1 = 0, y1 = 0;
+      st[top++] = i; seen[i] = 1;
+      while (top) {
+        const p = st[--top], x = p % w, y = (p - x) / w;
+        n++; sx += x; sy += y;
+        if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+        if (x > 0 && mask[p - 1] && !seen[p - 1]) { seen[p - 1] = 1; st[top++] = p - 1; }
+        if (x < w - 1 && mask[p + 1] && !seen[p + 1]) { seen[p + 1] = 1; st[top++] = p + 1; }
+        if (y > 0 && mask[p - w] && !seen[p - w]) { seen[p - w] = 1; st[top++] = p - w; }
+        if (y < h - 1 && mask[p + w] && !seen[p + w]) { seen[p + w] = 1; st[top++] = p + w; }
+      }
+      out.push({ n, cx: sx / n, cy: sy / n, bw: x1 - x0 + 1, bh: y1 - y0 + 1 });
+    }
+    return out;
+  }
+  const area4 = q => Math.abs((q[0].x * q[1].y - q[1].x * q[0].y) + (q[1].x * q[2].y - q[2].x * q[1].y)
+                       + (q[2].x * q[3].y - q[3].x * q[2].y) + (q[3].x * q[0].y - q[0].x * q[3].y)) / 2;
+  // 4 mốc: các vết đặc, gần vuông, cỡ tương đương nhau, bao được vùng lớn nhất
+  function findFiducials(small) {
+    const md = Math.min(small.w, small.h);
+    const cands = blobs(darkMask(small), small.w, small.h).filter(b => {
+      const side = Math.sqrt(b.n), asp = b.bw / b.bh, fill = b.n / (b.bw * b.bh);
+      return side >= md * 0.012 && side <= md * 0.09 && asp > 0.5 && asp < 2 && fill > 0.5;
+    }).sort((a, b) => b.n - a.n).slice(0, 16);
+    if (cands.length < 4) return null;
+    let best = null;
+    for (let a = 0; a < cands.length; a++) for (let b = a + 1; b < cands.length; b++)
+      for (let c = b + 1; c < cands.length; c++) for (let d = c + 1; d < cands.length; d++) {
+        const set = [cands[a], cands[b], cands[c], cands[d]];
+        const ns = set.map(s => s.n), lo = Math.min(...ns), hi = Math.max(...ns);
+        if (hi > lo * 2.6) continue;
+        const cx = set.reduce((s, p) => s + p.cx, 0) / 4, cy = set.reduce((s, p) => s + p.cy, 0) / 4;
+        const ord = set.map(p => ({ x: p.cx, y: p.cy, n: p.n, ang: Math.atan2(p.cy - cy, p.cx - cx) })).sort((p, q) => p.ang - q.ang);
+        const A = area4(ord);
+        if (!best || A > best.A) best = { A, pts: ord };
+      }
+    if (!best || best.A < small.w * small.h * 0.12) return null;
+    return best.pts.map(p => ({ x: (p.x + 0.5) * small.k, y: (p.y + 0.5) * small.k }));
+  }
+  // ma trận phối cảnh từ 4 cặp điểm (mm -> px)
+  function homography(src, dst) {
+    const A = [], B = [];
+    for (let i = 0; i < 4; i++) {
+      const [x, y] = src[i], [u, v] = dst[i];
+      A.push([x, y, 1, 0, 0, 0, -u * x, -u * y]); B.push(u);
+      A.push([0, 0, 0, x, y, 1, -v * x, -v * y]); B.push(v);
+    }
+    for (let c = 0; c < 8; c++) {  // khử Gauss
+      let p = c; for (let r = c + 1; r < 8; r++) if (Math.abs(A[r][c]) > Math.abs(A[p][c])) p = r;
+      [A[c], A[p]] = [A[p], A[c]]; [B[c], B[p]] = [B[p], B[c]];
+      for (let r = 0; r < 8; r++) if (r !== c) {
+        const f = A[r][c] / A[c][c];
+        for (let k = c; k < 8; k++) A[r][k] -= f * A[c][k];
+        B[r] -= f * B[c];
+      }
+    }
+    const h = B.map((b, i) => b / A[i][i]);
+    return (x, y) => { const z = h[6] * x + h[7] * y + 1; return [(h[0] * x + h[1] * y + h[2]) / z, (h[3] * x + h[4] * y + h[5]) / z]; };
+  }
+  function discMean(img, cx, cy, r) {
+    const R = Math.max(1, r), r2 = R * R;
+    let s = 0, n = 0;
+    for (let y = Math.floor(cy - R); y <= Math.ceil(cy + R); y++) {
+      if (y < 0 || y >= img.h) continue;
+      for (let x = Math.floor(cx - R); x <= Math.ceil(cx + R); x++) {
+        if (x < 0 || x >= img.w) continue;
+        if ((x - cx) ** 2 + (y - cy) ** 2 <= r2) { s += img.px[y * img.w + x]; n++; }
+      }
+    }
+    return n ? s / n : 255;
+  }
+  // chọn trong một nhóm ô (một câu / một cột số): trả về chỉ số ô được tô, -1 bỏ trống, -2 tô nhiều ô
+  function pick(scores) {
+    const ord = scores.map((s, i) => [s, i]).sort((a, b) => b[0] - a[0]);
+    const top = ord[0][0], sec = ord.length > 1 ? ord[1][0] : 0;
+    if (top < 0.3) return { i: -1, sure: top < 0.2 };
+    if (sec >= 0.45 && top - sec < 0.25) return { i: -2, sure: true };
+    return { i: ord[0][1], sure: top >= 0.45 && top - sec >= 0.25 };
+  }
+  async function read(src, L) {
+    const canvas = await loadCanvas(src);
+    const img = redChannel(canvas);
+    const small = downscale(img, 900);
+    const found = findFiducials(small);
+    if (!found) throw new Error("Không tìm thấy đủ 4 ô vuông đen ở góc phiếu (ảnh mờ, bị cắt góc hoặc không phải phiếu QBank)");
+    const mmPts = L.fiducials;  // TL, TR, BL, BR
+    const ring = [0, 1, 3, 2];  // thứ tự vòng quanh: TL, TR, BR, BL
+    const [ox, oy, os] = L.orient;
+    let best = null;
+    const dist = (p, q) => Math.hypot(p.x - q.x, p.y - q.y);
+    const want = (L.fiducials[1][0] - L.fiducials[0][0]) / (L.fiducials[2][1] - L.fiducials[0][1]);  // ngang / dọc của khung mốc
+    for (let rot = 0; rot < 4; rot++) {  // ảnh có thể bị xoay 90°, 180°, 270°
+      const dst = new Array(4);
+      for (let k = 0; k < 4; k++) dst[ring[k]] = found[(rot + k) % 4];
+      const H = homography(mmPts, dst.map(p => [p.x, p.y]));
+      const scale = Math.hypot(H(110, 150)[0] - H(100, 150)[0], H(110, 150)[1] - H(100, 150)[1]) / 10;  // px/mm
+      const mark = discMean(img, ...H(ox + os / 2, oy + os / 2), os * 0.3 * scale);
+      const white = discMean(img, ...H(ox + os / 2 + 6, oy + os / 2), os * 0.3 * scale);
+      const ratio = (dist(dst[0], dst[1]) + dist(dst[2], dst[3])) / (dist(dst[0], dst[2]) + dist(dst[1], dst[3]));
+      const sc = (white - mark) - (Math.abs(Math.log(ratio / want)) > 0.3 ? 120 : 0);
+      if (!best || sc > best.sc) best = { sc, H, scale };
+    }
+    const { H, scale } = best;
+    const rpx = L.bubble_r * scale;
+    const whites = L.white.map(([x, y]) => discMean(img, ...H(x, y), 1.5 * scale)).sort((a, b) => a - b);
+    const white = whites[Math.floor(whites.length / 2)];
+    const black = Math.min(...L.fiducials.map(([x, y]) => discMean(img, ...H(x, y), 2 * scale)));
+    if (white - black < 40) throw new Error("Ảnh quá tối hoặc quá mờ để đọc");
+    const dark = (x, y, r = L.bubble_r) => {
+      const v = discMean(img, ...H(x, y), r * 0.62 * scale);
+      return Math.max(0, Math.min(1, (white - v) / (white - black)));
+    };
+    const res = { sbd: "", made: "", answers: {}, unsure: [], marks: [], scale };
+    const readDigits = blk => blk ? blk.cols.map(col => {
+      const p = pick(col.map(b => dark(b.x, b.y, 1.8)));
+      col.forEach((b, k) => res.marks.push({ x: b.x, y: b.y, r: 1.8, kind: blk.kind, on: k === p.i || p.i === -2 }));
+      if (!p.sure) res.unsure.push(blk.kind);
+      return p.i >= 0 ? String(col[p.i].digit) : "?";
+    }).join("") : "";
+    res.sbd = readDigits(L.sbd);
+    res.made = readDigits(L.made);
+    for (const row of L.tn) {
+      const sc = row.bubbles.map(b => dark(b.x, b.y));
+      const p = pick(sc);
+      res.answers[row.n] = p.i >= 0 ? row.bubbles[p.i].opt : (p.i === -2 ? "*" : "");
+      if (!p.sure) res.unsure.push(row.n);
+      row.bubbles.forEach((b, k) => res.marks.push({ x: b.x, y: b.y, r: L.bubble_r, n: row.n, opt: b.opt, score: sc[k],
+                                                     on: sc[k] >= 0.3 && (k === p.i || p.i === -2), unsure: !p.sure }));
+    }
+    for (const blk of L.ds) {
+      let s = "", unsure = false;
+      blk.items.forEach((it, k) => {
+        const sc = it.bubbles.map(b => dark(b.x, b.y, 1.9));
+        const p = pick(sc);
+        s += p.i >= 0 ? it.bubbles[p.i].opt : "?";
+        if (!p.sure) unsure = true;
+        it.bubbles.forEach((b, j) => res.marks.push({ x: b.x, y: b.y, r: 1.9, n: blk.n, item: k, opt: b.opt, score: sc[j],
+                                                      on: sc[j] >= 0.3 && (j === p.i || p.i === -2), unsure: !p.sure }));
+      });
+      res.answers[blk.n] = s;
+      if (unsure) res.unsure.push(blk.n);
+    }
+    res.H = H; res.canvas = canvas;
+    return res;
+  }
+  return { read, loadCanvas, homography };
+})();
+
+// ============================================================ trạng thái trang
+let SRC = "export", EXPORTS = [], EXP = null, MANUAL = null, LAYOUT = null, SHEETS = [], VIEW = -1;
+const currentKeys = () => SRC === "export" ? (EXP && EXP.keys) : MANUAL;
+const codesList = () => Object.keys(currentKeys() || {});
+
+function srcChanged() {
+  SRC = document.querySelector("input[name=src]:checked").value;
+  $("#srcExport").style.display = SRC === "export" ? "" : "none";
+  $("#srcManual").style.display = SRC === "manual" ? "" : "none";
+  $("#btnKey").style.display = SRC === "export" ? "" : "none";
+  $("#btnSave").style.display = SRC === "export" ? "" : "none";
+  specChanged();
+}
+async function loadExports() {
+  EXPORTS = await api("/api/omr/exports");
+  const ready = EXPORTS.filter(e => e.gradable);
+  $("#exportSel").innerHTML = (ready.length ? "" : `<option value="">Chưa có lần xuất nào có đáp án chấm máy</option>`)
+    + EXPORTS.map(e => `<option value="${e.id}" ${e.gradable ? "" : "disabled"}>${esc(e.created_at.replace("T", " ").slice(0, 16))} · ${esc(e.name || "Đề")} · mã ${esc(e.codes)}${e.gradable ? ` · ${e.gradable} câu chấm máy` : " (bản cũ, chưa có đáp án chấm máy)"}</option>`).join("");
+  if (ready.length) { $("#exportSel").value = ready[0].id; await loadExport(); }
+  else $("#exportInfo").innerHTML = `Xuất đề ở tab <b>Xuất đề</b> (đề có câu trắc nghiệm) rồi quay lại đây, hoặc chọn <b>Nhập đáp án tay</b>.`;
+}
+async function loadExport() {
+  const id = $("#exportSel").value;
+  EXP = null;
+  if (!id) return;
+  try {
+    EXP = await api(`/api/omr/export?id=${id}&sbd=${+$("#sbdDigits").value}`);
+    LAYOUT = EXP.layout;
+    const n = Object.values(EXP.keys)[0].length;
+    const s = EXP.spec;
+    $("#exportInfo").innerHTML = `${EXP.codes.length} mã đề (${esc(EXP.codes.join(", "))}). Phiếu: ${s.tn} dòng trắc nghiệm ${s.opts} phương án`
+      + (s.ds.length ? `, ${s.ds.length} câu đúng/sai` : "") + `. Mỗi mã đề chấm máy ${n} câu; câu điền từ, tự luận chấm tay.`;
+    regradeAll();
+  } catch (e) { $("#exportInfo").innerHTML = `<span class="err">${esc(e.message)}</span>`; }
+}
+function parseManual() {
+  const keys = {};
+  for (const ln of $("#manualKeys").value.split(/\n/)) {
+    const m = ln.match(/^\s*([\w-]+)\s*[:：\t ]\s*([A-Ha-h.\- ]+)\s*$/);
+    if (m) keys[m[1]] = m[2].replace(/\s+/g, "").toUpperCase();
+  }
+  return keys;
+}
+let manualTimer = null;
+function manualChanged() { clearTimeout(manualTimer); manualTimer = setTimeout(specChanged, 400); }
+async function specChanged() {
+  if (SRC === "export") return loadExport();
+  const keys = parseManual();
+  const codes = Object.keys(keys);
+  MANUAL = null; LAYOUT = null;
+  if (!codes.length) { $("#manualInfo").textContent = "Chưa có dòng đáp án hợp lệ."; return; }
+  const tn = Math.max(...codes.map(c => keys[c].length));
+  const opts = Math.max(4, ...codes.flatMap(c => [...keys[c]].filter(a => /[A-H]/.test(a)).map(a => "ABCDEFGH".indexOf(a) + 1)));
+  const made = Math.min(4, Math.max(3, ...codes.map(c => c.replace(/\D/g, "").length)));
+  try {
+    LAYOUT = await api(`/api/omr/layout?tn=${tn}&opts=${opts}&made=${made}&sbd=${+$("#sbdDigits").value}`);
+    MANUAL = Object.fromEntries(codes.map(c => [c, [...keys[c]].map((a, i) => ({ n: i + 1, a })).filter(x => /[A-H]/.test(x.a))
+      .map(x => ({ n: x.n, qtype: "TN", answer: x.a, nopt: opts, qcode: "" }))]));
+    $("#manualInfo").innerHTML = `${codes.length} mã đề, phiếu ${tn} câu ${opts} phương án.`;
+    regradeAll();
+  } catch (e) { $("#manualInfo").innerHTML = `<span class="err">${esc(e.message)}</span>`; }
+}
+function sheetUrl(extra) {
+  const p = new URLSearchParams({ sbd: $("#sbdDigits").value, ...extra });
+  if (SRC === "export") { if (!EXP) return null; p.set("export_id", EXP.id); }
+  else { if (!LAYOUT) return null; const s = LAYOUT.spec; p.set("tn", s.tn); p.set("opts", s.opts); p.set("made", s.made); }
+  return "/api/omr/sheet?" + p;
+}
+function printSheet() { const u = sheetUrl({}); u ? window.open(u, "_blank") : alert("Chọn đề hoặc nhập đáp án trước."); }
+function printKey() { const u = sheetUrl({ key: "all" }); u ? window.open(u, "_blank") : alert("Chọn đề đã xuất trước."); }
+function printGeneric() {
+  const p = new URLSearchParams({ tn: $("#gTn").value, opts: $("#gOpts").value, ds: $("#gDs").value, made: $("#gMade").value, sbd: $("#sbdDigits").value });
+  window.open("/api/omr/sheet?" + p, "_blank");
+}
+
+// ============================================================ quét
+const drop = $("#drop");
+drop.addEventListener("dragover", e => { e.preventDefault(); drop.classList.add("over"); });
+drop.addEventListener("dragleave", () => drop.classList.remove("over"));
+drop.addEventListener("drop", e => { e.preventDefault(); drop.classList.remove("over"); addFiles(e.dataTransfer.files); });
+
+async function addFiles(files) {
+  if (!LAYOUT) { alert("Chọn đề đã xuất hoặc nhập đáp án trước khi quét."); return; }
+  const list = [...files].filter(f => f.type.startsWith("image/"));
+  if (!list.length) { alert("Chỉ nhận ảnh JPG/PNG. File PDF: mở bằng trình xem rồi lưu từng trang thành ảnh, hoặc đặt máy scan lưu JPG."); return; }
+  for (let i = 0; i < list.length; i++) {
+    $("#progress").textContent = `Đang đọc ${i + 1}/${list.length}: ${list[i].name}`;
+    await new Promise(r => setTimeout(r, 0));
+    await addSheet(list[i], list[i].name);
+  }
+  $("#progress").textContent = `Đã đọc ${list.length} ảnh.`;
+  regradeAll();
+}
+async function addSheet(src, name) {
+  const sh = { name, url: src instanceof Blob ? URL.createObjectURL(src) : src.toDataURL("image/jpeg", 0.7) };
+  try {
+    const r = await OMR.read(src, LAYOUT);
+    Object.assign(sh, { sbd: r.sbd, made: r.made, answers: r.answers, unsure: r.unsure, marks: r.marks, H: r.H, canvas: r.canvas, scale: r.scale });
+  } catch (e) { sh.error = e.message; sh.answers = {}; sh.unsure = []; }
+  sh.code = matchCode(sh.made);
+  SHEETS.push(sh);
+  render();
+  return sh;
+}
+function matchCode(made) {
+  const codes = codesList(), d = String(made || "").replace(/\D/g, "");
+  if (!d || /\?/.test(made)) return "";
+  if (codes.includes(d)) return d;
+  const hits = codes.filter(c => c.replace(/\D/g, "").padStart(d.length, "0").slice(-d.length) === d);
+  return hits.length === 1 ? hits[0] : "";
+}
+function clearAll() {
+  if (SHEETS.length && !confirm("Xóa mọi phiếu đã quét khỏi danh sách?")) return;
+  SHEETS.forEach(s => s.url && s.url.startsWith("blob:") && URL.revokeObjectURL(s.url));
+  SHEETS = []; render();
+}
+
+// bài làm dạng chuỗi để sửa tay: "1A 2B 3_ 4* 31[ĐSĐ?]"
+function answersText(sh) {
+  const ns = Object.keys(sh.answers).map(Number).sort((a, b) => a - b);
+  return ns.map(n => { const v = sh.answers[n]; return v.length > 1 || (LAYOUT.ds || []).some(b => b.n === n)
+    ? `${n}[${v.replace(/D/g, "Đ")}]` : `${n}${v || "_"}`; }).join(" ");
+}
+function parseAnswersText(t) {
+  const out = {};
+  for (const m of t.matchAll(/(\d+)\s*(\[[ĐDS?\s]*\]|[A-H_*\-?]?)/gi)) {
+    let v = m[2] || "";
+    if (v.startsWith("[")) v = v.slice(1, -1).replace(/\s/g, "").toUpperCase().replace(/Đ/g, "D");
+    else v = v.toUpperCase().replace(/[_\-?]/g, "");
+    out[m[1]] = v;
+  }
+  return out;
+}
+
+let gradeTimer = null;
+function regradeAll() { clearTimeout(gradeTimer); gradeTimer = setTimeout(regradeNow, 150); }
+async function regradeNow() {
+  const keys = currentKeys();
+  if (!keys || !SHEETS.length) { render(); return; }
+  const body = { sheets: SHEETS.map(s => ({ code: s.code || null, made: s.made, answers: s.answers })) };
+  if (SRC === "export") body.export_id = EXP.id;
+  else body.manual_keys = Object.entries(parseManual()).map(([c, a]) => `${c}: ${a}`).join("\n");
+  try {
+    const r = await postJson("/api/omr/grade", body);
+    r.results.forEach((g, i) => { SHEETS[i].grade = g; if (g.code) SHEETS[i].code = g.code; });
+  } catch (e) { $("#progress").innerHTML = `<span class="err">${esc(e.message)}</span>`; }
+  render();
+}
+
+function render() {
+  const codes = codesList();
+  if (!SHEETS.length) { $("#tb").innerHTML = `<tr><td colspan="9" class="sub" style="text-align:center;padding:20px">Chưa có phiếu nào.</td></tr>`; $("#summary").innerHTML = ""; return; }
+  const sbdCount = {};
+  SHEETS.forEach(s => { if (s.sbd) sbdCount[s.sbd] = (sbdCount[s.sbd] || 0) + 1; });
+  let need = 0;
+  $("#tb").innerHTML = SHEETS.map((s, i) => {
+    const g = s.grade || {};
+    const flags = [];
+    if (s.error) flags.push(`<span class="tag e">${esc(s.error)}</span>`);
+    if (!s.error && (/\?/.test(s.sbd) || (s.unsure || []).includes("sbd"))) flags.push(`<span class="tag w">SBD chưa đọc rõ</span>`);
+    if (!s.error && s.code && (s.unsure || []).includes("made")) flags.push(`<span class="tag w">mã đề tô chưa rõ</span>`);
+    if (s.sbd && sbdCount[s.sbd] > 1) flags.push(`<span class="tag e">SBD trùng</span>`);
+    if (!s.error && !s.code) flags.push(`<span class="tag e">chưa rõ mã đề</span>`);
+    const qs = (s.unsure || []).filter(x => typeof x === "number");
+    if (qs.length) flags.push(`<span class="tag w" title="Câu ${qs.join(", ")}">${qs.length} câu không chắc</span>`);
+    const multi = Object.entries(s.answers || {}).filter(([, v]) => v === "*").map(([n]) => n);
+    if (multi.length) flags.push(`<span class="tag w" title="Câu ${multi.join(", ")}">${multi.length} câu tô nhiều ô</span>`);
+    if (flags.length) need++; else flags.push(`<span class="tag g">ổn</span>`);
+    return `<tr>
+      <td>${i + 1}</td>
+      <td><img class="thumb" src="${s.url}" onclick="openViewer(${i})" title="${esc(s.name)}"></td>
+      <td><input class="sbd" value="${esc(s.sbd || "")}" onchange="SHEETS[${i}].sbd=this.value.trim(); render()"></td>
+      <td><select onchange="SHEETS[${i}].code=this.value; regradeAll()"><option value="">—</option>${codes.map(c => `<option ${c === s.code ? "selected" : ""}>${esc(c)}</option>`).join("")}</select>
+        <div class="sub">đọc: ${esc(s.made || "—")}</div></td>
+      <td>${s.error ? "" : `<input class="ans" value="${esc(answersText(s))}" onchange="SHEETS[${i}].answers=parseAnswersText(this.value); regradeAll()">`}</td>
+      <td class="num">${g.total ? `${g.correct}/${g.total}` : ""}</td>
+      <td class="num"><b>${g.total ? String(g.score10).replace(".", ",") : ""}</b></td>
+      <td>${flags.join("")}</td>
+      <td><button onclick="SHEETS.splice(${i},1); render()" title="Bỏ phiếu này">✕</button></td></tr>`;
+  }).join("");
+  const graded = SHEETS.filter(s => s.grade && s.grade.total);
+  const avg = graded.length ? graded.reduce((a, s) => a + s.grade.score10, 0) / graded.length : 0;
+  $("#summary").innerHTML = `<span>${SHEETS.length} phiếu · đã chấm ${graded.length}</span>`
+    + (graded.length ? `<span>· điểm trung bình <b>${avg.toFixed(2).replace(".", ",")}</b></span>` : "")
+    + (need ? `<span class="warn">· ${need} phiếu cần xem lại (bấm ảnh để kiểm tra)</span>` : "");
+  if (VIEW >= 0) drawViewer();
+}
+
+// ============================================================ xem phiếu, sửa bằng cách bấm ô
+function openViewer(i) { VIEW = i; $("#viewer").style.display = "block"; drawViewer(); }
+function closeViewer() { VIEW = -1; $("#viewer").style.display = "none"; }
+function stepViewer(d) { if (!SHEETS.length) return; VIEW = (VIEW + d + SHEETS.length) % SHEETS.length; drawViewer(); }
+function keyOf(sh) {
+  const keys = currentKeys() || {};
+  return Object.fromEntries((keys[sh.code] || []).map(k => [k.n, k.answer]));
+}
+function drawViewer() {
+  const sh = SHEETS[VIEW];
+  if (!sh) return closeViewer();
+  const g = sh.grade || {};
+  $("#vTitle").textContent = `Phiếu ${VIEW + 1}/${SHEETS.length} · ${sh.name} · SBD ${sh.sbd || "?"} · mã đề ${sh.code || "?"}`
+    + (g.total ? ` · ${g.correct}/${g.total} câu · ${String(g.score10).replace(".", ",")} điểm` : "");
+  const cv = $("#vCanvas");
+  if (!sh.canvas) {  // ảnh không đọc được: chỉ hiện ảnh
+    const im = new Image(); im.onload = () => { cv.width = im.width; cv.height = im.height; cv.getContext("2d").drawImage(im, 0, 0); }; im.src = sh.url;
+    return;
+  }
+  cv.width = sh.canvas.width; cv.height = sh.canvas.height;
+  const c = cv.getContext("2d");
+  c.drawImage(sh.canvas, 0, 0);
+  const key = keyOf(sh);
+  const lw = Math.max(2, sh.scale * 0.45);
+  for (const m of sh.marks || []) {
+    const [x, y] = sh.H(m.x, m.y), r = m.r * sh.scale * 1.15;
+    let color = null, fill = false;
+    if (m.kind) { if (m.on) color = "#7c3aed"; }
+    else {
+      const got = sh.answers[m.n] || "", want = key[m.n];
+      const chosen = m.item === undefined ? (got === m.opt || (got === "*" && m.on)) : got[m.item] === m.opt;
+      const right = m.item === undefined ? want === m.opt : (want || "")[m.item] === m.opt;
+      if (chosen) { color = right ? "#16a34a" : "#dc2626"; fill = true; }
+      else if (right && want) color = "#2563eb";
+      if (m.unsure && chosen) color = "#f59e0b";
+    }
+    if (!color) continue;
+    c.beginPath(); c.arc(x, y, r, 0, Math.PI * 2);
+    c.lineWidth = lw; c.strokeStyle = color; c.stroke();
+    if (fill) { c.globalAlpha = 0.28; c.fillStyle = color; c.fill(); c.globalAlpha = 1; }
+  }
+}
+$("#vCanvas").addEventListener("click", e => {
+  const sh = SHEETS[VIEW];
+  if (!sh || !sh.marks) return;
+  const cv = e.currentTarget, rect = cv.getBoundingClientRect();
+  const x = (e.clientX - rect.left) * cv.width / rect.width, y = (e.clientY - rect.top) * cv.height / rect.height;
+  let best = null;
+  for (const m of sh.marks) {
+    if (m.kind || m.n === undefined) continue;
+    const [u, v] = sh.H(m.x, m.y), d = Math.hypot(u - x, v - y);
+    if (d < m.r * sh.scale * 1.6 && (!best || d < best.d)) best = { m, d };
+  }
+  if (!best) return;
+  const m = best.m, cur = sh.answers[m.n] || "";
+  if (m.item === undefined) sh.answers[m.n] = cur === m.opt ? "" : m.opt;
+  else {
+    const arr = (cur || "????").padEnd(4, "?").split("");
+    arr[m.item] = arr[m.item] === m.opt ? "?" : m.opt;
+    sh.answers[m.n] = arr.join("");
+  }
+  sh.unsure = (sh.unsure || []).filter(n => n !== m.n);
+  regradeAll();
+});
+document.addEventListener("keydown", e => {
+  if (VIEW < 0) return;
+  if (e.key === "Escape") closeViewer();
+  if (e.key === "ArrowRight") stepViewer(1);
+  if (e.key === "ArrowLeft") stepViewer(-1);
+});
+
+// ============================================================ tải kết quả
+function csvDownload(name, rows) {
+  const text = "﻿" + rows.map(r => r.map(v => { const s = String(v ?? ""); return /[",\n;]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; }).join(",")).join("\n");
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([text], { type: "text/csv;charset=utf-8" }));
+  a.download = name; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+const stamp = () => new Date().toISOString().slice(0, 16).replace(/[-:T]/g, "");
+function downloadScores() {
+  if (!SHEETS.length) return alert("Chưa có phiếu nào.");
+  const rows = [["STT", "Số báo danh", "Mã đề", "Số câu đúng", "Số câu chấm", "Điểm thô", "Điểm tối đa", "Điểm hệ 10", "Bài làm", "Ghi chú", "Ảnh"]];
+  SHEETS.forEach((s, i) => {
+    const g = s.grade || {};
+    rows.push([i + 1, s.sbd || "", s.code || "", g.correct ?? "", g.total ?? "", g.raw ?? "", g.max ?? "",
+               g.total ? String(g.score10).replace(".", ",") : "", answersText(s), s.error || (s.code ? "" : "chưa rõ mã đề"), s.name]);
+  });
+  csvDownload(`BangDiem_${stamp()}.csv`, rows);
+}
+function downloadItems() {
+  const graded = SHEETS.filter(s => s.grade && s.grade.detail);
+  if (!graded.length) return alert("Chưa có phiếu nào chấm được.");
+  if (SRC !== "export") return alert("Đáp án nhập tay không gắn với mã câu trong ngân hàng nên không lập được bảng phân tích câu hỏi.");
+  const codes = [...new Set(graded.flatMap(s => s.grade.detail.map(d => d.qcode)).filter(Boolean))].sort();
+  const rows = [["Số báo danh", ...codes]];
+  graded.forEach((s, i) => {
+    const by = Object.fromEntries(s.grade.detail.map(d => [d.qcode, d.frac]));
+    rows.push([s.sbd || `Phiếu ${i + 1}`, ...codes.map(c => by[c] === undefined ? "" : by[c])]);
+  });
+  csvDownload(`PhanTichCau_${stamp()}.csv`, rows);
+}
+async function saveResults() {
+  if (SRC !== "export" || !EXP) return;
+  const sheets = SHEETS.filter(s => s.grade && s.grade.total).map(s => ({ code: s.code, made: s.made, answers: s.answers }));
+  if (!sheets.length) return alert("Chưa có phiếu nào chấm được.");
+  const name = prompt("Tên kỳ thi để ghi kết quả (ví dụ: Giữa kỳ TN1 - lớp A):", EXP.name || "");
+  if (name === null) return;
+  try {
+    const r = await postJson("/api/omr/results", { export_id: EXP.id, exam_code: name, sheets });
+    $("#saveMsg").innerHTML = `<span class="ok">Đã lưu tỷ lệ đúng của ${r.questions} câu (${sheets.length} phiếu) vào kỳ "${esc(r.exam_code)}".</span>`;
+  } catch (e) { $("#saveMsg").innerHTML = `<span class="err">${esc(e.message)}</span>`; }
+}
+window.addEventListener("beforeunload", e => { if (SHEETS.length) { e.preventDefault(); e.returnValue = ""; } });
+
+window.qbankRefresh = () => { if (!SHEETS.length) loadExports(); };  // app chính gọi khi mở lại tab Chấm bài
+srcChanged();
+loadExports().catch(e => $("#exportInfo").innerHTML = `<span class="err">${esc(e.message)}</span>`);
+</script>
+</body>
+</html>
