@@ -264,6 +264,9 @@ Chi tiết từng lỗi và cách tái hiện: `docs/bao_cao_kiem_thu_2026-11-02
   - **Xuất Moodle XML:** chọn câu rồi bấm "Xuất Moodle XML"; không chọn thì xuất mọi câu đã duyệt. Trắc nghiệm → multichoice (một đáp án); đúng/sai nhiều ý → mỗi ý là một câu truefalse; điền từ → shortanswer (mọi đáp án chấp nhận); tự luận → essay, hướng dẫn chấm đặt vào graderinfo. Danh mục Moodle theo học phần/giáo trình/chương. Ảnh và âm thanh được nhúng vào câu Moodle. Chưa thử nhập vào Moodle thật: cần kiểm tra trên máy có Moodle trước khi dùng cho lớp.
 - **Chưa làm (tính năng mới):** QTI; dùng chung qua mạng nội bộ có đăng nhập; cấu hình tên trường và khoa.
 
+### Kiểm trùng trước khi tạo câu
+Công cụ MCP `check_duplicates` (API `POST /api/check-candidates`, không ghi gì) nhận tối đa 100 câu dự định tạo và trả về từng câu: `mới`, `gần giống` (>= 90%, cùng dạng), `trùng chương khác` hoặc `trùng` (cùng chương, app sẽ từ chối), kèm mã câu đã có và các câu trùng nhau trong chính lô. Dùng chỉ mục 3-ký-tự nên 30 câu đối chiếu 3000 câu mất ~0,2 giây. Cần build lại `QBank.exe` để có route này.
+
 ### MCP luôn đi kèm bản cập nhật
 - `python3 tools/build_exe.py` tạo `dist/QBank(.exe)` và `dist/QBankMCP(.exe)`; khai báo bản đóng gói bằng `claude mcp add qbank -- /duong/dan/QBankMCP.exe`. Phát hành bản mới thì đính kèm cả hai file.
 - Khi app đổi cấu trúc (thêm/đổi tên/xóa route API, thêm cột câu hỏi), MCP phải đổi theo. `tools/check_mcp_sync.py` kiểm tra: mọi đường dẫn MCP gọi còn tồn tại, mọi cột câu hỏi có trong `QUESTION_FIELDS`, và so route với `mcp_manifest.json`. Lệch thì kiểm tra báo lỗi; sửa `mcp_server.py` và tests rồi chạy `python3 tools/check_mcp_sync.py --update`.
