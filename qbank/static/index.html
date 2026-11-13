@@ -2030,7 +2030,8 @@ function buildItems(card) {
   const groups = new Map(TREE.courses.map(c => [String(c.id), []]));
   for (const c of CHMAP.values()) {
     if (!BLOOMS.some(k => haveOf(c, k, qtype) > 0)) continue;
-    const cid = c.course_id == null ? "" : String(c.course_id);
+    const cid = groupOf(c, sel);
+    if (cid === null) continue;
     if (!groups.has(cid)) groups.set(cid, []);
     groups.get(cid).push(c);
   }
@@ -2046,12 +2047,23 @@ function buildItems(card) {
   return items;
 }
 
+// học phần hiển thị của một chương: giáo trình dùng chung nằm dưới học phần đang chọn đầu tiên
+// (hoặc học phần đầu tiên nếu không chọn); null = không thuộc các học phần đang chọn. Mỗi chương chỉ hiện một lần.
+function groupOf(c, sel) {
+  const ids = (c.course_ids || []).map(String);
+  if (!ids.length) return "";
+  if (!sel.length) return ids[0];
+  const hit = ids.find(id => sel.includes(id));
+  return hit === undefined ? null : hit;
+}
+
 // tổng câu theo học phần của phần
 function courseSums(card) {
-  const sums = {};
+  const sums = {}, sel = selectedCourses();
   for (const [k, n] of card._vals) {
     const c = CHMAP.get(+k.split(":")[0]);
-    const cid = c && c.course_id != null ? String(c.course_id) : "";
+    const cid = c ? groupOf(c, sel) : null;
+    if (cid === null) continue;
     sums[cid] = (sums[cid] || 0) + n;
   }
   return sums;

@@ -2108,8 +2108,12 @@ def stats():
                  ({CHAPTER_LABEL}) AS label
                  FROM chapters ch JOIN textbooks t ON t.id=ch.textbook_id
                  ORDER BY t.name, ch.code""", fetch=True)
+    links = {}  # giáo trình -> mọi học phần đang dùng nó (để form xuất đề gom chương đúng học phần đã chọn)
+    for r in q("SELECT course_id, textbook_id FROM course_textbooks ORDER BY course_id", fetch=True):
+        links.setdefault(r["textbook_id"], []).append(r["course_id"])
     chapters = []
     for r in rows:
+        r["course_ids"] = links.get(r["textbook_id"], [])
         r["counts"] = counts.get(r["id"], {b: 0 for b in BLOOM})
         r["counts_by_qtype"] = by_qt.get(r["id"], {})
         r["total"] = sum(r["counts"].values())
