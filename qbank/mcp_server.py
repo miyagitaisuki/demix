@@ -216,6 +216,9 @@ def handle(msg):
 
 
 def main():
+    # Windows dùng cp1252 cho stdin/stdout mặc định, sẽ lỗi với tiếng Việt: luôn đọc/ghi UTF-8
+    sys.stdin.reconfigure(encoding="utf-8")
+    sys.stdout.reconfigure(encoding="utf-8")
     for line in sys.stdin:
         line = line.strip()
         if not line:
@@ -227,7 +230,7 @@ def main():
         else:
             resp = handle(msg)
         if resp is not None:
-            sys.stdout.write(json.dumps(resp, ensure_ascii=False) + "\n")
+            sys.stdout.write(json.dumps(resp) + "\n")  # ensure_ascii: đầu ra toàn ASCII, an toàn trên mọi bảng mã
             sys.stdout.flush()
 
 
