@@ -53,8 +53,17 @@
   #pane2 .sec-title { display:block; margin-bottom:6px; }
   .pane { display:none; } .pane.on { display:block; }
   .pc { width:34px; text-align:center; }
-  .sec:not(.pct) .pc, .sec:not(.pct) .pctbar { display:none; }
-  .pctbar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:8px; }
+  .pctbar, .pickbar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:8px; }
+  .pickbar { font-size:13px; }
+  .sec-total .warn { color:#c2410c; }
+  /* xuất đề gọn: giới hạn bề ngang, cột Bloom sát nhau, thanh Quay lại/Tiếp dính dưới */
+  #export { max-width:1180px; margin:0 auto; }
+  .ctab { width:auto; }
+  .tblwrap .ctab td.pc, .tblwrap .ctab th.pc { min-width:0; width:44px; max-width:44px; }
+  .ctab td.pc + td { min-width:300px; max-width:420px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .ctab th.num, .ctab td.num { width:92px; text-align:center; }
+  .ctab td.num input { width:64px; }
+  .wiznav { position:sticky; bottom:0; z-index:6; background:#f1f5f9; padding-bottom:10px; }
   .pctbar label { white-space:nowrap; }
   .pctbar .ok { color:#16a34a; font-weight:600; } .pctbar .bad { color:#b91c1c; font-weight:600; }
   .wiznav { margin-top:14px; padding-top:10px; border-top:1px solid var(--line); }
@@ -261,22 +270,28 @@
   .rcollapse:hover { color:var(--b); background:#eff6ff; }
   .rcollapse i { transition:transform .15s; }
   body.ribbon-min .rcollapse i { transform:rotate(180deg); }
-  .ribbon-body { display:flex; align-items:stretch; padding:6px 12px 0; border-top:1px solid var(--line); background:#f8fafc; overflow-x:auto; min-height:98px; }
-  .ribbon-page { display:none; align-items:stretch; }
+  /* thanh lệnh 1 hàng: nút icon + chữ, nhóm ngăn bằng vạch; mục phụ nằm trong menu ▾ */
+  .ribbon-body { display:flex; align-items:center; padding:6px 16px; border-top:1px solid var(--line); background:#f8fafc; overflow-x:auto; }
+  .ribbon-page { display:none; align-items:center; }
   .ribbon-page.on { display:flex; }
-  .rgroup { display:flex; flex-direction:column; justify-content:space-between; flex:none; padding:0 12px; border-right:1px solid #e2e8f0; }
+  .rgroup { display:flex; align-items:center; flex:none; padding:0 10px; border-right:1px solid #e2e8f0; }
   .rgroup:first-child { padding-left:0; }
   .rgroup:last-child { border-right:0; }
-  .rgroup-items { display:flex; gap:4px; align-items:center; flex:1; }
-  .rgroup-name { font-size:11px; color:var(--mut); text-align:center; padding:4px 0 6px; white-space:nowrap; }
-  .rhint { display:block; font-size:11px; color:var(--mut); max-width:230px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-align:center; }
-  .rcol { display:flex; flex-direction:column; gap:3px; justify-content:center; }
-  .rbtn { display:inline-flex; flex-direction:column; align-items:center; justify-content:center; gap:5px; min-width:66px; padding:6px 8px; border:1px solid transparent; border-radius:7px; background:none; color:#334155; font-size:12px; font-weight:500; line-height:1.2; text-decoration:none; white-space:nowrap; cursor:pointer; }
-  .rbtn i { font-size:18px; color:var(--b); }
+  .rgroup-items { display:flex; gap:4px; align-items:center; }
+  .rgroup-name { display:none; }
+  .rbtn { display:inline-flex; flex-direction:row; align-items:center; gap:7px; padding:6px 11px; border:1px solid transparent; border-radius:7px; background:none; color:#334155; font-size:13px; font-weight:500; line-height:1.2; text-decoration:none; white-space:nowrap; cursor:pointer; }
+  .rbtn i { font-size:14px; color:var(--b); }
+  .rbtn i.car { font-size:11px; color:var(--mut); margin-left:-2px; }
   .rbtn:hover { background:#fff; border-color:#cbd5e1; }
-  .rbtn.sm { flex-direction:row; min-width:0; justify-content:flex-start; gap:6px; padding:3px 8px; }
-  .rbtn.sm i { font-size:12px; width:14px; text-align:center; }
+  .rbtn.off { opacity:.45; cursor:not-allowed; }
+  .rbtn.off:hover { background:none; border-color:transparent; }
+  .rbtn.sm { width:100%; gap:8px; padding:7px 12px; border-radius:5px; }
+  .rbtn.sm i { width:16px; text-align:center; }
   .rbtn.d, .rbtn.d i { color:#b91c1c; }
+  .rmenu { position:relative; }
+  .rmenu.open > .rbtn { background:#fff; border-color:#cbd5e1; }
+  .rmenu-list { display:none; position:fixed; z-index:60; min-width:190px; padding:4px; background:#fff; border:1px solid #e2e8f0; border-radius:8px; box-shadow:0 10px 24px rgba(15,23,42,.14); flex-direction:column; }
+  .rmenu.open .rmenu-list { display:flex; }
   .hfile { display:none; }
   body.ribbon-min .ribbon-body { display:none; }
   body.ribbon-min.peek .ribbon-body { display:flex; position:absolute; left:0; right:0; top:100%; box-shadow:0 10px 24px rgba(15,23,42,.14); z-index:25; }
@@ -317,39 +332,40 @@
         <div class="rgroup-name">Câu hỏi</div>
       </div>
       <div class="rgroup">
-        <div class="rhint"><span id="importTarget"></span></div>
         <div class="rgroup-items">
-          <label class="rbtn" for="importFile" title="Nhập từ .docx hoặc .csv vào giáo trình đã chọn"><i class="fa-solid fa-file-import"></i><span>Nhập</span></label>
+          <label class="rbtn" id="importBtn" for="importFile" title="Nhập từ .docx hoặc .csv vào giáo trình đã chọn"><i class="fa-solid fa-file-import"></i><span>Nhập</span></label>
           <a class="rbtn" href="/api/backup" download title="Sao lưu toàn bộ CSDL ra .json"><i class="fa-solid fa-download"></i><span>Sao lưu</span></a>
-          <div class="rcol">
-            <a class="rbtn sm" href="/api/import-template" download><i class="fa-solid fa-file-lines"></i>Tải mẫu nhập</a>
-            <a class="rbtn sm" href="/api/import-template?format=csv" download title="Mẫu CSV cùng cột với mẫu Word; mở bằng Excel rồi lưu lại khi nhập"><i class="fa-solid fa-file-csv"></i>Mẫu CSV</a>
-            <a class="rbtn sm" href="#" onclick="exportCsv(event)" title="Xuất câu hỏi của giáo trình đang chọn (và chương nếu đã chọn) ra CSV để sửa; nhập lại sẽ cập nhật đúng câu"><i class="fa-solid fa-file-export"></i>Xuất CSV</a>
-            <label class="rbtn sm" for="restoreFile"><i class="fa-solid fa-upload"></i>Khôi phục .json</label>
-            <button class="rbtn sm" onclick="togglePaste()"><i class="fa-solid fa-paste"></i>Dán từ Excel</button>
+          <div class="rmenu">
+            <button class="rbtn" type="button"><i class="fa-solid fa-ellipsis"></i><span>Nhập / Xuất</span><i class="fa-solid fa-caret-down car"></i></button>
+            <div class="rmenu-list">
+              <a class="rbtn sm" href="/api/import-template" download><i class="fa-solid fa-file-lines"></i>Tải mẫu nhập</a>
+              <a class="rbtn sm" href="/api/import-template?format=csv" download title="Mẫu CSV cùng cột với mẫu Word; mở bằng Excel rồi lưu lại khi nhập"><i class="fa-solid fa-file-csv"></i>Mẫu CSV</a>
+              <a class="rbtn sm" href="#" onclick="exportCsv(event)" title="Xuất câu hỏi của giáo trình đang chọn (và chương nếu đã chọn) ra CSV để sửa; nhập lại sẽ cập nhật đúng câu"><i class="fa-solid fa-file-export"></i>Xuất CSV</a>
+              <label class="rbtn sm" for="restoreFile"><i class="fa-solid fa-upload"></i>Khôi phục .json</label>
+              <button class="rbtn sm" onclick="togglePaste()"><i class="fa-solid fa-paste"></i>Dán từ Excel</button>
+            </div>
           </div>
         </div>
-        <div class="rgroup-name">Nhập / Xuất</div>
       </div>
       <div class="rgroup">
         <div class="rgroup-items">
-          <div class="rcol">
-            <button class="rbtn sm" onclick="showDuplicates()"><i class="fa-solid fa-clone"></i>Kiểm tra trùng</button>
-            <button class="rbtn sm" onclick="withBusy(this, showSimilar)"><i class="fa-solid fa-magnifying-glass"></i>Tìm câu gần giống</button>
-            <button class="rbtn sm" onclick="toggleTrash()"><i class="fa-solid fa-trash-can"></i>Thùng rác</button>
+          <div class="rmenu">
+            <button class="rbtn" type="button"><i class="fa-solid fa-magnifying-glass"></i><span>Rà soát</span><i class="fa-solid fa-caret-down car"></i></button>
+            <div class="rmenu-list">
+              <button class="rbtn sm" onclick="showDuplicates()"><i class="fa-solid fa-clone"></i>Kiểm tra trùng</button>
+              <button class="rbtn sm" onclick="withBusy(this, showSimilar)"><i class="fa-solid fa-magnifying-glass"></i>Tìm câu gần giống</button>
+              <button class="rbtn sm" onclick="toggleTrash()"><i class="fa-solid fa-trash-can"></i>Thùng rác</button>
+            </div>
+          </div>
+          <div class="rmenu">
+            <button class="rbtn" type="button" title="Chỉ xóa số lần đã ra đề, không xóa câu"><i class="fa-solid fa-rotate-left"></i><span>Reset ra đề</span><i class="fa-solid fa-caret-down car"></i></button>
+            <div class="rmenu-list">
+              <button class="rbtn sm" onclick="resetUsage('questions')" title="Chỉ xóa số lần đã ra đề, không xóa câu"><i class="fa-solid fa-rotate-left"></i>Câu đang tick</button>
+              <button class="rbtn sm" onclick="resetUsage('chapters')" title="Chỉ xóa số lần đã ra đề, không xóa câu"><i class="fa-solid fa-rotate-left"></i>Chương đang lọc</button>
+              <button class="rbtn sm d" onclick="resetUsage('all')" title="Chỉ xóa số lần đã ra đề, không xóa câu"><i class="fa-solid fa-rotate-left"></i>Toàn bộ CSDL</button>
+            </div>
           </div>
         </div>
-        <div class="rgroup-name">Rà soát</div>
-      </div>
-      <div class="rgroup">
-        <div class="rgroup-items">
-          <div class="rcol">
-            <button class="rbtn sm d" onclick="resetUsage('questions')" title="Chỉ xóa số lần đã ra đề, không xóa câu"><i class="fa-solid fa-rotate-left"></i>Câu đang tick</button>
-            <button class="rbtn sm d" onclick="resetUsage('chapters')" title="Chỉ xóa số lần đã ra đề, không xóa câu"><i class="fa-solid fa-rotate-left"></i>Chương đang lọc</button>
-            <button class="rbtn sm d" onclick="resetUsage('all')" title="Chỉ xóa số lần đã ra đề, không xóa câu"><i class="fa-solid fa-rotate-left"></i>Toàn bộ CSDL</button>
-          </div>
-        </div>
-        <div class="rgroup-name">Reset ra đề</div>
       </div>
       <input type="file" id="importFile" class="hfile" accept=".docx,.csv,.txt" onchange="importDocx(this)">
       <input type="file" id="restoreFile" class="hfile" accept=".json" onchange="restoreJson(this)">
@@ -553,7 +569,7 @@
       <input id="xSearch" placeholder="Tìm chương (giáo trình, mã bài, tên bài)" oninput="filterExportRows()" style="min-width:300px">
       <label><input type="checkbox" id="xOnlyFilled" onchange="filterExportRows()"> Chỉ hiện dòng đã nhập</label>
     </div>
-    <p class="msg">Nhập số câu cho từng ô chương × Bloom, hoặc số đoạn văn ở dòng “Theo đoạn văn”. Chỉ hiện chương có câu thuộc dạng của phần; bấm tên học phần để thu gọn. Ô tô đỏ là chưa đủ câu; ô mờ là chương chưa có câu mức đó.</p>
+    <p class="msg">Nhập tổng số câu + tỷ lệ rồi bấm “Tự phân bổ” để máy điền bảng (sửa tay từng ô được), hoặc nhập thẳng từng ô; số đoạn văn nhập ở dòng “Theo đoạn văn”. Chỉ hiện chương có câu thuộc dạng của phần; bấm tên học phần để thu gọn. Ô tô đỏ là chưa đủ câu; ô mờ là chương chưa có câu mức đó.</p>
     <div class="secslot"></div>
   </div>
 
@@ -718,6 +734,24 @@ document.addEventListener("click", e => {
   // bấm ngoài header, hoặc bấm một lệnh trong ribbon, thì ẩn ribbon đang mở tạm
   if (!e.target.closest("header.topbar") || e.target.closest(".ribbon-body .rbtn")) document.body.classList.remove("peek");
 });
+// menu ▾ trong thanh lệnh: danh sách position:fixed để không bị cắt bởi overflow của thanh
+function closeMenus(except) {
+  document.querySelectorAll(".rmenu.open").forEach(m => { if (m !== except) m.classList.remove("open"); });
+}
+document.querySelectorAll(".rmenu > .rbtn").forEach(b => b.addEventListener("click", e => {
+  e.stopPropagation();
+  const m = b.parentElement, open = !m.classList.contains("open");
+  closeMenus(m);
+  m.classList.toggle("open", open);
+  if (open) {
+    const r = b.getBoundingClientRect(), list = m.querySelector(".rmenu-list");
+    list.style.top = r.bottom + 4 + "px";
+    list.style.left = Math.min(r.left, innerWidth - list.offsetWidth - 8) + "px";
+  }
+}));
+document.addEventListener("click", e => { if (!e.target.closest(".rmenu-list")) closeMenus(); else setTimeout(closeMenus, 0); });
+document.addEventListener("keydown", e => { if (e.key === "Escape") closeMenus(); });
+window.addEventListener("resize", () => closeMenus());
 window.addEventListener("resize", updateHdrVar);
 if (localStorage.getItem(RIBBON_KEY) === "1") document.body.classList.add("ribbon-min");
 updateHdrVar();
@@ -764,8 +798,9 @@ function fillTextbookFilter() {
 function updateImportTarget() {
   const tid = $("#fTextbook").value;
   const tb = TREE.textbooks.find(t => t.id == tid);
-  $("#importTarget").textContent = tb ? `«${tb.name}»` : "(chọn giáo trình ở bộ lọc trước)";
-  $("#importTarget").style.color = tb ? "" : "var(--err, #b91c1c)";
+  const btn = $("#importBtn");
+  btn.classList.toggle("off", !tb);
+  btn.title = tb ? `Nhập .docx/.csv vào giáo trình «${tb.name}»` : "Chọn giáo trình ở bộ lọc trước khi nhập";
   $("#importFile").disabled = !tb;
 }
 function fillChapterFilter() {
@@ -817,6 +852,7 @@ async function exportMoodle() {
 // ---------- chọn nhiều câu để sửa hàng loạt
 const SEL = new Set();
 const PCT_OPTS = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
+const DEF_PCT = { 1: 40, 2: 40, 3: 20, 4: 0, 5: 0 };  // tỷ lệ Bloom mặc định khi thêm phần
 let UNUSED_STATS = null;  // thống kê gần nhất (có số câu chưa từng ra đề)
 function updateSelBar() {
   $("#selCount").textContent = SEL.size;
@@ -1873,11 +1909,10 @@ function readSections() {
     passages: [...card.querySelectorAll(".prow")]
       .map(r => ({ chapter_id: +r.querySelector(".pch").value, n: +r.querySelector(".pn").value || 0 }))
       .filter(x => x.n > 0 && x.chapter_id),
-    mode: card.classList.contains("pct") ? "pct" : "manual",
     total: Math.max(0, Math.floor(+card.querySelector(".pc-total").value || 0)),
     pct: Object.fromEntries([...card.querySelectorAll(".pc-p")].map(sel => [sel.dataset.b, +sel.value])),
-    chapters: [...card._picked].sort((a, b) => a - b),
-    locked: !!card._locked,
+    pick_auto: !!card._pickAuto,  // true: tick theo bộ lọc lúc tải; false: đúng danh sách chương dưới đây
+    chapters: card._pickAuto ? [] : [...card._picked].sort((a, b) => a - b),
   }));
 }
 async function saveConfig() {
@@ -1916,13 +1951,15 @@ function applyCfg(cfg) {
       if (m.n > 0 && haveFor(m.chapter_id, m.bloom, s.qtype || "") > 0) card._vals.set(valKey(m.chapter_id, m.bloom), m.n);
     }
     for (const ps of s.passages || []) addPassRow(card, ps.chapter_id, ps.n);
-    if (s.mode === "pct") {
-      card._picked = new Set((s.chapters || []).map(Number));
+    // cấu trúc cũ "nhập tay" không có tổng/tỷ lệ thật: giữ mặc định; cấu trúc cũ "theo tỷ lệ" và cấu trúc mới thì nạp lại
+    if (s.mode !== "manual") {
       card.querySelector(".pc-total").value = s.total || "";
-      card.querySelectorAll(".pc-p").forEach(sel => { sel.value = (s.pct || {})[sel.dataset.b] ?? 0; });
-      setMode(card, "pct");
-      if (s.locked) pctLock(card);
+      if (s.pct) card.querySelectorAll(".pc-p").forEach(sel => { sel.value = s.pct[sel.dataset.b] ?? 0; });
+      const chs = (s.chapters || []).map(Number).filter(id => CHMAP.has(id));
+      if (s.pick_auto === false || (s.pick_auto === undefined && chs.length)) { card._picked = new Set(chs); card._pickAuto = false; }
+      pctInput(card.querySelector(".pc-total"));
     }
+    renderCard(card);
   }
   if (cfg.template) $("#tpl").value = cfg.template;
   if (cfg.key_template) $("#keyTpl").value = cfg.key_template;
@@ -1999,13 +2036,12 @@ function addSection(title = "", qtype = "") {
   div._vals = new Map();  // số câu đã nhập
   div._items = [];        // các mục đang hiển thị (đầu học phần hoặc dòng chương)
   div._sums = {};         // tổng câu theo học phần
-  div._picked = new Set(); // chương được chọn để chia theo tỷ lệ
-  div._locked = false;     // đã chốt (tổng, tỷ lệ, chương): không sửa được cho tới khi mở khóa
+  div._picked = new Set(); // chương được chọn để tự phân bổ
+  div._pickAuto = true;    // chưa tick tay: coi mọi chương đang hiện theo bộ lọc là được chọn
   div.innerHTML = `
     <div class="row sh">
       <input class="st" style="width:260px" placeholder="Tiêu đề phần" value="${esc(title)}" oninput="this.closest('.sec').querySelector('.sec-title').textContent=this.value">
       <select class="sq" onchange="refreshSection(this.closest('.sec'))">${Object.entries(QT).map(([k, v]) => `<option value="${k}" ${k === qtype ? "selected" : ""}>${v}</option>`).join("")}</select>
-      <select class="smode" onchange="setMode(this.closest('.sec'), this.value)"><option value="manual">Nhập tay từng ô</option><option value="pct">Theo tỷ lệ %</option></select>
       <label><input type="checkbox" class="ss" checked> Xáo câu & phương án</label>
       <label title="Chỉ các câu của phần này được ghép vào file đề nghe (De_xxx_nghe.mp3)"><input type="checkbox" class="sl"> Phần nghe</label>
       <span style="flex:1"></span>
@@ -2014,9 +2050,14 @@ function addSection(title = "", qtype = "") {
     <div class="sb"><b class="sec-title">${esc(title)}</b>
       <div class="row pctbar">
         <label>Tổng số câu: <input class="n pc-total" style="width:70px" placeholder="vd 50" oninput="pctInput(this)"></label>
-        ${Object.entries(BLOOM).map(([k, v]) => `<label>${k}. ${v} <select class="pc-p" data-b="${k}" onchange="pctInput(this)">${PCT_OPTS.map(x => `<option value="${x}" ${x === 20 ? "selected" : ""}>${x}%</option>`).join("")}</select></label>`).join("")}
+        ${Object.entries(BLOOM).map(([k, v]) => `<label>${k}. ${v} <select class="pc-p" data-b="${k}" onchange="pctInput(this)">${PCT_OPTS.map(x => `<option value="${x}" ${x === (DEF_PCT[k] || 0) ? "selected" : ""}>${x}%</option>`).join("")}</select></label>`).join("")}
         <span class="pc-sum sub"></span>
-        <button class="g pc-lock" onclick="pctLock(this.closest('.sec'))">Chốt</button>
+        <button class="p" onclick="autoAlloc(this.closest('.sec'))" title="Rải tổng số câu theo tỷ lệ, giãn đều trên các chương đang tick; ghi đè số đang có trong bảng">Tự phân bổ</button>
+      </div>
+      <div class="row pickbar">
+        <span class="sub pc-picked"></span>
+        <button class="g" onclick="pickAll(this.closest('.sec'), true)">Chọn hết</button>
+        <button class="g" onclick="pickAll(this.closest('.sec'), false)">Bỏ hết</button>
         <span class="pc-msg sub"></span>
       </div>
       <div class="row fillbar">
@@ -2037,6 +2078,7 @@ function addSection(title = "", qtype = "") {
   $("#sections").appendChild(div);
   div.querySelector(".tblwrap").addEventListener("scroll", () => scheduleWindow(div), { passive: true });
   renderCard(div);
+  pctInput(div.querySelector(".pc-total"));
 }
 
 // số câu sẵn có của một ô: chỉ đếm đúng dạng câu của phần ("" = mọi dạng)
@@ -2054,11 +2096,12 @@ function cellHtml(c, k, qtype, val = 0, ro = false) {
 }
 
 // các mục hiển thị của một phần: theo dạng, học phần, tìm kiếm, "chỉ dòng đã nhập", thu gọn
-function buildItems(card) {
+// forPick: lấy mọi chương khớp học phần + tìm kiếm (bỏ qua thu gọn và "chỉ dòng đã nhập") để tick/tự phân bổ
+function buildItems(card, forPick = false) {
   const qtype = card.querySelector(".sq").value;
   const sel = selectedCourses();
   const q = fold($("#xSearch").value.trim());
-  const onlyFilled = $("#xOnlyFilled").checked;
+  const onlyFilled = !forPick && $("#xOnlyFilled").checked;
   const groups = new Map(TREE.courses.map(c => [String(c.id), []]));
   for (const c of CHMAP.values()) {
     if (!BLOOMS.some(k => haveOf(c, k, qtype) > 0)) continue;
@@ -2074,7 +2117,7 @@ function buildItems(card) {
       && (!onlyFilled || BLOOMS.some(k => cellVal(card, c.id, k) > 0)));
     if (!hits.length) continue;
     items.push({ head: true, cid });
-    if (!COLLAPSED.has(cid)) for (const c of hits) items.push({ head: false, c, cid });
+    if (forPick || !COLLAPSED.has(cid)) for (const c of hits) items.push({ head: false, c, cid });
   }
   return items;
 }
@@ -2141,9 +2184,8 @@ function itemHtml(card, it, qtype) {
     return `<tr class="ghead" data-course="${it.cid}"><td colspan="${BLOOMS.length + 2}"><span class="garrow">${COLLAPSED.has(it.cid) ? "▸" : "▾"}</span> <b>${esc(courseName(it.cid) || "Không rõ học phần")}</b> <span class="sub">${s ? "· " + s + " câu" : ""}</span></td></tr>`;
   }
   const c = it.c;
-  const ro = card.classList.contains("pct");
-  return `<tr class="crow" data-course="${it.cid}"><td class="pc"><input type="checkbox" class="pchk" value="${c.id}" ${card._picked.has(c.id) ? "checked" : ""} ${card._locked ? "disabled" : ""} onchange="pickChapter(this)"></td><td title="${esc(chapterLabel(c))}">${esc(chapterLabel(c))}</td>`
-    + BLOOMS.map(k => cellHtml(c, k, qtype, cellVal(card, c.id, k), ro)).join("") + `</tr>`;
+  return `<tr class="crow" data-course="${it.cid}"><td class="pc"><input type="checkbox" class="pchk" value="${c.id}" ${isPicked(card, c.id) ? "checked" : ""} onchange="pickChapter(this)"></td><td title="${esc(chapterLabel(c))}">${esc(chapterLabel(c))}</td>`
+    + BLOOMS.map(k => cellHtml(c, k, qtype, cellVal(card, c.id, k))).join("") + `</tr>`;
 }
 
 // tổng của phần và số câu nằm ở dòng đang bị ẩn (do lọc, tìm kiếm hoặc thu gọn)
@@ -2153,7 +2195,13 @@ function updateTotals(card) {
   let shown = 0;
   for (const it of card._items) if (!it.head) for (const k of BLOOMS) shown += cellVal(card, it.c.id, k);
   const hidden = total - shown;
-  card.querySelector(".sec-total").textContent = `Tổng phần: ${total} câu` + (hidden > 0 ? ` (${hidden} câu ở dòng đang ẩn)` : "");
+  const N = Math.max(0, Math.floor(+card.querySelector(".pc-total").value || 0));
+  const pass = [...card.querySelectorAll(".prow")].filter(r => r.querySelector(".pch").value)
+    .reduce((a, r) => a + Math.max(0, +r.querySelector(".pn").value || 0), 0);
+  const off = N > 0 && total !== N;  // sửa tay làm bảng lệch tổng: chỉ cảnh báo, không chặn
+  card.querySelector(".sec-total").innerHTML = `<span class="${off ? "warn" : ""}">Bảng: ${total}${N ? "/" + N : ""} câu${off ? " (lệch tổng số câu)" : ""}</span>`
+    + (pass ? ` + ${pass} đoạn văn` : "") + (hidden > 0 ? ` <span class="sub">(${hidden} câu ở dòng đang ẩn)</span>` : "");
+  card.querySelector(".pc-picked").textContent = `Chương được tick để tự phân bổ: ${pickedChapters(card).length}`;
 }
 
 // số ô nhập vượt số câu có sẵn, trên mọi phần
@@ -2205,18 +2253,60 @@ function matrixOf(card) {
 // đổi dạng câu của phần: bỏ số đã nhập ở các ô không còn câu dạng này, rồi vẽ lại
 function refreshSection(card) {
   const qtype = card.querySelector(".sq").value;
-  if (card._locked) { card._locked = false; applyLockUI(card); toast("Đã mở khóa phần vì đổi dạng câu; hãy chốt lại."); }
   for (const k of [...card._vals.keys()]) {
     const [ch, b] = k.split(":");
     if (!haveFor(ch, b, qtype)) card._vals.delete(k);
   }
-  if (card.classList.contains("pct")) { pctRecalc(card); return; }
   renderCard(card);
   updateShort();
 }
 
-// ---------- chia theo tỷ lệ %: tổng câu × tỷ lệ từng mức, chia đều cho các chương được chọn
-// làm tròn theo phần dư lớn nhất để tổng đúng bằng số câu; chương nào thiếu câu thì phần dư chia cho chương còn chỗ
+// ---------- tự phân bổ: tổng câu × tỷ lệ từng mức, giãn đều trên các chương đang tick
+// Chương tick sẵn = mọi chương đang hiện theo bộ lọc (học phần + tìm kiếm) cho tới khi tick tay.
+// Chỉ chạy khi bấm "Tự phân bổ"; kết quả ghi đè bảng của phần và vẫn sửa tay được từng ô.
+function pickedChapters(card) {
+  if (card._pickAuto) return buildItems(card, true).filter(it => !it.head).map(it => it.c);
+  return [...card._picked].map(id => CHMAP.get(id)).filter(Boolean).sort((a, b) => a._ord - b._ord);
+}
+function isPicked(card, id) { return card._pickAuto || card._picked.has(id); }
+function materializePick(card) {
+  if (!card._pickAuto) return;
+  card._picked = new Set(pickedChapters(card).map(c => c.id));
+  card._pickAuto = false;
+}
+function pickChapter(el) {
+  const card = el.closest(".sec"), id = +el.value;
+  materializePick(card);
+  if (el.checked) card._picked.add(id); else card._picked.delete(id);
+  updateTotals(card);
+}
+// chọn hết / bỏ hết: tác động lên các chương đang khớp bộ lọc
+function pickAll(card, on) {
+  const ids = buildItems(card, true).filter(it => !it.head).map(it => it.c.id);
+  materializePick(card);
+  for (const id of ids) on ? card._picked.add(id) : card._picked.delete(id);
+  renderCard(card);
+}
+
+// chia R câu cho các chương theo sức chứa caps, giãn đều trên cả dải; shift làm lệch vị trí giữa các mức
+// trả về [số câu từng chương, số câu còn thiếu]
+function spreadEven(caps, R, shift) {
+  const give = caps.map(() => 0);
+  while (R > 0) {
+    const C = caps.map((c, i) => i).filter(i => give[i] < caps[i]);
+    if (!C.length) break;
+    if (R >= C.length) {
+      const q = Math.floor(R / C.length);
+      for (const i of C) { const add = Math.min(q, caps[i] - give[i]); give[i] += add; R -= add; }
+    } else {
+      const L = C.length;
+      for (let j = 0; j < R; j++) give[C[(Math.floor((j + 0.5) * L / R) + shift(L, R)) % L]]++;
+      R = 0;
+    }
+  }
+  return [give, R];
+}
+
 function allocPercent(card) {
   const qtype = card.querySelector(".sq").value;
   const N = Math.max(0, Math.floor(+card.querySelector(".pc-total").value || 0));
@@ -2231,89 +2321,41 @@ function allocPercent(card) {
     rem.push([k, exact - Math.floor(exact)]);
   }
   rem.sort((a, b) => b[1] - a[1]);
-  for (let i = 0; i < N - base; i++) target[rem[i % rem.length][0]]++;
-  const chs = [...card._picked].map(id => CHMAP.get(id)).filter(Boolean).sort((a, b) => a._ord - b._ord);
+  if (sum > 0) for (let i = 0; i < N - base; i++) target[rem[i % rem.length][0]]++;
+  const chs = pickedChapters(card);
+  const active = BLOOMS.filter(k => target[k] > 0);
   const cells = new Map(), short = [];
-  for (const k of BLOOMS) {
-    let r = target[k];
-    const give = new Map(chs.map(c => [c.id, 0]));
-    while (r > 0) {
-      let progressed = false;
-      for (const c of chs) {
-        if (r <= 0) break;
-        if (give.get(c.id) < haveOf(c, k, qtype)) { give.set(c.id, give.get(c.id) + 1); r--; progressed = true; }
-      }
-      if (!progressed) break;
-    }
-    if (r > 0) short.push(`${BLOOM[k]} thiếu ${r} câu`);
-    for (const [id, n] of give) if (n > 0) cells.set(valKey(id, k), n);
-  }
-  return { cells, short, N, sum, target };
+  active.forEach((k, li) => {
+    const caps = chs.map(c => haveOf(c, k, qtype));
+    const [give, left] = spreadEven(caps, target[k], (L, R) => Math.floor(li * L / (R * active.length)));
+    if (left > 0) short.push(`${BLOOM[k]} thiếu ${left} câu`);
+    give.forEach((n, i) => { if (n > 0) cells.set(valKey(chs[i].id, k), n); });
+  });
+  return { cells, short, N, sum, chs };
 }
 
-// tính lại ô từ tổng, tỷ lệ và chương đã chọn (bỏ qua khi đã chốt)
-function pctRecalc(card) {
-  if (card._locked) return;
-  const { cells, short, N, sum } = allocPercent(card);
+// đổi tổng / tỷ lệ: chỉ cập nhật dòng tổng tỷ lệ, không tự ghi đè bảng
+function pctInput(el) {
+  const card = el.closest(".sec");
+  const sum = [...card.querySelectorAll(".pc-p")].reduce((a, s) => a + +s.value, 0);
+  card.querySelector(".pc-sum").innerHTML = `Tổng tỷ lệ: <span class="${sum === 100 ? "ok" : "bad"}">${sum}%</span>`;
+  updateTotals(card);
+}
+function autoAlloc(card) {
+  const { cells, short, N, sum, chs } = allocPercent(card);
+  const err = !N ? "Nhập tổng số câu." : sum !== 100 ? `Tổng tỷ lệ phải bằng 100% (hiện ${sum}%).`
+    : !chs.length ? "Tick chọn ít nhất một chương." : "";
+  if (err) { card.querySelector(".pc-msg").innerHTML = `<span class="err">${esc(err)}</span>`; toast(err, true); return; }
   card._vals = cells;
   renderCard(card);
   updateShort();
   const total = [...cells.values()].reduce((a, b) => a + b, 0);
-  card.querySelector(".pc-sum").innerHTML = `Tổng tỷ lệ: <span class="${sum === 100 ? "ok" : "bad"}">${sum}%</span> (cần 100%)`;
-  const msg = !N ? "Nhập tổng số câu."
-    : !card._picked.size ? "Tick chọn ít nhất một chương."
-    : short.length ? `Không đủ câu: ${short.join("; ")}.`
-    : `Đã phân bổ ${total}/${N} câu.`;
-  card.querySelector(".pc-msg").innerHTML = (short.length || !N || !card._picked.size) ? `<span class="err">${esc(msg)}</span>` : esc(msg);
-}
-function pctInput(el) { pctRecalc(el.closest(".sec")); }
-function pickChapter(el) {
-  const card = el.closest(".sec"), id = +el.value;
-  if (el.checked) card._picked.add(id); else card._picked.delete(id);
-  pctRecalc(card);
-}
-
-// chuyển chế độ: nhập tay hoặc theo tỷ lệ (lần đầu chọn mọi chương có câu của dạng)
-function setMode(card, mode) {
-  if (card._locked) { card.querySelector(".smode").value = card.classList.contains("pct") ? "pct" : "manual"; return; }
-  card.querySelector(".smode").value = mode;
-  card.classList.toggle("pct", mode === "pct");
-  if (mode === "pct") {
-    if (!card._picked.size) {
-      const qtype = card.querySelector(".sq").value;
-      for (const c of CHMAP.values()) if (BLOOMS.some(k => haveOf(c, k, qtype) > 0)) card._picked.add(c.id);
-    }
-    pctRecalc(card);
-  } else {
-    renderCard(card); updateShort();
-  }
-}
-
-// khóa / mở khóa phần đã chốt: khi khóa, mọi ô, tỷ lệ, chương và chế độ đều không sửa được
-function pctLock(card) {
-  if (card._locked) { card._locked = false; applyLockUI(card); pctRecalc(card); return; }
-  const { short, N, sum } = allocPercent(card);
-  if (sum !== 100) { toast(`Tổng tỷ lệ phải bằng 100% (hiện ${sum}%) mới chốt được.`, true); return; }
-  if (!N) { toast("Nhập tổng số câu trước khi chốt.", true); return; }
-  if (!card._picked.size) { toast("Tick chọn ít nhất một chương.", true); return; }
-  if (short.length) { toast("Không đủ câu: " + short.join("; "), true); return; }
-  card._locked = true;
-  applyLockUI(card);
-  pctRecalc(card);
-  toast("Đã chốt phần. Muốn sửa thì bấm “Mở khóa”.");
-}
-function applyLockUI(card) {
-  const on = card._locked;
-  card.classList.toggle("locked", on);
-  card.querySelectorAll(".pc-total, .pc-p, .pchk").forEach(x => { x.disabled = on; });
-  card.querySelector(".smode").disabled = on;
-  card.querySelector(".pc-lock").textContent = on ? "Mở khóa để sửa" : "Chốt";
-  renderCard(card);
+  const msg = short.length ? `Không đủ câu: ${short.join("; ")}. Đã phân bổ ${total}/${N}.` : `Đã phân bổ ${total}/${N} câu trên ${chs.length} chương.`;
+  card.querySelector(".pc-msg").innerHTML = short.length ? `<span class="err">${esc(msg)}</span>` : esc(msg);
 }
 
 // điền nhanh: đặt số cho mọi ô của các dòng đang hiện (không vượt số câu có sẵn)
 function fillVisible(card) {
-  if (card.classList.contains("pct")) { toast("Phần theo tỷ lệ không điền nhanh; đổi sang “Nhập tay từng ô” để dùng.", true); return; }
   const b = card.querySelector(".fb-b").value;
   const n = Math.max(0, parseInt(card.querySelector(".fb-n").value, 10) || 0);
   const qtype = card.querySelector(".sq").value;
@@ -2341,10 +2383,11 @@ function addPassRow(card, chapterId = "", n = 1) {
   div.dataset.cur = chapterId;
   div.innerHTML = `<input class="pq" placeholder="Tìm chương..." style="width:180px" oninput="fillPassSelect(this.closest('.prow'))">
     <select class="pch" style="max-width:420px"></select>
-    <label>Số đoạn:</label><input class="n pn" value="${n}" oninput="this.dataset.touched=1">
-    <button class="d" onclick="this.closest('.prow').remove()">Bỏ</button>`;
+    <label>Số đoạn:</label><input class="n pn" value="${n}" oninput="this.dataset.touched=1; updateTotals(this.closest('.sec'))">
+    <button class="d" onclick="const c=this.closest('.sec'); this.closest('.prow').remove(); updateTotals(c)">Bỏ</button>`;
   card.querySelector(".prows").appendChild(div);
   fillPassSelect(div);
+  updateTotals(card);
 }
 
 // danh sách chương có đoạn: lọc theo học phần đã chọn và ô tìm kiếm; tối đa 200 mục, chương đang chọn luôn có mặt
@@ -2471,9 +2514,6 @@ function validateStep(n) {
     }
     const short = shortCount();
     if (short) { toast(`Còn ${short} ô thiếu câu hỏi (tô đỏ).`, true); return false; }
-    for (const card of document.querySelectorAll(".sec.pct")) {
-      if (!card._locked) { toast(`Phần “${card.querySelector(".st").value || "(chưa đặt tên)"}” theo tỷ lệ: tổng 100% rồi bấm Chốt trước khi qua bước tiếp.`, true); return false; }
-    }
     return true;
   }
   if (n === 3) {  // thông tin đề: chỉ hỏi khi thiếu, người dùng có thể đi tiếp
