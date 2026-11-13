@@ -63,3 +63,20 @@ def test_new_types_reach_the_question_payload(captured):
     assert 2 in limits  # ví dụ điền từ có Số từ = 2
     tfng = next(p for p in captured if "tfng" in p["tags"])
     assert tfng["qtype"] == "TN" and tfng["answer"] == "A"
+
+
+def test_csv_template_has_same_columns_and_examples(captured):
+    raw = app.make_import_template_csv()
+    assert raw.startswith(b"\xef\xbb\xbf")  # BOM để Excel mở đúng tiếng Việt
+    rows = app.read_table_text(raw)
+    assert rows[0] == app.IMPORT_HEADERS
+    assert len(rows) - 1 == len(app.IMPORT_EXAMPLES)
+    # các ô có xuống dòng (đoạn văn, phương án) vẫn đọc đúng từng ô
+    assert rows[1][1].count("\n") == app.IMPORT_EXAMPLES[0][1].count("\n")
+
+
+def test_csv_template_examples_import_without_errors(captured):
+    rows = app.read_table_text(app.make_import_template_csv())
+    result = app.parse_rows([rows], 1, dry_run=True, docx=False)
+    assert result["errors"] == []
+    assert len(result["rows"]) == 9

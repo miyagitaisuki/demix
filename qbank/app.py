@@ -1841,6 +1841,20 @@ def make_official_templates():
     d.save(os.path.join(TPL_DIR, "dap_an_chuan.docx"))
 
 
+IMPORT_HEADERS = ["Mã chương", "Nội dung", "Đáp án", "Loại", "Mức", "Đoạn văn", "Lời giải", "CLO", "Thẻ", "Số từ"]
+IMPORT_EXAMPLES = [
+    ("B01", "{試験|しけん}の{結果|けっか}が悪かった。\nA. おけばよかった\nB. おくべきだ", "A", "TN", "1", "", "", "CLO1", "", ""),
+    ("B01", "「インターンシップを通して」と同じ意味はどれですか。\nA. 間に\nB. おかげで", "B", "TN", "2", "私は先月、インターンシップに参加しました。", "", "CLO1", "", ""),
+    ("B01", "Câu đúng/sai:\na) 私は学生です。\nb) 本を読むです。", "ĐS", "DS", "2", "", "", "CLO1", "", ""),
+    ("B01", "Thư viện được xây dựng năm 1990.", "A", "TN", "2", "Thư viện trường được xây dựng năm 1990 và mở rộng năm 2015.", "", "CLO2", "tfng", ""),
+    ("B01", "Đoạn 1\nA. Lợi ích của thư viện\nB. Lịch sử xây dựng\nC. Cách mượn sách", "A", "TN", "2", "Đoạn 1: Nhiều sinh viên chọn học ở thư viện vì yên tĩnh.\nĐoạn 2: Thư viện có nhiều sách mới.", "", "CLO2", "noitieude", ""),
+    ("B02", "Vị trí 1 trên sơ đồ tim", "động mạch chủ", "DT", "1", "", "", "CLO1", "ghinhan", ""),
+    ("B02", "学校の___", "がっこう", "DT", "1", "", "", "CLO1", "", ""),
+    ("B02", "Thư viện có ___ tầng.", "ba|3", "DT", "1", "", "", "CLO1", "", "2"),
+    ("B02", "A: どこへ行きますか。\nB: 駅へ行きます。\n\nこの会話の続きを書いてください。", "", "TL", "3", "", "会話の内容と文法の正確さ", "CLO3", "", ""),
+]
+
+
 def make_import_template():
     """File mẫu nhập câu hỏi: đúng tiêu đề cột và các ví dụ cho từng loại câu."""
     d = Document()
@@ -1868,22 +1882,11 @@ def make_import_template():
                     "Thẻ: chỉ dùng tfng, noitieude, ghinhan khi đúng dạng câu, để trống với câu thường; "
                     "TFNG và nối tiêu đề chỉ dùng cho Loại TN; ghinhan chỉ dùng cho Loại DT. "
                     "không thêm cột ngoài danh sách trên, không gộp ô, không để dòng trống giữa các câu.")
-    headers = ["Mã chương", "Nội dung", "Đáp án", "Loại", "Mức", "Đoạn văn", "Lời giải", "CLO", "Thẻ", "Số từ"]
-    t = d.add_table(rows=1, cols=len(headers))
+    t = d.add_table(rows=1, cols=len(IMPORT_HEADERS))
     t.style = "Table Grid"
-    for c, h in zip(t.rows[0].cells, headers):
+    for c, h in zip(t.rows[0].cells, IMPORT_HEADERS):
         c.text = h
-    examples = [
-        ("B01", "{試験|しけん}の{結果|けっか}が悪かった。\nA. おけばよかった\nB. おくべきだ", "A", "TN", "1", "", "", "CLO1", "", ""),
-        ("B01", "「インターンシップを通して」と同じ意味はどれですか。\nA. 間に\nB. おかげで", "B", "TN", "2", "私は先月、インターンシップに参加しました。", "", "CLO1", "", ""),
-        ("B01", "Câu đúng/sai:\na) 私は学生です。\nb) 本を読むです。", "ĐS", "DS", "2", "", "", "CLO1", "", ""),
-        ("B01", "Thư viện được xây dựng năm 1990.", "A", "TN", "2", "Thư viện trường được xây dựng năm 1990 và mở rộng năm 2015.", "", "CLO2", "tfng", ""),
-        ("B01", "Đoạn 1\nA. Lợi ích của thư viện\nB. Lịch sử xây dựng\nC. Cách mượn sách", "A", "TN", "2", "Đoạn 1: Nhiều sinh viên chọn học ở thư viện vì yên tĩnh.\nĐoạn 2: Thư viện có nhiều sách mới.", "", "CLO2", "noitieude", ""),
-        ("B02", "Vị trí 1 trên sơ đồ tim", "động mạch chủ", "DT", "1", "", "", "CLO1", "ghinhan", ""),
-        ("B02", "学校の___", "がっこう", "DT", "1", "", "", "CLO1", "", ""),
-        ("B02", "Thư viện có ___ tầng.", "ba|3", "DT", "1", "", "", "CLO1", "", "2"),
-        ("B02", "A: どこへ行きますか。\nB: 駅へ行きます。\n\nこの会話の続きを書いてください。", "", "TL", "3", "", "会話の内容と文法の正確さ", "CLO3", "", ""),
-    ]
+    examples = IMPORT_EXAMPLES
     for ex in examples:
         cells = t.add_row().cells
         for c, v in zip(cells, ex):
@@ -1891,6 +1894,16 @@ def make_import_template():
     buf = io.BytesIO()
     d.save(buf)
     return buf.getvalue()
+
+
+def make_import_template_csv():
+    """File mẫu nhập câu hỏi dạng CSV (UTF-8 có BOM để Excel mở đúng tiếng Việt), cùng cột và ví dụ với bản .docx."""
+    buf = io.StringIO()
+    w = csv.writer(buf, lineterminator="\n")
+    w.writerow(IMPORT_HEADERS)
+    for ex in IMPORT_EXAMPLES:
+        w.writerow(ex)
+    return ("\ufeff" + buf.getvalue()).encode("utf-8")
 
 
 def make_sample_templates():
@@ -2497,6 +2510,9 @@ class Handler(BaseHTTPRequestHandler):
             body = json.dumps(backup_payload(), ensure_ascii=False, indent=1).encode()
             return self._send(200, body, "application/json; charset=utf-8",
                               {"Content-Disposition": 'attachment; filename="qbank_backup.json"'})
+        if p == "/api/import-template" and arg("format") == "csv":
+            return self._send(200, make_import_template_csv(), "text/csv; charset=utf-8",
+                              {"Content-Disposition": 'attachment; filename="mau_nhap_cau_hoi.csv"'})
         if p == "/api/import-template":
             return self._send(200, make_import_template(),
                               "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
