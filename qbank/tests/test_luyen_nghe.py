@@ -62,3 +62,10 @@ def test_missing_audio_file_or_chapter_is_rejected(db):
     assert app.listening_sets() == []
     with pytest.raises(ValueError):
         app.listening_set(db["audio"])
+
+
+def test_question_transcript_and_translation_override_tts_script(db):
+    make(db["audio"], [{"kind": "audio", "file": "a1.mp3", "name": "b.mp3", "tts": {"script": "[1] cũ", "engine": "aivis", "level": "N5"}}], "Q1")
+    app.q("UPDATE questions SET transcript=?, translation=?", ("[1] はい // vâng", "Vâng"))
+    it = app.listening_set(db["audio"])["items"][0]
+    assert it["transcript"].startswith("[1] はい") and it["translation"] == "Vâng"

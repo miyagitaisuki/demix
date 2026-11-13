@@ -51,7 +51,8 @@ body.nofuri ruby rt{display:none}
 .tl{font-size:calc(var(--fs) * .8);line-height:2.1;margin:0 0 4px}
 .tl .role{display:inline-block;min-width:3.4em;color:var(--acc);font-size:.6em;vertical-align:middle}
 .tl .vi{display:block;color:var(--warn);font-size:.65em;line-height:1.4;padding-left:5.6em}
-body.novi .vi{display:none}
+body.novi .vi,body.novi .vi-block{display:none}
+.vi-block{color:var(--warn);margin-top:8px;border-top:1px dashed var(--line);padding-top:8px}
 .sol{font-size:calc(var(--fs) * .8);line-height:2.1;white-space:pre-wrap}
 kbd{background:#0b1016;border:1px solid var(--line);border-radius:5px;padding:1px 6px;font-size:14px}
 .keys{color:var(--sub);font-size:14px;line-height:1.9}
@@ -85,7 +86,7 @@ kbd{background:#0b1016;border:1px solid var(--line);border-radius:5px;padding:1p
       <div class="opts" id="opts"></div>
       <div class="ans hidden" id="ans"></div>
     </div>
-    <div class="panel hidden" id="pTrans"><h3>Transcript</h3><div id="trans"></div></div>
+    <div class="panel hidden" id="pTrans"><h3>Transcript</h3><div id="trans"></div><div id="transVi" class="sol vi-block"></div></div>
     <div class="panel hidden" id="pNote"><h3>Chú thích / Giải nghĩa</h3><div class="sol" id="note"></div></div>
     <div class="panel keys">Phím tắt: <kbd>Space</kbd> phát/dừng · <kbd>←</kbd><kbd>→</kbd> tua 5 giây · <kbd>P</kbd> câu trước · <kbd>N</kbd> câu sau · <kbd>R</kbd> nghe lại · <kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> tốc độ 0.6/0.8/1.0 · <kbd>T</kbd> transcript · <kbd>G</kbd> giải nghĩa · <kbd>A</kbd> đáp án · <kbd>F</kbd> furigana · <kbd>V</kbd> dịch · <kbd>+</kbd><kbd>-</kbd> cỡ chữ</div>
     <div class="ctl">
@@ -194,6 +195,7 @@ function go(i) {
   $("#ans").classList.add("hidden");
   $("#ans").innerHTML = "Đáp án: <b>" + esc(it.answer) + "</b>";
   renderTranscript(it);
+  $("#transVi").innerHTML = it.translation ? esc(it.translation) : `<span style="color:var(--sub)">Chưa có bản dịch cho câu này.</span>`;
   $("#note").innerHTML = it.solution ? furi(it.solution) : `<span style="color:var(--sub)">Chưa có chú thích / giải nghĩa cho câu này.</span>`;
   $("#bPrev").disabled = idx === 0;
   $("#bNext").disabled = idx === set.items.length - 1;

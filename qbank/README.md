@@ -36,7 +36,7 @@ Ribbon tab Ngân hàng, nhóm "Reset ra đề": reset câu đang tick, chương 
 ## Định dạng file nhập (chuẩn)
 Tải mẫu bằng nút **Tải mẫu nhập** (ribbon tab Ngân hàng, nhóm "Nhập / Xuất"). File là .docx, mỗi bảng là một nhóm câu:
 - **Dòng 1 là tiêu đề cột**, thứ tự cột tùy ý. Cột bắt buộc: `Mã chương`, `Nội dung`, `Đáp án`, `Loại`, `Mức`.
-- Cột tùy chọn: `Đoạn văn` (các câu cùng đoạn ghi **giống hệt** nhau; app in đoạn một lần cho cả nhóm), `Lời giải`, `CLO`, `Thẻ` (nhiều thẻ cách nhau bằng dấu phẩy), `Số từ` (chỉ cho DT: số từ tối đa 1–20, để trống = không giới hạn).
+- Cột tùy chọn: `Đoạn văn` (các câu cùng đoạn ghi **giống hệt** nhau; app in đoạn một lần cho cả nhóm), `Lời giải`, `Transcript` (câu nghe: kịch bản/lời thoại, mỗi lượt nói một dòng, vai `[1]` `[2]`), `Dịch` (bản dịch tiếng Việt của transcript, cùng số dòng), `CLO`, `Thẻ` (nhiều thẻ cách nhau bằng dấu phẩy), `Số từ` (chỉ cho DT: số từ tối đa 1–20, để trống = không giới hạn).
 - `Loại`: TN (trắc nghiệm), DS (đúng/sai), DT (điền từ), TL (tự luận). `Mức`: 1–5.
 - Phương án TN: mỗi dòng bắt đầu `A.` `B.`…; `#` đầu phương án = cố định vị trí khi xáo.
 - DS: mỗi ý một dòng `a)` `b)`…; đáp án `Đ S Đ S`. DT: nhiều đáp án cách nhau bằng `|`.
@@ -45,6 +45,11 @@ Tải mẫu bằng nút **Tải mẫu nhập** (ribbon tab Ngân hàng, nhóm "N
 - Thẻ `ghinhan` (DT): ghi nhãn sơ đồ. Đáp án là tên cần ghi cho vị trí được đánh số; hình ảnh thêm trong app sau khi nhập.
 - Furigana: `{試験|しけん}`. Khi xuất đề chọn "tự thêm" thì app tự thêm furigana cho chữ Hán chưa có cú pháp (cần `pip install pykakasi`). Cách đọc tự sinh có thể sai với từ đọc đặc biệt, nên kiểm tra và viết tay `{chữ|cách đọc}` để ghi đè.
 - `Mã chương` phải đã tồn tại trong giáo trình được chọn ở bộ lọc.
+
+## File mẫu nhập và hook CSDL
+- `mau_nhap/mau_nhap_cau_hoi.docx` và `mau_nhap_cau_hoi.csv`: file mẫu đúng cột hiện tại (có ví dụ câu nghe kèm Transcript và Dịch). Dựng lại: `python3 tools/build_import_samples.py`.
+- Câu hỏi có hai cột `transcript` và `translation` (CSDL cũ tự thêm cột khi mở app). Transcript là kịch bản câu nghe; nếu để trống, trang `/luyen-nghe` dùng kịch bản textts lưu kèm file nghe. Có ô nhập trong form Sửa câu, cột trong file nhập/xuất và trong sao lưu.
+- **Hook CSDL** `tools/check_db_sync.py` (chạy khi Claude sửa `app.py`/file mẫu, và chặn `git commit` nếu lệch): mọi cột của bảng `questions` phải có trong bộ nhập/xuất và mẫu (hoặc khai báo là cột app tự quản lý), tiêu đề nhập phải được nhận ra, file mẫu trong `mau_nhap/` không được cũ. Thêm cột mới: sửa `IMPORT_HEADERS`, `IMPORT_COLUMNS`, `parse_rows`, `export_row`, mẫu, rồi khai báo trong `COLUMN_TO_HEADER` của hook.
 
 ## Mẫu chính thức (từ file gốc của trường)
 - `mau_goc/` giữ file Word gốc: `de_goc_mau.docx` (đề) và `dap_an_goc_mau.docx` (đáp án, đã đổi từ .doc).

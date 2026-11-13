@@ -255,6 +255,8 @@ def init_storage():
     ensure_column("questions", "rubric", "TEXT NOT NULL DEFAULT ''")  # tự luận: tiêu chí × 5 mức (JSON)
     ensure_column("questions", "tags", "TEXT NOT NULL DEFAULT ''")  # thẻ, lưu dạng ",thẻ1,thẻ2,"
     ensure_column("questions", "media", "TEXT NOT NULL DEFAULT '[]'")  # [{kind, file, name, tts?}]
+    ensure_column("questions", "transcript", "TEXT NOT NULL DEFAULT ''")  # câu nghe: kịch bản/lời thoại (furigana {漢|かな})
+    ensure_column("questions", "translation", "TEXT NOT NULL DEFAULT ''")  # bản dịch tiếng Việt của transcript
     ensure_column("passages", "media", "TEXT NOT NULL DEFAULT '[]'")  # âm thanh/hình dùng chung cho mọi câu của đoạn
     # câu có sẵn từ trước được coi là đã duyệt, để đề đang dùng không bị thiếu câu
     ensure_column("questions", "status", "TEXT NOT NULL DEFAULT 'da_duyet'")
@@ -600,7 +602,8 @@ def listening_item(r):
     return {"id": it["id"], "code": it["code"], "qtype": it["qtype"], "content": it["content"],
             "options": it["options"], "answer": it["answer"], "solution": it["solution"],
             "passage": it.get("passage") or "", "audio": audio,
-            "transcript": chr(10).join(a["script"] for a in audio if a["script"])}
+            "transcript": it.get("transcript") or chr(10).join(a["script"] for a in audio if a["script"]),
+            "translation": it.get("translation") or ""}
 
 
 def listening_sets():
@@ -736,6 +739,8 @@ def clean_question(data):
     if qtype == "TN":
         answer = answer.upper()
     solution = str(data.get("solution", "")).strip()
+    transcript = str(data.get("transcript") or "").strip()[:8000]
+    translation = str(data.get("translation") or "").strip()[:8000]
     if not content:
         raise ValueError("Thiếu nội dung câu hỏi")
     if not 1 <= bloom <= 5:
@@ -810,12 +815,12 @@ def clean_question(data):
             rubric.append({"text": text, "points": pts, "levels": levels})
     return dict(chapter_id=chapter_id, bloom=bloom, qtype=qtype, content=content,
                 options=json.dumps(options, ensure_ascii=False), answer=answer, solution=solution,
-                passage=passage, points=points, clo=clo, tags=tags, media=json.dumps(media, ensure_ascii=False),
+                transcript=transcript, translation=translation, passage=passage, points=points, clo=clo, tags=tags, media=json.dumps(media, ensure_ascii=False),
                 status=status, rubric=json.dumps(rubric, ensure_ascii=False), word_limit=word_limit)
 
 
-INSERT_Q = """INSERT INTO questions(code,chapter_id,bloom,qtype,content,options,answer,solution,passage,passage_id,points,clo,tags,media,status,rubric,word_limit)
-              VALUES(:code,:chapter_id,:bloom,:qtype,:content,:options,:answer,:solution,:passage,:passage_id,:points,:clo,:tags,:media,:status,:rubric,:word_limit)"""
+INSERT_Q = """INSERT INTO questions(code,chapter_id,bloom,qtype,content,options,answer,solution,transcript,translation,passage,passage_id,points,clo,tags,media,status,rubric,word_limit)
+              VALUES(:code,:chapter_id,:bloom,:qtype,:content,:options,:answer,:solution,:transcript,:translation,:passage,:passage_id,:points,:clo,:tags,:media,:status,:rubric,:word_limit)"""
 
 
 def row_to_api(r):
@@ -998,6 +1003,8 @@ IMPORT_COLUMNS = {
     "muc": ["mức", "muc", "mức tn", "muc tn"],
     "doan_van": ["đoạn văn", "doan van"],
     "loi_giai": ["lời giải", "loi giai"],
+    "transcript": ["transcript", "kịch bản", "kich ban", "script", "lời thoại", "loi thoai"],
+    "dich": ["dịch", "dich", "bản dịch", "ban dich", "translation"],
     "clo": ["clo", "chuẩn đầu ra", "chuan dau ra"],
     "tags": ["thẻ", "the", "tags"],
     "so_tu": ["số từ", "so tu", "số từ tối đa", "so tu toi da", "giới hạn từ", "gioi han tu"],
@@ -1198,6 +1205,8 @@ def parse_rows(tables, textbook_id, dry_run=False, docx=True):
                     "options": options,
                     "answer": get("dap_an"),
                     "solution": solution,
+                    "transcript": get("transcript"),
+                    "translation": get("dich"),
                     "passage": get("doan_van"),
                     "clo": get("clo"),
                     "tags": get("tags"),
@@ -1906,17 +1915,18 @@ def make_official_templates():
     d.save(os.path.join(TPL_DIR, "dap_an_chuan.docx"))
 
 
-IMPORT_HEADERS = ["Mã chương", "Nội dung", "Đáp án", "Loại", "Mức", "Đoạn văn", "Lời giải", "CLO", "Thẻ", "Số từ"]
+IMPORT_HEADERS = ["Mã chương", "Nội dung", "Đáp án", "Loại", "Mức", "Đoạn văn", "Lời giải", "Transcript", "Dịch", "CLO", "Thẻ", "Số từ"]
 IMPORT_EXAMPLES = [
-    ("B01", "{試験|しけん}の{結果|けっか}が悪かった。\nA. おけばよかった\nB. おくべきだ", "A", "TN", "1", "", "", "CLO1", "", ""),
-    ("B01", "「インターンシップを通して」と同じ意味はどれですか。\nA. 間に\nB. おかげで", "B", "TN", "2", "私は先月、インターンシップに参加しました。", "", "CLO1", "", ""),
-    ("B01", "Câu đúng/sai:\na) 私は学生です。\nb) 本を読むです。", "ĐS", "DS", "2", "", "", "CLO1", "", ""),
-    ("B01", "Thư viện được xây dựng năm 1990.", "A", "TN", "2", "Thư viện trường được xây dựng năm 1990 và mở rộng năm 2015.", "", "CLO2", "tfng", ""),
-    ("B01", "Đoạn 1\nA. Lợi ích của thư viện\nB. Lịch sử xây dựng\nC. Cách mượn sách", "A", "TN", "2", "Đoạn 1: Nhiều sinh viên chọn học ở thư viện vì yên tĩnh.\nĐoạn 2: Thư viện có nhiều sách mới.", "", "CLO2", "noitieude", ""),
-    ("B02", "Vị trí 1 trên sơ đồ tim", "động mạch chủ", "DT", "1", "", "", "CLO1", "ghinhan", ""),
-    ("B02", "学校の___", "がっこう", "DT", "1", "", "", "CLO1", "", ""),
-    ("B02", "Thư viện có ___ tầng.", "ba|3", "DT", "1", "", "", "CLO1", "", "2"),
-    ("B02", "A: どこへ行きますか。\nB: 駅へ行きます。\n\nこの会話の続きを書いてください。", "", "TL", "3", "", "会話の内容と文法の正確さ", "CLO3", "", ""),
+    ("B01", "{試験|しけん}の{結果|けっか}が悪かった。\nA. おけばよかった\nB. おくべきだ", "A", "TN", "1", "", "", "", "", "CLO1", "", ""),
+    ("B01", "「インターンシップを通して」と同じ意味はどれですか。\nA. 間に\nB. おかげで", "B", "TN", "2", "私は先月、インターンシップに参加しました。", "", "", "", "CLO1", "", ""),
+    ("B01", "Câu đúng/sai:\na) 私は学生です。\nb) 本を読むです。", "ĐS", "DS", "2", "", "", "", "", "CLO1", "", ""),
+    ("B01", "Thư viện được xây dựng năm 1990.", "A", "TN", "2", "Thư viện trường được xây dựng năm 1990 và mở rộng năm 2015.", "", "", "", "CLO2", "tfng", ""),
+    ("B01", "Đoạn 1\nA. Lợi ích của thư viện\nB. Lịch sử xây dựng\nC. Cách mượn sách", "A", "TN", "2", "Đoạn 1: Nhiều sinh viên chọn học ở thư viện vì yên tĩnh.\nĐoạn 2: Thư viện có nhiều sách mới.", "", "", "", "CLO2", "noitieude", ""),
+    ("B02", "Vị trí 1 trên sơ đồ tim", "động mạch chủ", "DT", "1", "", "", "", "", "CLO1", "ghinhan", ""),
+    ("B02", "学校の___", "がっこう", "DT", "1", "", "", "", "", "CLO1", "", ""),
+    ("B02", "Thư viện có ___ tầng.", "ba|3", "DT", "1", "", "", "", "", "CLO1", "", "2"),
+    ("B02", "女{おんな}の人{ひと}は これから どこへ 行{い}きますか。\nA. 1かい\nB. 2かい\nC. 3かい\nD. 4かい", "B", "TN", "1", "", "くつうりば = quầy giày dép", "[3] デパートで 女{おんな}の人{ひと}と 店員{てんいん}が はなしています。\n[1] すみません、くつうりばは どこですか。\n[2] 2階{かい}に なりました。", "[3] Ở cửa hàng, người phụ nữ và nhân viên đang nói chuyện.\n[1] Xin lỗi, quầy giày ở đâu?\n[2] Đã chuyển xuống tầng 2.", "CLO1", "", ""),
+    ("B02", "A: どこへ行きますか。\nB: 駅へ行きます。\n\nこの会話の続きを書いてください。", "", "TL", "3", "", "会話の内容と文法の正確さ", "", "", "CLO3", "", ""),
 ]
 
 
@@ -1926,7 +1936,8 @@ def make_import_template():
     d.add_paragraph("MẪU NHẬP CÂU HỎI (lưu thành .docx, mỗi bảng là một nhóm câu, dòng 1 là tiêu đề cột)")
     d.add_paragraph("Cột: Mã chương (bắt buộc, phải có trong giáo trình đã chọn) | Nội dung (bắt buộc) | "
                     "Đáp án (bắt buộc) | Loại: TN, DS, DT, TL | Mức: 1–5 | Đoạn văn (tùy chọn, các câu cùng đoạn ghi giống hệt) | "
-                    "Lời giải (tùy chọn) | CLO (tùy chọn, một CLO cho mỗi câu, ví dụ CLO1) | "
+                    "Lời giải (tùy chọn) | Transcript (tùy chọn, câu nghe: kịch bản/lời thoại, mỗi lượt nói một dòng, vai ghi [1] [2]) | "
+                    "Dịch (tùy chọn, bản dịch tiếng Việt của transcript, cùng số dòng) | CLO (tùy chọn, một CLO cho mỗi câu, ví dụ CLO1) | "
                     "Thẻ (tùy chọn, nhiều thẻ cách nhau bằng dấu phẩy: tfng, noitieude, ghinhan) | "
                     "Số từ (tùy chọn, chỉ cho DT: số từ tối đa 1–20, để trống = không giới hạn). Thứ tự cột tùy ý. "
                     "Furigana viết dạng {試験|しけん}. "
@@ -1980,9 +1991,10 @@ def update_question(qid, payload, status_raw=""):
     with closing(sqlite3.connect(DB_PATH)) as conn:
         conn.execute("PRAGMA foreign_keys = ON")
         conn.execute("""UPDATE questions SET chapter_id=?, bloom=?, qtype=?, content=?, options=?, answer=?, solution=?,
-                        passage=?, passage_id=?, clo=?, tags=?, word_limit=?, status=? WHERE id=?""",
+                        transcript=?, translation=?, passage=?, passage_id=?, clo=?, tags=?, word_limit=?, status=? WHERE id=?""",
                      (payload["chapter_id"], payload["bloom"], payload["qtype"], payload["content"], payload["options"],
-                      payload["answer"], payload["solution"], payload.get("passage", ""), pid, payload["clo"],
+                      payload["answer"], payload["solution"], payload["transcript"], payload["translation"],
+                      payload.get("passage", ""), pid, payload["clo"],
                       payload["tags"], payload["word_limit"], status, qid))
         conn.commit()
 
@@ -2004,14 +2016,14 @@ def export_row(r):
     if qtype == "DS":  # DSD -> Đ S Đ (nhập lại được)
         answer = " ".join("Đ" if c == "D" else "S" for c in answer)
     return [r["code"], r["chapter_code"], "\n".join(lines), answer, qtype, str(r["bloom"]), r["passage"],
-            r["solution"], r["clo"], ", ".join(tags_list(r["tags"])), str(r["word_limit"] or ""),
+            r["solution"], r["transcript"], r["translation"], r["clo"], ", ".join(tags_list(r["tags"])), str(r["word_limit"] or ""),
             STATUSES.get(r["status"], "")]
 
 
 def export_questions_csv(textbook_id, chapter_id=None):
     """Xuất câu hỏi của một giáo trình (tùy chọn một chương) ra CSV cùng cột với file nhập.
     Có cột Mã câu: nhập lại file đã sửa sẽ cập nhật đúng câu đó."""
-    sql = """SELECT qs.id, qs.code, qs.qtype, qs.bloom, qs.content, qs.options, qs.answer, qs.solution, qs.clo,
+    sql = """SELECT qs.id, qs.code, qs.qtype, qs.bloom, qs.content, qs.options, qs.answer, qs.solution, qs.transcript, qs.translation, qs.clo,
              qs.tags, qs.word_limit, qs.status, ch.code AS chapter_code,
              COALESCE((SELECT p.content FROM passages p WHERE p.id = qs.passage_id), qs.passage, '') AS passage
              FROM questions qs JOIN chapters ch ON ch.id = qs.chapter_id WHERE ch.textbook_id = ?"""
@@ -2191,6 +2203,7 @@ def build_items(rows):
                       "chapter_code": r["chapter_code"], "chapter_title": r["chapter_title"],
                       "bloom": r["bloom"], "qtype": r["qtype"], "content": r["content"], "options": r["options"],
                       "answer": r["answer"], "solution": r["solution"], "passage": r["passage"],
+                      "transcript": r.get("transcript", ""), "translation": r.get("translation", ""),
                       "points": r.get("points"), "clo": r.get("clo", ""), "tags": r.get("tags", []),
                       "media": r.get("media", []), "status": r.get("status", "da_duyet"),
                       "passage_media": r.get("passage_media", []),
@@ -2983,7 +2996,7 @@ class Handler(BaseHTTPRequestHandler):
         with closing(sqlite3.connect(DB_PATH)) as conn:
             conn.execute("PRAGMA foreign_keys = ON")
             cur = conn.execute("""UPDATE questions SET chapter_id=:chapter_id, bloom=:bloom, qtype=:qtype, content=:content,
-                 options=:options, answer=:answer, solution=:solution, passage=:passage, passage_id=:passage_id, rubric=:rubric,
+                 options=:options, answer=:answer, solution=:solution, transcript=:transcript, translation=:translation, passage=:passage, passage_id=:passage_id, rubric=:rubric,
                  points=:points, clo=:clo, tags=:tags, media=:media, status=:status, word_limit=:word_limit WHERE id=:id""", payload)
             conn.commit()
             updated = cur.rowcount
