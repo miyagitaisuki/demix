@@ -33,6 +33,7 @@
   "POST /api/chapters",
   "POST /api/chapters/(\\d+)/clear",
   "POST /api/chapters/import",
+  "POST /api/check-candidates",
   "POST /api/configs",
   "POST /api/course_textbooks",
   "POST /api/courses",

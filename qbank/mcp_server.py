@@ -165,6 +165,18 @@ def tool_create_question(args):
     return out
 
 
+def tool_check_duplicates(args):
+    """Kiểm trùng nhanh một lô câu DỰ ĐỊNH tạo (chưa ghi gì). Trả về cho từng câu: trùng cùng chương / chương khác /
+    gần giống (>= 90%) với câu trong ngân hàng, và trùng với câu khác trong chính lô."""
+    items = args.get("items")
+    if not isinstance(items, list) or not items:
+        raise ApiError("Thiếu danh sách items")
+    r = api("POST", "/api/check-candidates", body={"items": items})
+    res = r["results"]
+    return {"summary": {k: sum(1 for x in res if x["status"] == k) for k in ("mới", "gần giống", "trùng chương khác", "trùng")},
+            "results": res}
+
+
 AUDIO_EXT = (".mp3", ".wav", ".ogg", ".m4a")
 QUESTION_FIELDS = ("chapter_id", "bloom", "qtype", "content", "options", "answer", "solution", "transcript", "translation", "passage",
                    "rubric", "points", "clo", "tags", "status", "word_limit")
@@ -278,6 +290,15 @@ TOOLS = [
          "audio_engine": {"type": "string", "description": "voicevox (mặc định), aivis, edge… theo textts"},
          "audio_level": {"type": "string", "enum": ["N5", "N4", "N3", "N2", "N1"]}},
          ["chapter_id", "content"])},
+    {"name": "check_duplicates", "handler": tool_check_duplicates,
+     "description": "GỌI TRƯỚC create_question: kiểm trùng một lô câu dự định tạo (tối đa 100) với toàn ngân hàng, chưa ghi gì. "
+                    "status: mới (tạo được), gần giống (>= 90%, nên đổi chủ đề/số liệu hoặc hỏi người dùng), "
+                    "trùng chương khác (chỉ cảnh báo), trùng (cùng chương: app sẽ từ chối, hãy bỏ hoặc viết câu khác). "
+                    "Mỗi kết quả có exact/similar (mã câu đã có) và in_batch (trùng với câu khác trong lô, theo index).",
+     "inputSchema": _obj({"items": {"type": "array", "maxItems": 100, "items": _obj({
+         "chapter_id": {"type": "integer"}, "qtype": {"type": "string", "enum": ["TN", "DS", "DT", "TL"]},
+         "content": {"type": "string"}, "options": {"type": "array", "items": {"type": "string"}}}, ["chapter_id", "content"])}},
+         ["items"])},
     {"name": "import_questions", "handler": tool_import_questions,
      "description": "Nhập câu hỏi từ file .docx theo mẫu 8 cột (Mã chương phải có trong giáo trình đích). Mặc định chỉ kiểm tra "
                     "(dry_run=true); chỉ đặt dry_run=false sau khi người dùng đã xác nhận. Câu nhập vào ở trạng thái Nháp.",
