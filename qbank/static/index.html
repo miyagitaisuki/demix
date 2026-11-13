@@ -1538,7 +1538,7 @@ async function renderStruct() {
       for (const t of tbs) {
         const chs = byTb(t.id), tOpen = SOPEN.has("t" + t.id);
         html += `<li>${label("textbooks", t.id, car("t" + t.id, chs.length, tOpen) + `<span class="typ t">Giáo trình</span>${esc(t.name)}${t.code ? ` <span class="sub">${esc(t.code)}</span>` : ""} <span class="sub">${chs.length} chương</span>`, ` <button class="g" title="Chỉ gỡ khỏi học phần này; giáo trình vẫn còn ở học phần khác" onclick="unlinkTb(${c.id},${t.id})">Gỡ khỏi HP</button>`)}`;
-        if (tOpen) html += `<ul>` + chs.map(ch => `<li>${label("chapters", ch.id, `<span class="car none"></span><span class="typ ch">Chương</span>${esc(ch.code)}${ch.title ? " - " + esc(ch.title) : ""} <span class="sub">(${ch.count} câu)</span>`)}</li>`).join("") + `</ul>`;
+        if (tOpen) html += `<ul>` + chs.map(ch => `<li>${label("chapters", ch.id, `<span class="car none"></span><span class="typ ch">Chương</span>${esc(ch.code)}${ch.title ? " - " + esc(ch.title) : ""} <span class="sub">(${ch.count} câu)</span>`, ` <button class="d" ${ch.count ? "" : "disabled"} title="Xóa mọi câu trong chương, giữ tên chương. Sao lưu trước khi xóa." onclick="clearChapter(${ch.id}, ${ch.count})">Xóa nội dung</button>`)}</li>`).join("") + `</ul>`;
         html += `</li>`;
       }
       html += `</ul>`;
@@ -1648,6 +1648,17 @@ async function saveNode(kind, id) {
     toast("Đã lưu thay đổi.");
     renderStruct();
   } catch (e) { const m = $("#nMsg"); if (m) m.textContent = e.message; else toast(e.message, true); }
+}
+// xóa toàn bộ câu trong chương, giữ tên chương; server sao lưu trước và chỉ xóa khi sao lưu xong
+async function clearChapter(id, n) {
+  if (!n) return;
+  if (!confirm(`Xóa toàn bộ ${n} câu trong chương này? Tên chương được giữ lại.\n\nCác câu được sao lưu vào thư mục data/backup trước khi xóa. Câu xóa ở đây KHÔNG vào thùng rác; muốn lấy lại thì khôi phục từ file sao lưu.`)) return;
+  try {
+    const r = await postJson(`/api/chapters/${id}/clear`, { confirm: true });
+    $("#structMsg").textContent = `Đã xóa ${r.deleted} câu. Bản sao lưu: ${r.backup || "không có"}`;
+    renderStruct();
+    if (typeof loadQuestions === "function") loadQuestions();
+  } catch (e) { $("#structMsg").innerHTML = `<span class="err">${esc(e.message)}</span>`; }
 }
 const unlinkTb = (cid, tid) => structAction(async () => {
   if (!confirm("Gỡ giáo trình khỏi học phần này? Giáo trình và chương vẫn còn ở các học phần khác.")) return false;
