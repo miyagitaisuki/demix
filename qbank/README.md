@@ -70,7 +70,7 @@ Tải mẫu bằng nút **Tải mẫu nhập** (ribbon tab Ngân hàng, nhóm "N
 - **Xuất đề theo phần**: mỗi phần có tiêu đề (ví dụ `Phần I. Trắc nghiệm`), dạng câu (TN, DS, DT, TL hoặc mọi dạng), tùy chọn xáo câu và phương án, và ma trận riêng chương × mức Bloom. Bỏ tick xáo để giữ thứ tự câu trong ngân hàng. Phần không có số câu sẽ bị bỏ qua. Số câu được đánh liên tục toàn đề. Ô thiếu câu được tô đỏ. Có thể chọn template `.docx` trong `templates/`, kèm đáp án trong file hoặc tách ra `DapAn_xxx.docx`. Kết quả là một file `.zip`.
 
 ## Luyện nghe trên lớp (trang /luyen-nghe)
-Mở `http://127.0.0.1:8765/luyen-nghe` (cùng server QBank, chiếu lên máy chiếu). Chỉ đọc dữ liệu, không ghi gì vào ngân hàng.
+Tab **Luyện nghe** là tab đầu tiên và là trang mặc định khi mở QBank (cũng mở riêng được ở `http://127.0.0.1:8765/luyen-nghe`, chiếu lên máy chiếu). Chỉ đọc dữ liệu, không ghi gì vào ngân hàng.
 - **Chọn bài:** lọc theo học phần, giáo trình, tên chương, hoặc bấm **Bốc ngẫu nhiên**. Một bài là một chương; chỉ hiện chương có ít nhất một câu có file nghe (audio của câu hoặc của đoạn văn). Câu không có audio bị bỏ qua.
 - **Điều khiển:** Phát/Dừng, Nghe lại, Câu trước/sau, tua ±5 giây, thanh tua, tốc độ 0.6× / 0.8× / 1.0×.
 - **Nội dung:** Transcript lấy từ kịch bản textts lưu kèm file nghe (bản dịch viết sau `//` hiện khi bật **Dịch**); **Giải nghĩa** lấy từ Lời giải của câu; **Đáp án** do giáo viên bấm hiện. Thiếu dữ liệu thì hiện "Chưa có".
