@@ -2278,6 +2278,46 @@ def bulk_update(ids, chapter_id=None, bloom=None):
     return {"updated": len(ids)}
 
 
+def write_chapter_backup(chapter_id):
+    """Sao lưu toàn bộ câu của một chương ra data/backup (JSON giống sao lưu thường, khôi phục được).
+    Ghi xong đọc lại để kiểm tra; lỗi thì ném ngoại lệ để người gọi không xóa gì."""
+    ch = q("""SELECT ch.code, t.name AS textbook FROM chapters ch JOIN textbooks t ON t.id = ch.textbook_id
+              WHERE ch.id=?""", (int(chapter_id),), True)
+    if not ch:
+        raise ValueError("Chương không tồn tại")
+    items = build_items(q(QUESTION_SQL + " WHERE qs.chapter_id=? ORDER BY qs.id", (int(chapter_id),), fetch=True))
+    os.makedirs(BACKUP_DIR, exist_ok=True)
+    safe = lambda v: re.sub(r"[^\w-]+", "_", str(v)).strip("_") or "x"
+    name = f"xoa_noi_dung_{safe(ch[0]['textbook'])}_{safe(ch[0]['code'])}_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{os.urandom(3).hex()}.json"
+    path = os.path.join(BACKUP_DIR, name)
+    with open(path, "x", encoding="utf-8") as f:  # "x": không bao giờ ghi đè file sao lưu cũ
+        json.dump({"app": "QBank", "version": 4, "questions": items, "configs": []}, f, ensure_ascii=False, indent=1)
+    with open(path, encoding="utf-8") as f:
+        if len(json.load(f)["questions"]) != len(items):
+            raise RuntimeError("Sao lưu không đầy đủ, chưa xóa câu nào")
+    return path, len(items)
+
+
+def clear_chapter_questions(chapter_id, confirm):
+    """Xóa toàn bộ câu trong một chương (xóa hẳn, không vào thùng rác), giữ tên chương.
+    Sao lưu trước; sao lưu lỗi thì không xóa gì. Cũng xóa lịch sử dùng, kết quả thi và đoạn văn của chương."""
+    if not confirm:
+        raise ValueError("Cần xác nhận trước khi xóa nội dung chương")
+    if not q("SELECT 1 FROM questions WHERE chapter_id=? LIMIT 1", (int(chapter_id),), True):
+        return {"deleted": 0, "backup": None}  # chương rỗng: không cần sao lưu, không xóa gì
+    path, n = write_chapter_backup(chapter_id)
+    with closing(sqlite3.connect(DB_PATH)) as conn:
+        conn.execute("PRAGMA foreign_keys = ON")
+        ids = [r[0] for r in conn.execute("SELECT id FROM questions WHERE chapter_id=?", (int(chapter_id),))]
+        ph = ",".join("?" * len(ids))
+        conn.execute(f"DELETE FROM exam_usage WHERE question_id IN ({ph})", ids)
+        conn.execute(f"DELETE FROM question_results WHERE question_id IN ({ph})", ids)
+        conn.execute("DELETE FROM questions WHERE chapter_id=?", (int(chapter_id),))
+        conn.execute("DELETE FROM passages WHERE chapter_id=?", (int(chapter_id),))
+        conn.commit()
+    return {"deleted": len(ids), "backup": os.path.basename(path)}
+
+
 def trash_questions(ids):
     """Chuyển câu vào thùng rác (không xóa hẳn): lưu đủ dữ liệu, kể cả lịch sử dùng và kết quả thi.
     Có id không tồn tại thì không chuyển câu nào."""
@@ -2654,6 +2694,9 @@ class Handler(BaseHTTPRequestHandler):
                 raise ValueError("Chọn giáo trình trước khi nhập chương")
             dry = parse_qs(u.query).get("dry_run", ["0"])[0] == "1"
             return self._json(200, import_chapters(read_table_text(self._raw()), textbook_id, dry))
+        mc = re.fullmatch(r"/api/chapters/(\d+)/clear", p)
+        if mc:  # xóa toàn bộ câu trong chương, giữ tên chương; sao lưu trước
+            return self._json(200, clear_chapter_questions(int(mc.group(1)), bool(self._json_body().get("confirm"))))
         if p == "/api/import-text":  # CSV hoặc dữ liệu dán từ Excel
             textbook_id = int(parse_qs(u.query).get("textbook_id", [""])[0] or 0)
             if not textbook_id:
