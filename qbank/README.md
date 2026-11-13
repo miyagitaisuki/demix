@@ -36,7 +36,7 @@ Ribbon tab Ngân hàng, nhóm "Reset ra đề": reset câu đang tick, chương 
 ## Định dạng file nhập (chuẩn)
 Tải mẫu bằng nút **Tải mẫu nhập** (ribbon tab Ngân hàng, nhóm "Nhập / Xuất"). File là .docx, mỗi bảng là một nhóm câu:
 - **Dòng 1 là tiêu đề cột**, thứ tự cột tùy ý. Cột bắt buộc: `Mã chương`, `Nội dung`, `Đáp án`, `Loại`, `Mức`.
-- Cột tùy chọn: `Đoạn văn` (các câu cùng đoạn ghi **giống hệt** nhau; app in đoạn một lần cho cả nhóm), `Lời giải`, `CLO`, `Thẻ` (nhiều thẻ cách nhau bằng dấu phẩy), `Số từ` (chỉ cho DT: số từ tối đa 1–20, để trống = không giới hạn).
+- Cột tùy chọn: `Đoạn văn` (các câu cùng đoạn ghi **giống hệt** nhau; app in đoạn một lần cho cả nhóm), `Lời giải`, `Transcript` (câu nghe: kịch bản/lời thoại, mỗi lượt nói một dòng, vai `[1]` `[2]`), `Dịch` (bản dịch tiếng Việt của transcript, cùng số dòng), `CLO`, `Thẻ` (nhiều thẻ cách nhau bằng dấu phẩy), `Số từ` (chỉ cho DT: số từ tối đa 1–20, để trống = không giới hạn).
 - `Loại`: TN (trắc nghiệm), DS (đúng/sai), DT (điền từ), TL (tự luận). `Mức`: 1–5.
 - Phương án TN: mỗi dòng bắt đầu `A.` `B.`…; `#` đầu phương án = cố định vị trí khi xáo.
 - DS: mỗi ý một dòng `a)` `b)`…; đáp án `Đ S Đ S`. DT: nhiều đáp án cách nhau bằng `|`.
@@ -45,6 +45,11 @@ Tải mẫu bằng nút **Tải mẫu nhập** (ribbon tab Ngân hàng, nhóm "N
 - Thẻ `ghinhan` (DT): ghi nhãn sơ đồ. Đáp án là tên cần ghi cho vị trí được đánh số; hình ảnh thêm trong app sau khi nhập.
 - Furigana: `{試験|しけん}`. Khi xuất đề chọn "tự thêm" thì app tự thêm furigana cho chữ Hán chưa có cú pháp (cần `pip install pykakasi`). Cách đọc tự sinh có thể sai với từ đọc đặc biệt, nên kiểm tra và viết tay `{chữ|cách đọc}` để ghi đè.
 - `Mã chương` phải đã tồn tại trong giáo trình được chọn ở bộ lọc.
+
+## File mẫu nhập và hook CSDL
+- `mau_nhap/mau_nhap_cau_hoi.docx` và `mau_nhap_cau_hoi.csv`: file mẫu đúng cột hiện tại (có ví dụ câu nghe kèm Transcript và Dịch). Dựng lại: `python3 tools/build_import_samples.py`.
+- Câu hỏi có hai cột `transcript` và `translation` (CSDL cũ tự thêm cột khi mở app). Transcript là kịch bản câu nghe; nếu để trống, trang `/luyen-nghe` dùng kịch bản textts lưu kèm file nghe. Có ô nhập trong form Sửa câu, cột trong file nhập/xuất và trong sao lưu.
+- **Hook CSDL** `tools/check_db_sync.py` (chạy khi Claude sửa `app.py`/file mẫu, và chặn `git commit` nếu lệch): mọi cột của bảng `questions` phải có trong bộ nhập/xuất và mẫu (hoặc khai báo là cột app tự quản lý), tiêu đề nhập phải được nhận ra, file mẫu trong `mau_nhap/` không được cũ. Thêm cột mới: sửa `IMPORT_HEADERS`, `IMPORT_COLUMNS`, `parse_rows`, `export_row`, mẫu, rồi khai báo trong `COLUMN_TO_HEADER` của hook.
 
 ## Mẫu chính thức (từ file gốc của trường)
 - `mau_goc/` giữ file Word gốc: `de_goc_mau.docx` (đề) và `dap_an_goc_mau.docx` (đáp án, đã đổi từ .doc).
@@ -63,6 +68,15 @@ Tải mẫu bằng nút **Tải mẫu nhập** (ribbon tab Ngân hàng, nhóm "N
 - **Ngân hàng**: thêm/sửa/xóa câu hỏi với 4 loại: **TN** (trắc nghiệm), **DS** (đúng/sai nhiều ý), **DT** (điền từ), **TL** (tự luận). Lọc theo chương, mức Bloom, loại; ô tìm kiếm tìm trong nội dung, phương án, lời giải và đáp án. **Sao lưu** tải về file JSON; **Khôi phục** nạp lại file JSON (thêm vào ngân hàng hiện có). Nhập hàng loạt từ `.docx` có bảng 6 cột: `STT | Mã | Nội dung | Đáp án | Loại | Mức TN`. Trong ô nội dung, phương án TN bắt đầu bằng `A.`, `B.`...; ý của DS bắt đầu bằng `a)`, `b)`...; đáp án DS viết dạng `Đ S Đ S`; đáp án DT có thể có nhiều cách, cách nhau bằng `|`; `Lời giải:` là phần ẩn. Dấu `#` đầu phương án TN giữ nguyên vị trí khi xáo. Tick nhiều câu để đổi chương/mức Bloom hàng loạt, hoặc **Xóa các câu đã chọn** (có nút Hoàn tác).
 - **Thống kê**: số câu theo học phần, giáo trình, chương × mức Bloom, tổng theo loại.
 - **Xuất đề theo phần**: mỗi phần có tiêu đề (ví dụ `Phần I. Trắc nghiệm`), dạng câu (TN, DS, DT, TL hoặc mọi dạng), tùy chọn xáo câu và phương án, và ma trận riêng chương × mức Bloom. Bỏ tick xáo để giữ thứ tự câu trong ngân hàng. Phần không có số câu sẽ bị bỏ qua. Số câu được đánh liên tục toàn đề. Ô thiếu câu được tô đỏ. Có thể chọn template `.docx` trong `templates/`, kèm đáp án trong file hoặc tách ra `DapAn_xxx.docx`. Kết quả là một file `.zip`.
+
+## Luyện nghe trên lớp (trang /luyen-nghe)
+Mở `http://127.0.0.1:8765/luyen-nghe` (cùng server QBank, chiếu lên máy chiếu). Chỉ đọc dữ liệu, không ghi gì vào ngân hàng.
+- **Chọn bài:** lọc theo học phần, giáo trình, tên chương, hoặc bấm **Bốc ngẫu nhiên**. Một bài là một chương; chỉ hiện chương có ít nhất một câu có file nghe (audio của câu hoặc của đoạn văn). Câu không có audio bị bỏ qua.
+- **Điều khiển:** Phát/Dừng, Nghe lại, Câu trước/sau, tua ±5 giây, thanh tua, tốc độ 0.6× / 0.8× / 1.0×.
+- **Nội dung:** Transcript lấy từ kịch bản textts lưu kèm file nghe (bản dịch viết sau `//` hiện khi bật **Dịch**); **Giải nghĩa** lấy từ Lời giải của câu; **Đáp án** do giáo viên bấm hiện. Thiếu dữ liệu thì hiện "Chưa có".
+- **Hiển thị:** bật/tắt furigana, dịch tiếng Việt; cỡ chữ A-/A+.
+- **Phím tắt (giống VLC):** Space phát/dừng, S dừng về đầu, N/P câu sau/trước, Trái/Phải tua 5s (Shift 3s, Alt 10s, Ctrl 1 phút), Ctrl+Lên/Xuống âm lượng, M tắt tiếng, [ và ] chậm/nhanh hơn, = tốc độ 1×, 1/2/3 tốc độ 0.6/0.8/1.0, L lặp lại câu, Enter nghe lại, Ctrl+T nhảy tới thời điểm, R bốc bài ngẫu nhiên, F toàn màn hình, T transcript, G giải nghĩa, A đáp án, H furigana, V dịch, O đổi font, +/- cỡ chữ. Mỗi thao tác có thông báo nhỏ ở góc phải.
+- API (chỉ đọc): `GET /api/listening/sets`, `GET /api/listening/sets/<chapter_id>`. File `/media/...` hỗ trợ HTTP Range để tua.
 
 ## Template
 Đặt file `.docx` vào `templates/`, dùng các placeholder:

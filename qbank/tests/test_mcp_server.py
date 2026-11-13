@@ -140,6 +140,14 @@ def test_create_question_with_audio_attaches_to_passage(stub):
     assert "passage_media" in sent and "media" not in sent and sent["status"] == "nhap"
 
 
+def test_create_question_transcript_defaults_to_audio_script_and_keeps_translation(stub):
+    err, res = call("create_question", {"chapter_id": 5, "content": "x", "options": ["a", "b"], "answer": "A",
+                                        "audio_script": "[1] こんにちは", "translation": "Xin chào"})
+    assert not err
+    sent = json.loads(CALLS[-1][2])
+    assert sent["transcript"] == "[1] こんにちは" and sent["translation"] == "Xin chào"
+
+
 def test_create_question_audio_needs_passage_when_target_passage(stub):
     err, msg = call("create_question", {"chapter_id": 5, "content": "x", "audio_script": "[1] a", "audio_target": "passage"})
     assert err and "passage" in msg
@@ -175,7 +183,7 @@ def test_attach_audio_keeps_fields_and_old_media(tmp_path, monkeypatch):
     mp3.write_bytes(b"ID3")
     calls = []
     question = {"code": "X-001", "chapter_id": 5, "bloom": 2, "qtype": "TN", "content": "c", "options": ["a", "b"],
-                "answer": "B", "solution": "s", "passage": "p", "rubric": [], "points": 1, "clo": "CLO2", "tags": [],
+                "answer": "B", "solution": "s", "transcript": "t", "translation": "d", "passage": "p", "rubric": [], "points": 1, "clo": "CLO2", "tags": [],
                 "status": "nhap", "word_limit": 0, "media": [{"kind": "image", "file": "old.png", "name": "old.png"}],
                 "passage_id": None, "extra_ignored": 1}
 
@@ -193,6 +201,7 @@ def test_attach_audio_keeps_fields_and_old_media(tmp_path, monkeypatch):
     method, path, _, body = calls[-1]
     assert (method, path) == ("PUT", "/api/questions/7")
     assert body["status"] == "nhap" and body["answer"] == "B" and "extra_ignored" not in body
+    assert body["transcript"] == "t" and body["translation"] == "d"  # PUT không làm mất transcript/dịch
     assert [m["file"] for m in body["media"]] == ["old.png", "abc.mp3"]
     err, msg = call("attach_audio", {"question_id": 7, "file_path": str(mp3), "target": "passage"})
     assert err and "đoạn văn" in msg  # câu không có đoạn văn

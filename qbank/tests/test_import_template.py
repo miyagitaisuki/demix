@@ -37,7 +37,7 @@ def template_header():
 
 def test_template_has_tag_and_word_limit_columns():
     assert template_header() == ["Mã chương", "Nội dung", "Đáp án", "Loại", "Mức",
-                                 "Đoạn văn", "Lời giải", "CLO", "Thẻ", "Số từ"]
+                                 "Đoạn văn", "Lời giải", "Transcript", "Dịch", "CLO", "Thẻ", "Số từ"]
 
 
 def test_template_guidance_mentions_new_types():
@@ -50,7 +50,7 @@ def test_template_guidance_mentions_new_types():
 def test_template_examples_import_without_errors(captured):
     result = app.parse_import(app.make_import_template(), 1, dry_run=True)
     assert result["errors"] == []
-    assert len(result["rows"]) == 9
+    assert len(result["rows"]) == 10
 
 
 def test_new_types_reach_the_question_payload(captured):
@@ -79,4 +79,18 @@ def test_csv_template_examples_import_without_errors(captured):
     rows = app.read_table_text(app.make_import_template_csv())
     result = app.parse_rows([rows], 1, dry_run=True, docx=False)
     assert result["errors"] == []
-    assert len(result["rows"]) == 9
+    assert len(result["rows"]) == 10
+
+
+def test_transcript_and_translation_columns_are_imported(captured):
+    app.parse_import(app.make_import_template(), 1, dry_run=True)
+    hit = [p for p in captured if p["transcript"]]
+    assert len(hit) == 1 and "くつうりば" in hit[0]["transcript"] and "quầy giày" in hit[0]["translation"]
+
+
+def test_sample_files_in_mau_nhap_import_without_errors(captured):
+    base = os.path.join(os.path.dirname(__file__), "..", "mau_nhap")
+    with open(os.path.join(base, "mau_nhap_cau_hoi.docx"), "rb") as f:
+        assert app.parse_import(f.read(), 1, dry_run=True)["errors"] == []
+    with open(os.path.join(base, "mau_nhap_cau_hoi.csv"), "rb") as f:
+        assert app.parse_rows([app.read_table_text(f.read())], 1, True, docx=False)["errors"] == []

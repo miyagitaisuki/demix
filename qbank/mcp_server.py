@@ -141,11 +141,14 @@ def tool_create_question(args):
     body = {"chapter_id": _int(args.get("chapter_id"), "chapter_id"), "bloom": args.get("bloom", 1),
             "qtype": args.get("qtype", "TN"), "content": args.get("content", ""), "options": args.get("options") or [],
             "answer": args.get("answer", ""), "solution": args.get("solution", ""), "passage": args.get("passage", ""),
-            "clo": args.get("clo", ""), "tags": args.get("tags", ""), "status": args.get("status", "nhap")}
+            "clo": args.get("clo", ""), "tags": args.get("tags", ""), "status": args.get("status", "nhap"),
+            "transcript": args.get("transcript", ""), "translation": args.get("translation", "")}
     if args.get("points") is not None:
         body["points"] = args["points"]
     script = str(args.get("audio_script") or "").strip()
     audio = None
+    if script and not str(body["transcript"]).strip():
+        body["transcript"] = script  # kịch bản dùng tạo audio cũng là transcript của câu (trang luyện nghe hiển thị)
     if script:
         target = args.get("audio_target", "question")
         if target not in ("question", "passage"):
@@ -163,7 +166,7 @@ def tool_create_question(args):
 
 
 AUDIO_EXT = (".mp3", ".wav", ".ogg", ".m4a")
-QUESTION_FIELDS = ("chapter_id", "bloom", "qtype", "content", "options", "answer", "solution", "passage",
+QUESTION_FIELDS = ("chapter_id", "bloom", "qtype", "content", "options", "answer", "solution", "transcript", "translation", "passage",
                    "rubric", "points", "clo", "tags", "status", "word_limit")
 
 
@@ -264,7 +267,10 @@ TOOLS = [
          "qtype": {"type": "string", "enum": ["TN", "DS", "DT", "TL"]},
          "content": {"type": "string"}, "options": {"type": "array", "items": {"type": "string"}},
          "answer": {"type": "string", "description": "TN: chữ cái A/B/C/D; DT: đáp án (nhiều đáp án cách nhau bằng |)"},
-         "solution": {"type": "string"}, "passage": {"type": "string", "description": "Đoạn văn / kịch bản hiển thị kèm câu"},
+         "solution": {"type": "string"},
+         "transcript": {"type": "string", "description": "Câu nghe: kịch bản/lời thoại (mặc định lấy từ audio_script)"},
+         "translation": {"type": "string", "description": "Bản dịch tiếng Việt của transcript, cùng số dòng"},
+         "passage": {"type": "string", "description": "Đoạn văn / kịch bản hiển thị kèm câu"},
          "clo": {"type": "string"}, "tags": {"type": "string"}, "points": {"type": "number"},
          "status": {"type": "string", "enum": ["nhap", "da_duyet", "ngung"]},
          "audio_script": {"type": "string"},

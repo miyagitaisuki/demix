@@ -1023,6 +1023,10 @@ async function editQ(id) {
     <div class="row"><textarea id="eOpts" rows="4">${esc(q.options.join("\n"))}</textarea></div>
     <div class="row"><label>Đáp án (TN: A/B/C…; ĐS: Đ S Đ…; ĐT: đáp án, nhiều đáp án cách nhau bằng |; TL: hướng dẫn chấm, in ở cuối đề)</label><input id="eAns" value="${esc(q.answer)}">
       <label>Lời giải</label><input id="eSol" style="flex:1" value="${esc(q.solution)}"></div>
+    <div class="row"><label>Transcript (câu nghe: kịch bản/lời thoại, mỗi lượt nói một dòng, vai ghi [1] [2]; furigana {漢字|かな})</label></div>
+    <div class="row"><textarea id="eTrans" rows="3" placeholder="Để trống nếu không phải câu nghe">${esc(q.transcript || "")}</textarea></div>
+    <div class="row"><label>Dịch (bản dịch tiếng Việt của transcript, cùng số dòng)</label></div>
+    <div class="row"><textarea id="eTransVi" rows="3">${esc(q.translation || "")}</textarea></div>
     <div id="eRubricBox" style="display:none"></div>
     <div class="row"><label>Hình ảnh hoặc âm thanh (tùy chọn, tối đa 4 file):</label>
       <input type="file" accept="image/*,audio/*" onchange="uploadMedia(this)">
@@ -1260,7 +1264,7 @@ async function saveQ(confirmPassage = false) {
   const id = $("#eId").value;
   const body = {
     chapter_id: $("#eChap").value, bloom: $("#eBloom").value, qtype: $("#eType").value,
-    content: $("#eContent").value, answer: $("#eAns").value, solution: $("#eSol").value, points: $("#ePoints").value,
+    content: $("#eContent").value, answer: $("#eAns").value, solution: $("#eSol").value, transcript: $("#eTrans").value, translation: $("#eTransVi").value, points: $("#ePoints").value,
     clo: $("#eClo").value, tags: $("#eTags").value, media: EDIT_MEDIA, status: $("#eStatus").value,
     word_limit: $("#eLimit") ? $("#eLimit").value : 0,
     passage: $("#ePassage").value,
@@ -1299,7 +1303,7 @@ async function delQ(id) {
 let undoTimer = null;
 const toItem = q => ({ code: q.code, course: q.course, textbook: q.textbook, chapter_code: q.chapter_code,
                        chapter_title: q.chapter_title, bloom: q.bloom, qtype: q.qtype, content: q.content,
-                       options: q.options, answer: q.answer, solution: q.solution, passage: q.passage });
+                       options: q.options, answer: q.answer, solution: q.solution, transcript: q.transcript, translation: q.translation, passage: q.passage });
 // items: câu đã xóa/gộp; allowDup: cho phép khôi phục câu trùng (dùng khi hoàn tác gộp)
 function showUndo(items, msg, allowDup = false, trashIds = null) {
   const t = document.getElementById("toast");
