@@ -211,6 +211,59 @@ def test_attach_audio_keeps_fields_and_old_media(tmp_path, monkeypatch):
     assert err and ".mp3" in msg
 
 
+def _fake_bank(monkeypatch, question):
+    puts = []
+
+    def fake_api(method, path, params=None, body=None, content_type="application/json"):
+        if method == "GET":
+            return dict(question)
+        if path == "/api/media":
+            return {"kind": "audio", "file": "new.mp3", "name": "new.mp3"}
+        puts.append((path, body))
+        return {"ok": True}
+
+    monkeypatch.setattr(mcp_server, "api", fake_api)
+    return puts
+
+
+def _q(**kw):
+    base = {"code": "X-1", "chapter_id": 5, "bloom": 1, "qtype": "TN", "content": "c", "options": ["a", "b"], "answer": "A",
+            "status": "nhap", "passage": "p", "passage_id": 9,
+            "media": [{"kind": "audio", "file": "old.mp3", "name": "old.mp3"}, {"kind": "image", "file": "i.png", "name": "i.png"}],
+            "passage_media": [{"kind": "audio", "file": "pold.mp3", "name": "pold.mp3"}]}
+    base.update(kw)
+    return base
+
+
+def test_attach_audio_replaces_old_audio_by_default(tmp_path, monkeypatch):
+    mp3 = tmp_path / "new.mp3"
+    mp3.write_bytes(b"ID3")
+    puts = _fake_bank(monkeypatch, _q())
+    err, res = call("attach_audio", {"question_id": 7, "file_path": str(mp3)})
+    assert not err and res["replaced"] == ["old.mp3"]
+    assert [m["file"] for m in puts[-1][1]["media"]] == ["i.png", "new.mp3"]  # ảnh giữ, audio cũ bị thay
+    assert "đoạn văn" in res["warning"]  # đoạn văn vẫn còn file nghe -> báo 2 file
+    err, res = call("attach_audio", {"question_id": 7, "file_path": str(mp3), "replace": False})
+    assert [m["file"] for m in puts[-1][1]["media"]] == ["old.mp3", "i.png", "new.mp3"]
+
+
+def test_remove_audio_selects_files_and_dry_run(monkeypatch):
+    puts = _fake_bank(monkeypatch, _q())
+    err, res = call("remove_audio", {"question_id": 7, "dry_run": True})
+    assert not err and res["removed"] == {"question": ["old.mp3"]} and not puts  # xem trước, chưa ghi
+    err, res = call("remove_audio", {"question_id": 7, "target": "both"})
+    assert res["removed"] == {"question": ["old.mp3"], "passage": ["pold.mp3"]}
+    assert [m["file"] for m in puts[0][1]["media"]] == ["i.png"]  # chỉ gỡ audio, ảnh còn
+    assert puts[1] == ("/api/passages/9", {"media": []})
+    err, msg = call("remove_audio", {"question_id": 7, "file": "khong-co.mp3"})
+    assert err and "Không thấy" in msg
+
+
+def test_get_question_audio_lists_both_levels(monkeypatch):
+    _fake_bank(monkeypatch, _q())
+    err, res = call("get_question_audio", {"question_id": 7})
+    assert not err and res["question_audio"][0]["file"] == "old.mp3" and res["passage_audio"][0]["file"] == "pold.mp3"
+
 def test_check_duplicates_tool_summarises(monkeypatch):
     seen = []
 

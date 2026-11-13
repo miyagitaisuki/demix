@@ -264,6 +264,9 @@ Chi tiết từng lỗi và cách tái hiện: `docs/bao_cao_kiem_thu_2026-11-02
   - **Xuất Moodle XML:** chọn câu rồi bấm "Xuất Moodle XML"; không chọn thì xuất mọi câu đã duyệt. Trắc nghiệm → multichoice (một đáp án); đúng/sai nhiều ý → mỗi ý là một câu truefalse; điền từ → shortanswer (mọi đáp án chấp nhận); tự luận → essay, hướng dẫn chấm đặt vào graderinfo. Danh mục Moodle theo học phần/giáo trình/chương. Ảnh và âm thanh được nhúng vào câu Moodle. Chưa thử nhập vào Moodle thật: cần kiểm tra trên máy có Moodle trước khi dùng cho lớp.
 - **Chưa làm (tính năng mới):** QTI; dùng chung qua mạng nội bộ có đăng nhập; cấu hình tên trường và khoa.
 
+### Thay và xóa file nghe qua MCP
+`attach_audio` mặc định thay file nghe cũ cùng cấp (câu hoặc đoạn văn) để mỗi câu chỉ có một file nghe (`replace=false` để gắn thêm). `get_question_audio` liệt kê file nghe của câu và đoạn văn; `remove_audio` gỡ file được chọn (hoặc mọi file nghe ở cấp đó) khỏi dữ liệu câu/đoạn văn, có `dry_run`. Chỉ sửa danh sách đính kèm trong CSDL qua API sẵn có; không cần build lại app.
+
 ### Kiểm trùng trước khi tạo câu
 Công cụ MCP `check_duplicates` (API `POST /api/check-candidates`, không ghi gì) nhận tối đa 100 câu dự định tạo và trả về từng câu: `mới`, `gần giống` (>= 90%, cùng dạng), `trùng chương khác` hoặc `trùng` (cùng chương, app sẽ từ chối), kèm mã câu đã có và các câu trùng nhau trong chính lô. Dùng chỉ mục 3-ký-tự nên 30 câu đối chiếu 3000 câu mất ~0,2 giây. Cần build lại `QBank.exe` để có route này.
 

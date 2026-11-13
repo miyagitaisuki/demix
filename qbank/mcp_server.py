@@ -16,7 +16,7 @@ import urllib.request
 
 BASE_URL = os.environ.get("QBANK_URL", "http://127.0.0.1:8765").rstrip("/")
 PROTOCOL = "2024-11-05"
-SERVER_INFO = {"name": "qbank", "version": "1.1.0"}
+SERVER_INFO = {"name": "qbank", "version": "1.2.0"}
 
 
 class ApiError(Exception):
@@ -210,28 +210,85 @@ def tool_import_questions(args):
                       "note": x.get("note")} for x in r.get("rows", [])]}
 
 
+def _is_audio(m):
+    return (m or {}).get("kind") == "audio"
+
+
+def _put_media(q, target, media):
+    """Ghi lại danh sách đính kèm của câu (target=question) hoặc của đoạn văn (target=passage), giữ nguyên các trường khác."""
+    if target == "passage":
+        if not q.get("passage_id"):
+            raise ApiError("Câu này không có đoạn văn")
+        api("PUT", f"/api/passages/{q['passage_id']}", body={"media": media})
+    else:
+        body = {k: q[k] for k in QUESTION_FIELDS if k in q}
+        body["media"] = media
+        body["confirm_passage"] = True
+        api("PUT", f"/api/questions/{q['id']}", body=body)
+
+
 def tool_attach_audio(args):
-    """Gắn một file âm thanh có sẵn (mp3, wav, ogg, m4a) vào câu hỏi (target=question) hoặc đoạn văn của câu (target=passage).
-    Giữ nguyên mọi trường của câu và các file đính kèm cũ; không đổi trạng thái."""
+    """Gắn file âm thanh có sẵn (mp3, wav, ogg, m4a) vào câu (target=question) hoặc đoạn văn của câu (target=passage).
+    Mặc định THAY file nghe cũ cùng cấp (replace=true) để mỗi câu chỉ có một file nghe; replace=false thì gắn thêm.
+    Giữ nguyên mọi trường khác, ảnh đính kèm và trạng thái câu."""
     qid = _int(args.get("question_id"), "question_id")
     target = args.get("target", "question")
     if target not in ("question", "passage"):
         raise ApiError('target phải là "question" hoặc "passage"')
+    replace = args.get("replace", True) is not False
     raw = _read_file(args.get("file_path"), AUDIO_EXT, "File âm thanh")
     q = api("GET", f"/api/questions/{qid}")
+    q.setdefault("id", qid)
+    if target == "passage" and not q.get("passage_id"):
+        raise ApiError("Câu này không có đoạn văn để gắn audio")
     name = os.path.basename(str(args["file_path"]))
     up = api("POST", "/api/media", {"name": name}, body=raw, content_type="application/octet-stream")
     item = {"kind": up["kind"], "file": up["file"], "name": up["name"]}
-    if target == "passage":
-        if not q.get("passage_id"):
-            raise ApiError("Câu này không có đoạn văn để gắn audio")
-        api("PUT", f"/api/passages/{q['passage_id']}", body={"media": (q.get("passage_media") or []) + [item]})
-    else:
-        body = {k: q[k] for k in QUESTION_FIELDS if k in q}
-        body["media"] = (q.get("media") or []) + [item]
-        body["confirm_passage"] = True
-        api("PUT", f"/api/questions/{qid}", body=body)
-    return {"ok": True, "question_id": qid, "code": q.get("code"), "target": target, "file": name}
+    old = (q.get("passage_media") if target == "passage" else q.get("media")) or []
+    removed = [m.get("name") or m.get("file") for m in old if replace and _is_audio(m)]
+    _put_media(q, target, [m for m in old if not (replace and _is_audio(m))] + [item])
+    other = (q.get("media") if target == "passage" else q.get("passage_media")) or []
+    out = {"ok": True, "question_id": qid, "code": q.get("code"), "target": target, "file": name, "replaced": removed}
+    if any(_is_audio(m) for m in other):
+        out["warning"] = ("Câu còn file nghe ở " + ("câu" if target == "passage" else "đoạn văn")
+                          + ", nên câu có 2 file nghe. Dùng remove_audio để bỏ file không cần.")
+    return out
+
+
+def tool_remove_audio(args):
+    """Xóa file nghe khỏi câu (target=question), khỏi đoạn văn (target=passage; đoạn dùng chung nên MỌI câu của đoạn mất file) hoặc cả hai.
+    Chọn file bằng `file` (tên hiển thị hoặc tên lưu trong list_questions); bỏ trống thì xóa mọi file nghe ở cấp đó.
+    Chỉ gỡ khỏi dữ liệu câu/đoạn; ảnh và các trường khác giữ nguyên. Đặt dry_run=true để chỉ xem sẽ xóa gì."""
+    qid = _int(args.get("question_id"), "question_id")
+    target = args.get("target", "question")
+    if target not in ("question", "passage", "both"):
+        raise ApiError('target phải là "question", "passage" hoặc "both"')
+    wanted = str(args.get("file") or "").strip()
+    dry = args.get("dry_run") is True
+    q = api("GET", f"/api/questions/{qid}")
+    q.setdefault("id", qid)
+    removed = {}
+    for level in (("question", "passage") if target == "both" else (target,)):
+        old = (q.get("passage_media") if level == "passage" else q.get("media")) or []
+        drop = [m for m in old if _is_audio(m) and (not wanted or wanted in (m.get("name"), m.get("file")))]
+        if not drop:
+            continue
+        removed[level] = [m.get("name") or m.get("file") for m in drop]
+        if not dry:
+            _put_media(q, level, [m for m in old if m not in drop])
+    if wanted and not removed:
+        raise ApiError(f"Không thấy file nghe {wanted!r} ở {target}. Xem các file hiện có bằng get_question_audio.")
+    return {"ok": True, "dry_run": dry, "question_id": qid, "code": q.get("code"), "removed": removed}
+
+
+def tool_get_question_audio(args):
+    """Liệt kê file nghe hiện có của một câu: ở câu và ở đoạn văn (để chọn file cần xóa/thay)."""
+    qid = _int(args.get("question_id"), "question_id")
+    q = api("GET", f"/api/questions/{qid}")
+    f = lambda media: [{"name": m.get("name"), "file": m.get("file"), "has_script": bool(m.get("tts"))}
+                       for m in (media or []) if _is_audio(m)]
+    return {"question_id": qid, "code": q.get("code"), "question_audio": f(q.get("media")),
+            "passage_audio": f(q.get("passage_media"))}
 
 
 def _obj(props, required=()):
@@ -310,11 +367,22 @@ TOOLS = [
                           "dry_run": {"type": "boolean", "default": True}}, ["textbook_id", "file_path"])},
     {"name": "attach_audio", "handler": tool_attach_audio,
      "description": "Gắn file âm thanh có sẵn (mp3, wav, ogg, m4a; tối đa 15 MB) vào một câu hoặc đoạn văn của câu. "
-                    "Lấy question_id từ list_questions sau khi nhập. Không đổi trạng thái câu.",
+                    "Mặc định THAY file nghe cũ cùng cấp (replace=true) nên câu chỉ còn một file nghe. Không đổi trạng thái câu. "
+                    "Nếu kết quả có warning thì câu còn file nghe ở cấp kia (câu/đoạn văn): dùng remove_audio.",
      "inputSchema": _obj({"question_id": {"type": "integer"},
                           "file_path": {"type": "string", "description": "đường dẫn file âm thanh trên máy chạy app"},
-                          "target": {"type": "string", "enum": ["question", "passage"], "default": "question"}},
-                         ["question_id", "file_path"])},
+                          "target": {"type": "string", "enum": ["question", "passage"], "default": "question"},
+                          "replace": {"type": "boolean", "default": True}}, ["question_id", "file_path"])},
+    {"name": "get_question_audio", "handler": tool_get_question_audio,
+     "description": "Liệt kê file nghe hiện có của một câu (ở câu và ở đoạn văn) để chọn file cần xóa hoặc thay.",
+     "inputSchema": _obj({"question_id": {"type": "integer"}}, ["question_id"])},
+    {"name": "remove_audio", "handler": tool_remove_audio,
+     "description": "Xóa file nghe khỏi dữ liệu câu hoặc đoạn văn. Chọn file bằng `file` (xem get_question_audio) hoặc bỏ trống để xóa mọi "
+                    "file nghe ở cấp đó. target=passage ảnh hưởng MỌI câu dùng chung đoạn văn đó. Nên chạy dry_run=true trước và chỉ xóa "
+                    "thật sau khi người dùng đồng ý.",
+     "inputSchema": _obj({"question_id": {"type": "integer"},
+                          "target": {"type": "string", "enum": ["question", "passage", "both"], "default": "question"},
+                          "file": {"type": "string"}, "dry_run": {"type": "boolean", "default": False}}, ["question_id"])},
 ]
 TOOL_BY_NAME = {t["name"]: t for t in TOOLS}
 
