@@ -10,6 +10,7 @@ python3 app.py                 # rồi mở http://127.0.0.1:8765
 
 ## Cấu trúc phân loại
 **Học phần → Giáo trình → Chương → Câu hỏi.** Mã chương chỉ cần duy nhất trong một giáo trình, nên hai giáo trình có thể cùng có "B1".
+- **Giáo trình dùng chung:** một giáo trình có thể thuộc nhiều học phần (ví dụ Trainer 3 dùng cho Tiếng Nhật 3 và 4). Câu hỏi nằm trong chương của giáo trình nên chỉ có một bản, không nhân đôi. Trong tab **Cấu trúc**, nhập giáo trình đã có cùng tên sẽ gắn thêm vào học phần đã chọn; nút "Gỡ khỏi HP" chỉ gỡ liên kết. Mã câu dùng học phần đại diện là học phần có id nhỏ nhất của giáo trình.
 - Tạo học phần, giáo trình, chương trong tab **Cấu trúc**. Mục chỉ xóa được khi không còn dữ liệu bên trong.
 - Nhập Word: chọn giáo trình ở bộ lọc trước. Cột "Mã" phải là mã chương đã có trong giáo trình đó; mã sai được báo lỗi từng dòng.
 - Dữ liệu từ phiên bản cũ được chuyển sang học phần và giáo trình "Chưa phân loại", giữ nguyên mã chương cũ. Hãy gán lại học phần cho đúng.
@@ -80,6 +81,7 @@ Mỗi câu có mã ổn định, dạng `HọcPhần-GiáoTrình-Chương-Số`,
 
 ## Dữ liệu
 Lưu trong `data/qbank.db` (SQLite). Sao lưu bằng cách sao chép file này.
+Khi nâng cấp từ bản có cấu trúc cũ (giáo trình thuộc một học phần), app tự chép file vào `data/backup/qbank_truoc_nang_cap_<thời điểm>.db` trước khi đổi. Giáo trình trùng tên ở nhiều học phần được gộp vào một bản; chương trùng mã được gộp, không câu nào bị xóa.
 
 ## Hướng cải tiến
 

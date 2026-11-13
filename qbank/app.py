@@ -99,20 +99,105 @@ def q(sql, args=(), fetch=False):
         return rows
 
 
+def needs_migration():
+    """CSDL cũ: questions còn cột chapter dạng chữ, hoặc textbooks còn cột course_id (một giáo trình chỉ thuộc một học phần)."""
+    if not os.path.exists(DB_PATH):
+        return False
+    with closing(sqlite3.connect(DB_PATH)) as conn:
+        qcols = [r[1] for r in conn.execute("PRAGMA table_info(questions)")]
+        tcols = [r[1] for r in conn.execute("PRAGMA table_info(textbooks)")]
+    return "chapter" in qcols or "course_id" in tcols
+
+
+def backup_before_migration():
+    """Chép nguyên file CSDL trước khi nâng cấp cấu trúc, để có thể quay lại nếu có sự cố."""
+    backup_dir = os.path.join(os.path.dirname(DB_PATH), "backup")
+    os.makedirs(backup_dir, exist_ok=True)
+    dest = os.path.join(backup_dir, f"qbank_truoc_nang_cap_{datetime.now().strftime('%Y%m%d_%H%M%S')}.db")
+    shutil.copy2(DB_PATH, dest)
+    print(f"Đã sao lưu CSDL trước khi nâng cấp: {dest}", flush=True)
+
+
+def migrate_textbook_links():
+    """Giáo trình dùng chung được nhiều học phần: textbooks không còn course_id, học phần nối với giáo trình
+    qua course_textbooks. Giáo trình trùng tên (tạo riêng ở nhiều học phần) được gộp vào bản có id nhỏ nhất:
+    chương trùng mã được gộp, câu và đoạn văn chuyển sang chương giữ lại. Không xóa câu hỏi nào."""
+    if not os.path.exists(DB_PATH):
+        return
+    with closing(sqlite3.connect(DB_PATH, isolation_level=None)) as conn:
+        conn.row_factory = sqlite3.Row
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(textbooks)")]
+        if "course_id" not in cols:
+            return
+        conn.execute("PRAGMA foreign_keys = OFF")  # bật lại sau khi xong; cần tắt để đổi bảng cha
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            conn.execute("""CREATE TABLE IF NOT EXISTS course_textbooks(
+                    course_id INTEGER NOT NULL REFERENCES courses(id),
+                    textbook_id INTEGER NOT NULL REFERENCES textbooks(id),
+                    PRIMARY KEY(course_id, textbook_id))""")
+            rows = [dict(r) for r in conn.execute("SELECT id, course_id, name, code FROM textbooks ORDER BY id")]
+            keep = {}  # tên giáo trình -> id giữ lại (nhỏ nhất)
+            for r in rows:
+                keep.setdefault(r["name"], r["id"])
+            for r in rows:
+                tgt = keep[r["name"]]
+                if tgt == r["id"]:
+                    continue
+                print(f"Gộp giáo trình trùng tên '{r['name']}' (id {r['id']} -> {tgt})", flush=True)
+                if r["code"]:
+                    conn.execute("UPDATE textbooks SET code=? WHERE id=? AND code=''", (r["code"], tgt))
+                for ch in [dict(c) for c in conn.execute("SELECT id, code FROM chapters WHERE textbook_id=?", (r["id"],))]:
+                    same = conn.execute("SELECT id FROM chapters WHERE textbook_id=? AND code=?", (tgt, ch["code"])).fetchone()
+                    if same:  # chương trùng mã: chuyển câu và đoạn sang chương giữ lại
+                        conn.execute("UPDATE questions SET chapter_id=? WHERE chapter_id=?", (same[0], ch["id"]))
+                        conn.execute("UPDATE passages SET chapter_id=? WHERE chapter_id=?", (same[0], ch["id"]))
+                        conn.execute("DELETE FROM chapters WHERE id=?", (ch["id"],))
+                    else:
+                        conn.execute("UPDATE chapters SET textbook_id=? WHERE id=?", (tgt, ch["id"]))
+            for r in rows:  # mọi học phần từng chứa giáo trình (kể cả bản bị gộp) nay nối với giáo trình giữ lại
+                conn.execute("INSERT OR IGNORE INTO course_textbooks(course_id, textbook_id) VALUES(?, ?)",
+                             (r["course_id"], keep[r["name"]]))
+            for r in rows:
+                if keep[r["name"]] != r["id"]:
+                    conn.execute("DELETE FROM textbooks WHERE id=?", (r["id"],))
+            conn.execute("""CREATE TABLE textbooks_new(
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL UNIQUE,
+                    code TEXT NOT NULL DEFAULT '')""")
+            conn.execute("INSERT INTO textbooks_new(id, name, code) SELECT id, name, code FROM textbooks")
+            conn.execute("DROP TABLE textbooks")
+            conn.execute("ALTER TABLE textbooks_new RENAME TO textbooks")
+            bad = conn.execute("PRAGMA foreign_key_check").fetchall()
+            if bad:
+                raise RuntimeError(f"Sai khóa ngoại sau khi nâng cấp: {len(bad)} dòng")
+            conn.execute("COMMIT")
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
+        finally:
+            conn.execute("PRAGMA foreign_keys = ON")
+
+
 def init_storage():
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     os.makedirs(TPL_DIR, exist_ok=True)
+    if needs_migration():
+        backup_before_migration()
     migrate_if_needed()
+    migrate_textbook_links()
     q("""CREATE TABLE IF NOT EXISTS courses(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL UNIQUE,
             code TEXT NOT NULL DEFAULT '')""")
     q("""CREATE TABLE IF NOT EXISTS textbooks(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE,
+            code TEXT NOT NULL DEFAULT '')""")
+    q("""CREATE TABLE IF NOT EXISTS course_textbooks(
             course_id INTEGER NOT NULL REFERENCES courses(id),
-            name TEXT NOT NULL,
-            code TEXT NOT NULL DEFAULT '',
-            UNIQUE(course_id, name))""")
+            textbook_id INTEGER NOT NULL REFERENCES textbooks(id),
+            PRIMARY KEY(course_id, textbook_id))""")
     q("""CREATE TABLE IF NOT EXISTS chapters(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             textbook_id INTEGER NOT NULL REFERENCES textbooks(id),
@@ -348,10 +433,11 @@ def migrate_passages():
 
 def passage_code(chapter_id):
     """Mã đoạn văn dạng HọcPhần-GiáoTrình-Chương-Pnnn, ví dụ N4-MN1-B01-P001."""
-    r = q("""SELECT ch.code AS chcode, t.id AS tid, t.code AS tcode, co.id AS cid, co.code AS ccode
-             FROM chapters ch JOIN textbooks t ON t.id=ch.textbook_id JOIN courses co ON co.id=t.course_id
+    r = q("""SELECT ch.code AS chcode, t.id AS tid, t.code AS tcode
+             FROM chapters ch JOIN textbooks t ON t.id=ch.textbook_id
              WHERE ch.id=?""", (chapter_id,), True)[0]
-    hp = r["ccode"] or f"HP{r['cid']}"
+    co = textbook_course(r["tid"])
+    hp = co["code"] or f"HP{co['id']}"
     gt = r["tcode"] or f"GT{r['tid']}"
     prefix = re.sub(r"\s+", "_", f"{hp}-{gt}-{r['chcode']}")
     n = q("SELECT COUNT(*) AS n FROM passages WHERE chapter_id=?", (chapter_id,), True)[0]["n"] + 1
@@ -428,6 +514,7 @@ def migrate_if_needed():
             chapter_id INTEGER NOT NULL REFERENCES chapters(id), bloom INTEGER NOT NULL,
             qtype TEXT NOT NULL DEFAULT 'TN', content TEXT NOT NULL, options TEXT NOT NULL DEFAULT '[]',
             answer TEXT NOT NULL DEFAULT '', solution TEXT NOT NULL DEFAULT '')""")
+    migrate_textbook_links()  # đưa textbooks về cấu trúc nhiều-nhiều trước khi ghi dữ liệu mới
     # Dữ liệu cũ không có học phần/giáo trình: đưa vào một nhóm "Chưa phân loại" để người dùng gán lại.
     # Mỗi mã chương cũ thành một chương trong giáo trình "Chưa phân loại"
     with closing(sqlite3.connect(DB_PATH)) as conn:
@@ -436,7 +523,7 @@ def migrate_if_needed():
         ensure_chapter(DEFAULT_COURSE, DEFAULT_COURSE, code)
     q("""INSERT INTO questions(id, chapter_id, bloom, qtype, content, options, answer, solution)
          SELECT o.id, (SELECT c.id FROM chapters c JOIN textbooks t ON t.id=c.textbook_id
-                       JOIN courses co ON co.id=t.course_id
+                       JOIN course_textbooks ct ON ct.textbook_id=t.id JOIN courses co ON co.id=ct.course_id
                        WHERE co.name=? AND t.name=? AND c.code=o.chapter),
                 o.bloom, o.qtype, o.content, o.options, o.answer, o.solution
          FROM questions_old o""", (DEFAULT_COURSE, DEFAULT_COURSE))
@@ -447,30 +534,46 @@ def migrate_if_needed():
 
 
 # ---------------------------------------------------------------- hierarchy helpers
-CHAPTER_LABEL = "co.name || ' / ' || t.name || ' / ' || ch.code || CASE WHEN ch.title <> '' THEN ' - ' || ch.title ELSE '' END"
+CHAPTER_LABEL = "t.name || ' / ' || ch.code || CASE WHEN ch.title <> '' THEN ' - ' || ch.title ELSE '' END"
+# Học phần đại diện của giáo trình: học phần có id nhỏ nhất trong course_textbooks (giáo trình có thể dùng chung nhiều học phần).
+PRIMARY_COURSE = "(SELECT {col} FROM course_textbooks ct JOIN courses co ON co.id = ct.course_id WHERE ct.textbook_id = t.id ORDER BY co.id LIMIT 1)"
 QUESTION_SQL = f"""SELECT qs.*, ch.code AS chapter_code, ch.title AS chapter_title,
     (SELECT COUNT(DISTINCT u.used_at) FROM exam_usage u WHERE u.question_id = qs.id) AS used_count,
     ch.id AS chapter_id, t.id AS textbook_id, t.name AS textbook, t.code AS textbook_code,
-    co.id AS course_id, co.name AS course, ({CHAPTER_LABEL}) AS chapter_label
+    COALESCE({PRIMARY_COURSE.format(col="co.id")}, 0) AS course_id,
+    COALESCE({PRIMARY_COURSE.format(col="co.name")}, '') AS course,
+    (SELECT GROUP_CONCAT(name, ', ') FROM (SELECT co.name FROM course_textbooks ct JOIN courses co ON co.id = ct.course_id
+        WHERE ct.textbook_id = t.id ORDER BY co.id)) AS courses_all,
+    ({CHAPTER_LABEL}) AS chapter_label
     FROM questions qs
     JOIN chapters ch ON ch.id = qs.chapter_id
-    JOIN textbooks t ON t.id = ch.textbook_id
-    JOIN courses co ON co.id = t.course_id"""
+    JOIN textbooks t ON t.id = ch.textbook_id"""
 
 
-def ensure_chapter(course, textbook, code, title=""):
-    """Tìm hoặc tạo học phần/giáo trình/chương theo tên. Trả về id chương."""
-    q("INSERT OR IGNORE INTO courses(name) VALUES(?)", (course,))
-    cid = q("SELECT id FROM courses WHERE name=?", (course,), True)[0]["id"]
-    q("INSERT OR IGNORE INTO textbooks(course_id, name) VALUES(?, ?)", (cid, textbook))
-    tid = q("SELECT id FROM textbooks WHERE course_id=? AND name=?", (cid, textbook), True)[0]["id"]
+def textbook_course(textbook_id):
+    """Học phần đại diện của giáo trình (dùng cho tiền tố mã câu/đoạn): {id, code} hoặc {id: 0, code: ''}."""
+    r = q("""SELECT co.id, co.code FROM course_textbooks ct JOIN courses co ON co.id = ct.course_id
+             WHERE ct.textbook_id=? ORDER BY co.id LIMIT 1""", (int(textbook_id),), True)
+    return r[0] if r else {"id": 0, "code": ""}
+
+
+def ensure_chapter(courses, textbook, code, title=""):
+    """Tìm hoặc tạo học phần/giáo trình/chương theo tên; giáo trình được nối với mọi học phần trong `courses`.
+    Giáo trình trùng tên dùng chung, không tạo bản mới. Trả về id chương."""
+    names = [courses] if isinstance(courses, str) else list(courses)
+    q("INSERT OR IGNORE INTO textbooks(name) VALUES(?)", (textbook,))
+    tid = q("SELECT id FROM textbooks WHERE name=?", (textbook,), True)[0]["id"]
+    for course in names:
+        q("INSERT OR IGNORE INTO courses(name) VALUES(?)", (course,))
+        cid = q("SELECT id FROM courses WHERE name=?", (course,), True)[0]["id"]
+        q("INSERT OR IGNORE INTO course_textbooks(course_id, textbook_id) VALUES(?, ?)", (cid, tid))
     q("INSERT OR IGNORE INTO chapters(textbook_id, code, title) VALUES(?, ?, ?)", (tid, code, title))
     return q("SELECT id FROM chapters WHERE textbook_id=? AND code=?", (tid, code), True)[0]["id"]
 
 
 def chapter_label(chapter_id):
     rows = q(f"""SELECT ({CHAPTER_LABEL}) AS label FROM chapters ch
-                 JOIN textbooks t ON t.id=ch.textbook_id JOIN courses co ON co.id=t.course_id
+                 JOIN textbooks t ON t.id=ch.textbook_id
                  WHERE ch.id=?""", (chapter_id,), True)
     return rows[0]["label"] if rows else f"chương #{chapter_id}"
 
@@ -485,7 +588,13 @@ def get_tree():
             c["exam_meta"] = json.loads(c["exam_meta"] or "{}")
         except ValueError:
             c["exam_meta"] = {}
-    textbooks = q("SELECT id, course_id, name, code FROM textbooks ORDER BY name", fetch=True)
+    textbooks = q("SELECT id, name, code FROM textbooks ORDER BY name", fetch=True)
+    links = {}  # giáo trình -> danh sách id học phần (theo thứ tự id)
+    for r in q("SELECT course_id, textbook_id FROM course_textbooks ORDER BY course_id", fetch=True):
+        links.setdefault(r["textbook_id"], []).append(r["course_id"])
+    for t in textbooks:
+        t["course_ids"] = links.get(t["id"], [])
+        t["course_id"] = t["course_ids"][0] if t["course_ids"] else 0  # học phần đại diện (id nhỏ nhất)
     chapters = q("""SELECT ch.id, ch.textbook_id, ch.code, ch.title,
                     (SELECT COUNT(*) FROM questions qs WHERE qs.chapter_id = ch.id) AS count
                     FROM chapters ch ORDER BY ch.code""", fetch=True)
@@ -702,10 +811,11 @@ def make_code(question_id_or_none, chapter_id=None):
     Mã được gán khi tạo câu và không đổi sau đó. Số tăng theo từng chương, bỏ qua mã đã có."""
     if chapter_id is None:  # gọi khi nâng cấp CSDL: lấy chương của câu
         chapter_id = q("SELECT chapter_id FROM questions WHERE id=?", (question_id_or_none,), True)[0]["chapter_id"]
-    r = q("""SELECT ch.code AS chcode, t.id AS tid, t.code AS tcode, co.id AS cid, co.code AS ccode
-             FROM chapters ch JOIN textbooks t ON t.id=ch.textbook_id JOIN courses co ON co.id=t.course_id
+    r = q("""SELECT ch.code AS chcode, t.id AS tid, t.code AS tcode
+             FROM chapters ch JOIN textbooks t ON t.id=ch.textbook_id
              WHERE ch.id=?""", (chapter_id,), True)[0]
-    hp = r["ccode"] or f"HP{r['cid']}"
+    co = textbook_course(r["tid"])
+    hp = co["code"] or f"HP{co['id']}"
     gt = r["tcode"] or f"GT{r['tid']}"
     prefix = re.sub(r"\s+", "_", f"{hp}-{gt}-{r['chcode']}")
     # số kế tiếp sau số lớn nhất đã dùng (cả câu trong thùng rác), để mã đã cấp không bị cấp lại
@@ -1800,7 +1910,7 @@ def list_passages():
     rows = q("""SELECT p.id, p.code, p.content, p.media, p.chapter_id, ({CL}) AS chapter,
                 (SELECT COUNT(*) FROM questions qs WHERE qs.passage_id = p.id) AS count
                 FROM passages p JOIN chapters ch ON ch.id = p.chapter_id
-                JOIN textbooks t ON t.id = ch.textbook_id JOIN courses co ON co.id = t.course_id
+                JOIN textbooks t ON t.id = ch.textbook_id
                 ORDER BY p.code""".replace("{CL}", CHAPTER_LABEL), fetch=True)
     for r in rows:
         r["media"] = json.loads(r["media"] or "[]")
@@ -1850,9 +1960,12 @@ def stats():
     for r in q("SELECT qtype, COUNT(*) AS n FROM questions GROUP BY qtype", fetch=True):
         by_type[r["qtype"]] = r["n"]
     rows = q(f"""SELECT ch.id, ch.code, ch.title, t.id AS textbook_id, t.name AS textbook,
-                 co.id AS course_id, co.name AS course, ({CHAPTER_LABEL}) AS label
-                 FROM chapters ch JOIN textbooks t ON t.id=ch.textbook_id JOIN courses co ON co.id=t.course_id
-                 ORDER BY co.name, t.name, ch.code""", fetch=True)
+                 COALESCE({PRIMARY_COURSE.format(col="co.id")}, 0) AS course_id,
+                 (SELECT GROUP_CONCAT(name, ', ') FROM (SELECT co.name FROM course_textbooks ct
+                    JOIN courses co ON co.id = ct.course_id WHERE ct.textbook_id = t.id ORDER BY co.id)) AS course,
+                 ({CHAPTER_LABEL}) AS label
+                 FROM chapters ch JOIN textbooks t ON t.id=ch.textbook_id
+                 ORDER BY t.name, ch.code""", fetch=True)
     chapters = []
     for r in rows:
         r["counts"] = counts.get(r["id"], {b: 0 for b in BLOOM})
@@ -1877,8 +1990,11 @@ def build_items(rows):
     items = []
     for r in rows:
         c = courses.get(r["course"], {})
+        all_courses = [{"name": n, "code": courses.get(n, {}).get("code", ""),
+                        "exam_meta": json.loads(courses.get(n, {}).get("exam_meta") or "{}")}
+                       for n in (r.get("courses_all") or "").split(", ") if n]
         items.append({"code": r["code"], "course": r["course"], "course_code": c.get("code", ""),
-                      "course_exam_meta": json.loads(c.get("exam_meta") or "{}"),
+                      "course_exam_meta": json.loads(c.get("exam_meta") or "{}"), "courses": all_courses,
                       "textbook": r["textbook"], "textbook_code": r.get("textbook_code", ""),
                       "chapter_code": r["chapter_code"], "chapter_title": r["chapter_title"],
                       "bloom": r["bloom"], "qtype": r["qtype"], "content": r["content"], "options": r["options"],
@@ -1899,7 +2015,7 @@ def backup_payload():
     items = build_items(q(QUESTION_SQL + " ORDER BY qs.id", fetch=True))
     configs = [{"name": c["name"], "config": json.loads(c["config"] or "{}"), "updated_at": c["updated_at"]}
                for c in q("SELECT name, config, updated_at FROM exam_configs", fetch=True)]
-    return {"app": "QBank", "version": 3, "questions": items, "configs": configs}
+    return {"app": "QBank", "version": 4, "questions": items, "configs": configs}
 
 
 BACKUP_DIR = os.path.join(DATA_DIR, "data", "backup")
@@ -2076,7 +2192,9 @@ def restore_item(item, index, allow_dup=False):
     Câu trùng trong cùng chương bị bỏ qua (báo lỗi để người dùng biết)."""
     item = dict(item)
     item.setdefault("status", "da_duyet")  # bản sao lưu cũ không có trạng thái: giữ như đang dùng
-    chapter_id = ensure_chapter(str(item.get("course", DEFAULT_COURSE)).strip() or DEFAULT_COURSE,
+    course_list = [str(c.get("name", "")).strip() for c in item.get("courses") or [] if str(c.get("name", "")).strip()]
+    course_list = course_list or [str(item.get("course", DEFAULT_COURSE)).strip() or DEFAULT_COURSE]
+    chapter_id = ensure_chapter(course_list,
                                 str(item.get("textbook", DEFAULT_COURSE)).strip() or DEFAULT_COURSE,
                                 str(item.get("chapter_code", "Chung")).strip() or "Chung",
                                 str(item.get("chapter_title", "")))
@@ -2098,10 +2216,12 @@ def restore_item(item, index, allow_dup=False):
         except ValueError:
             pass
     # mã học phần/giáo trình, thông tin đề (chỉ điền khi còn trống)
-    q("UPDATE courses SET code=? WHERE code='' AND id=(SELECT t.course_id FROM chapters ch JOIN textbooks t ON t.id=ch.textbook_id WHERE ch.id=?)",
-      (str(item.get("course_code", "")), chapter_id))
-    q("UPDATE courses SET exam_meta=? WHERE exam_meta='{}' AND id=(SELECT t.course_id FROM chapters ch JOIN textbooks t ON t.id=ch.textbook_id WHERE ch.id=?)",
-      (json.dumps(item.get("course_exam_meta") or {}, ensure_ascii=False), chapter_id))
+    saved_courses = item.get("courses") or [{"name": course_list[0], "code": item.get("course_code", ""),
+                                             "exam_meta": item.get("course_exam_meta") or {}}]
+    for c in saved_courses:  # mã và thông tin đề của từng học phần (chỉ điền khi còn trống)
+        q("UPDATE courses SET code=? WHERE code='' AND name=?", (str(c.get("code", "")), str(c.get("name", ""))))
+        q("UPDATE courses SET exam_meta=? WHERE exam_meta='{}' AND name=?",
+          (json.dumps(c.get("exam_meta") or {}, ensure_ascii=False), str(c.get("name", ""))))
     q("UPDATE textbooks SET code=? WHERE code='' AND id=(SELECT textbook_id FROM chapters WHERE id=?)",
       (str(item.get("textbook_code", "")), chapter_id))
     # lịch sử dùng và kết quả thi của câu
@@ -2252,8 +2372,9 @@ class Handler(BaseHTTPRequestHandler):
                 sql += " AND qs.chapter_id=?"; args.append(int(arg("chapter_id")))
             if arg("textbook_id"):
                 sql += " AND t.id=?"; args.append(int(arg("textbook_id")))
-            if arg("course_id"):
-                sql += " AND co.id=?"; args.append(int(arg("course_id")))
+            if arg("course_id"):  # giáo trình dùng chung: lọc theo mọi học phần đang nối với giáo trình
+                sql += " AND EXISTS (SELECT 1 FROM course_textbooks ct WHERE ct.textbook_id = t.id AND ct.course_id = ?)"
+                args.append(int(arg("course_id")))
             if arg("bloom"):
                 sql += " AND qs.bloom=?"; args.append(int(arg("bloom")))
             if arg("qtype"):
@@ -2269,7 +2390,7 @@ class Handler(BaseHTTPRequestHandler):
                 sql += f" AND ({cond})"
                 pat = "%" + kw.replace("!", "!!").replace("%", "!%").replace("_", "!_") + "%"
                 args += [pat] * 5
-            sql += " ORDER BY co.name, t.name, ch.code, qs.bloom, qs.id"
+            sql += " ORDER BY t.name, ch.code, qs.bloom, qs.id"
             if "page" in qs:  # bảng ngân hàng: trả từng trang và tổng số câu khớp
                 per = min(max(int(arg("per") or 50), 1), 50)  # tối đa 50 câu mỗi trang
                 page_no = max(int(arg("page") or 0), 0)
@@ -2504,13 +2625,24 @@ class Handler(BaseHTTPRequestHandler):
                 raise ValueError("Thiếu tên học phần")
             q("INSERT INTO courses(name, code) VALUES(?, ?)", (name, str(body.get("code", "")).strip()))
             return self._json(201, {"ok": True})
-        if p == "/api/textbooks":
+        if p == "/api/textbooks":  # giáo trình đã có cùng tên thì gắn vào học phần này (dùng chung), không tạo bản mới
             b = self._json_body()
             name = str(b.get("name", "")).strip()
             if not name or not b.get("course_id"):
                 raise ValueError("Thiếu học phần hoặc tên giáo trình")
-            q("INSERT INTO textbooks(course_id, name, code) VALUES(?, ?, ?)",
-              (int(b["course_id"]), name, str(b.get("code", "")).strip()))
+            code = str(b.get("code", "")).strip()
+            q("INSERT OR IGNORE INTO textbooks(name, code) VALUES(?, ?)", (name, code))
+            if code:
+                q("UPDATE textbooks SET code=? WHERE name=? AND code=''", (code, name))
+            tid = q("SELECT id FROM textbooks WHERE name=?", (name,), True)[0]["id"]
+            q("INSERT OR IGNORE INTO course_textbooks(course_id, textbook_id) VALUES(?, ?)", (int(b["course_id"]), tid))
+            return self._json(201, {"ok": True, "id": tid})
+        if p == "/api/course_textbooks":  # gắn giáo trình có sẵn vào thêm một học phần
+            b = self._json_body()
+            if not b.get("course_id") or not b.get("textbook_id"):
+                raise ValueError("Thiếu học phần hoặc giáo trình")
+            q("INSERT OR IGNORE INTO course_textbooks(course_id, textbook_id) VALUES(?, ?)",
+              (int(b["course_id"]), int(b["textbook_id"])))
             return self._json(201, {"ok": True})
         if p == "/api/chapters":
             b = self._json_body()
@@ -2538,7 +2670,10 @@ class Handler(BaseHTTPRequestHandler):
                 name = str(b.get("name", "")).strip()
                 if not name:
                     raise ValueError("Thiếu tên giáo trình")
-                q("UPDATE textbooks SET name=?, code=? WHERE id=?", (name, str(b.get("code", "")).strip(), rid))
+                try:
+                    q("UPDATE textbooks SET name=?, code=? WHERE id=?", (name, str(b.get("code", "")).strip(), rid))
+                except sqlite3.IntegrityError:
+                    raise ValueError("Đã có giáo trình cùng tên")
             else:
                 code = str(b.get("code", "")).strip()
                 if not code:
@@ -2597,6 +2732,15 @@ class Handler(BaseHTTPRequestHandler):
         if cfg:
             q("DELETE FROM exam_configs WHERE id=?", (int(cfg.group(1)),))
             return self._json(200, {"ok": True})
+        ln = re.fullmatch(r"/api/course_textbooks/(\d+)/(\d+)", path)
+        if ln:  # gỡ giáo trình khỏi học phần; giáo trình còn chương thì phải còn ít nhất một học phần
+            cid, tid = int(ln.group(1)), int(ln.group(2))
+            left = q("SELECT COUNT(*) AS n FROM course_textbooks WHERE textbook_id=? AND course_id<>?", (tid, cid), True)[0]["n"]
+            has_chapters = q("SELECT COUNT(*) AS n FROM chapters WHERE textbook_id=?", (tid,), True)[0]["n"]
+            if not left and has_chapters:
+                raise ValueError("Giáo trình còn chương, phải còn ít nhất một học phần (hoặc xóa giáo trình trước)")
+            q("DELETE FROM course_textbooks WHERE course_id=? AND textbook_id=?", (cid, tid))
+            return self._json(200, {"ok": True})
         tr = re.fullmatch(r"/api/trash/(\d+)", path)
         if tr:
             q("DELETE FROM trash WHERE id=?", (int(tr.group(1)),))
@@ -2616,6 +2760,10 @@ class Handler(BaseHTTPRequestHandler):
         if table == "questions":  # câu hỏi vào thùng rác thay vì xóa hẳn
             self._json(200, trash_questions([int(m.group(2))]))
             return
+        if table == "textbooks":  # gỡ mọi liên kết học phần trước; giáo trình còn chương thì không xóa
+            if q("SELECT COUNT(*) AS n FROM chapters WHERE textbook_id=?", (int(m.group(2)),), True)[0]["n"]:
+                raise ValueError("Còn dữ liệu bên trong (câu hỏi, giáo trình hoặc chương), không thể xóa")
+            q("DELETE FROM course_textbooks WHERE textbook_id=?", (int(m.group(2)),))
         try:
             q(f"DELETE FROM {table} WHERE id=?", (int(m.group(2)),))
         except sqlite3.IntegrityError:
@@ -3021,7 +3169,7 @@ def moodle_xml(ids=None):
     rows = [row_to_api(r) for r in q(QUESTION_SQL + f" {where} ORDER BY qs.id", args, fetch=True)]
     out, cats = [], set()
     for r in rows:
-        parts = [str(x).replace("/", "-") for x in (r["course"], r["textbook"], r["chapter_code"])]
+        parts = [str(x).replace("/", "-") for x in (r["course"], r["textbook"], r["chapter_code"])]  # học phần đại diện
         cat = "$course$/" + "/".join(parts)  # danh mục Moodle phân cấp bằng dấu /
         if cat not in cats:
             cats.add(cat)
