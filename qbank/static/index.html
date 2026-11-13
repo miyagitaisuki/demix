@@ -446,7 +446,7 @@
     <div class="panel">
       <h3 class="ph">Thêm giáo trình</h3>
       <div class="row"><select id="newTbCourse" style="flex:1"></select></div>
-      <div class="row"><input id="newTb" placeholder="VD: Minna no Nihongo 1" style="flex:1"><input id="newTbCode" placeholder="Mã (MN1)" style="width:90px"><button class="p" onclick="addTextbook()">Thêm</button></div>
+      <div class="row"><input id="newTb" placeholder="VD: Minna no Nihongo 1" title="Nếu giáo trình đã có cùng tên, sẽ được gắn thêm vào học phần đã chọn (dùng chung)" style="flex:1"><input id="newTbCode" placeholder="Mã (MN1)" style="width:90px"><button class="p" onclick="addTextbook()">Thêm</button></div>
     </div>
     <div class="panel">
       <h3 class="ph">Thêm chương</h3>
@@ -710,17 +710,20 @@ async function loadTree() {
   $("#fCourse").value = keepC;
   fillTextbookFilter();
   $("#newTbCourse").innerHTML = TREE.courses.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join("");
-  $("#newChTb").innerHTML = TREE.textbooks.map(t => `<option value="${t.id}">${esc(courseName(t.course_id))} / ${esc(t.name)}</option>`).join("");
+  $("#newChTb").innerHTML = TREE.textbooks.map(t => `<option value="${t.id}">${esc(coursesOf(t))} / ${esc(t.name)}</option>`).join("");
   $("#fBloom").innerHTML = `<option value="">Mọi mức</option>` + Object.entries(BLOOM).map(([k,v]) => `<option value="${k}">${k}. ${v}</option>`).join("");
   renderCourseChips();
 }
 const courseName = id => (TREE.courses.find(c => c.id == id) || {}).name || "";
 const textbookName = id => (TREE.textbooks.find(t => t.id == id) || {}).name || "";
+// giáo trình có thể dùng chung nhiều học phần: danh sách tên học phần và kiểm tra thuộc học phần
+const coursesOf = t => (t.course_ids || []).map(id => courseName(id)).filter(Boolean).join(", ");
+const inCourse = (t, cid) => (t.course_ids || []).map(String).includes(String(cid));
 
 function fillTextbookFilter() {
   const cid = $("#fCourse").value;
   const keep = $("#fTextbook").value;
-  const tbs = TREE.textbooks.filter(t => !cid || t.course_id == cid);
+  const tbs = TREE.textbooks.filter(t => !cid || inCourse(t, cid));
   $("#fTextbook").innerHTML = `<option value="">Mọi giáo trình</option>` + tbs.map(t => `<option value="${t.id}">${esc(t.name)}</option>`).join("");
   $("#fTextbook").value = tbs.some(t => t.id == keep) ? keep : "";
   fillChapterFilter();
@@ -858,7 +861,7 @@ function qRowHtml(q) {
   return `<tr>
     <td class="ck"><input type="checkbox" class="qsel" value="${q.id}" ${SEL.has(q.id) ? "checked" : ""} onchange="toggleSel(${q.id}, this.checked)"></td>
     <td><div class="code">${esc(q.code)}</div></td>
-    <td><div style="font-weight:600">${esc(q.course)}</div><div class="sub">${esc(q.textbook)}</div><div class="sub">${chap}</div>${tags}</td>
+    <td><div style="font-weight:600">${esc(q.courses_all || q.course)}</div><div class="sub">${esc(q.textbook)}</div><div class="sub">${chap}</div>${tags}</td>
     <td><span class="badge ${BLOOM_CLS[q.bloom]}">${q.bloom}. ${BLOOM[q.bloom]}</span></td>
     <td>${q.clo ? `<span class="badge clo">${esc(q.clo)}</span>` : `<span class="sub">—</span>`}</td>
     <td><span class="qt">${q.qtype}</span></td>
@@ -901,7 +904,7 @@ function openForPick(kind, id) {
   if (kind === "course") TREE_OPEN.add("c" + id);
   else if (kind === "textbook") t = TREE.textbooks.find(x => x.id == id);
   else { const ch = TREE.chapters.find(x => x.id == id); t = ch && TREE.textbooks.find(x => x.id == ch.textbook_id); }
-  if (t) { TREE_OPEN.add("c" + t.course_id); TREE_OPEN.add("t" + t.id); }
+  if (t) { t.course_ids.forEach(c => TREE_OPEN.add("c" + c)); TREE_OPEN.add("t" + t.id); }
   saveTreeOpen();
 }
 function renderBankTree() {
@@ -916,16 +919,18 @@ function renderBankTree() {
     cntTb.set(ch.textbook_id, (cntTb.get(ch.textbook_id) || 0) + ch.count);
     all += ch.count;
   }
-  for (const t of TREE.textbooks) {
-    if (!tbByCo.has(t.course_id)) tbByCo.set(t.course_id, []);
-    tbByCo.get(t.course_id).push(t);
-    cntCo.set(t.course_id, (cntCo.get(t.course_id) || 0) + (cntTb.get(t.id) || 0));
+  for (const t of TREE.textbooks) {  // giáo trình dùng chung xuất hiện ở mọi học phần của nó
+    for (const cid of t.course_ids) {
+      if (!tbByCo.has(cid)) tbByCo.set(cid, []);
+      tbByCo.get(cid).push(t);
+      cntCo.set(cid, (cntCo.get(cid) || 0) + (cntTb.get(t.id) || 0));
+    }
   }
   // đang tìm: các nhánh có kết quả được mở sẵn (không ghi vào trạng thái đã lưu)
   const forced = new Set();
   if (q) for (const ch of TREE.chapters) {
     const t = TREE.textbooks.find(x => x.id == ch.textbook_id);
-    if (t && (match(treeChLabel(ch)) || match(t.name))) { forced.add("t" + t.id); forced.add("c" + t.course_id); }
+    if (t && (match(treeChLabel(ch)) || match(t.name))) { forced.add("t" + t.id); t.course_ids.forEach(c => forced.add("c" + c)); }
   }
   const isOpen = k => TREE_OPEN.has(k) || forced.has(k);
   const row = (cls, key, open, label, cnt, action) => `<div class="tn ${cls}" onclick="${action}">`
@@ -970,7 +975,7 @@ function chapterOptions(selected) {
   return TREE.textbooks.map(t => {
     const chs = TREE.chapters.filter(c => c.textbook_id == t.id);
     if (!chs.length) return "";
-    return `<optgroup label="${esc(courseName(t.course_id))} / ${esc(t.name)}">` +
+    return `<optgroup label="${esc(coursesOf(t))} / ${esc(t.name)}">` +
       chs.map(c => `<option value="${c.id}" ${c.id == selected ? "selected" : ""}>${esc(c.code)}${c.title ? " - " + esc(c.title) : ""}</option>`).join("") + `</optgroup>`;
   }).join("");
 }
@@ -1492,13 +1497,13 @@ async function renderStruct() {
   await loadTree();
   renderPassages();
   const byTb = id => TREE.chapters.filter(c => c.textbook_id == id);
-  const byCourse = id => TREE.textbooks.filter(t => t.course_id == id);
+  const byCourse = id => TREE.textbooks.filter(t => inCourse(t, id));
   // mục đang sửa tại chỗ thì thay dòng hiển thị bằng form; các mục khác giữ nguyên nút Sửa/Xóa
   const actions = (kind, id) => EDIT_NODE && EDIT_NODE.kind === kind && EDIT_NODE.id === id ? "" :
     ` <button class="g" onclick="renameNode('${kind}',${id})">Sửa</button> <button class="d" onclick="delNode('${kind}',${id})">Xóa</button>`;
-  const label = (kind, id, html) => EDIT_NODE && EDIT_NODE.kind === kind && EDIT_NODE.id === id
+  const label = (kind, id, html, extra = "") => EDIT_NODE && EDIT_NODE.kind === kind && EDIT_NODE.id === id
     ? `<div class="trow edit">${nodeEditForm(kind, id)}</div>`
-    : `<div class="trow"><span class="name">${html}</span>${actions(kind, id)}</div>`;
+    : `<div class="trow"><span class="name">${html}</span>${actions(kind, id)}${extra}</div>`;
   const SOPEN = STRUCT_OPEN;
   const car = (key, has, open) => has ? `<button class="car" onclick="toggleStruct('${key}')" title="${open ? "Thu gọn" : "Mở rộng"}">${open ? "−" : "+"}</button>` : `<span class="car none"></span>`;
   const tbOf = id => byCourse(id);
@@ -1510,7 +1515,7 @@ async function renderStruct() {
       html += `<ul>`;
       for (const t of tbs) {
         const chs = byTb(t.id), tOpen = SOPEN.has("t" + t.id);
-        html += `<li>${label("textbooks", t.id, car("t" + t.id, chs.length, tOpen) + `<span class="typ t">Giáo trình</span>${esc(t.name)}${t.code ? ` <span class="sub">${esc(t.code)}</span>` : ""} <span class="sub">${chs.length} chương</span>`)}`;
+        html += `<li>${label("textbooks", t.id, car("t" + t.id, chs.length, tOpen) + `<span class="typ t">Giáo trình</span>${esc(t.name)}${t.code ? ` <span class="sub">${esc(t.code)}</span>` : ""} <span class="sub">${chs.length} chương</span>`, ` <button class="g" title="Chỉ gỡ khỏi học phần này; giáo trình vẫn còn ở học phần khác" onclick="unlinkTb(${c.id},${t.id})">Gỡ khỏi HP</button>`)}`;
         if (tOpen) html += `<ul>` + chs.map(ch => `<li>${label("chapters", ch.id, `<span class="car none"></span><span class="typ ch">Chương</span>${esc(ch.code)}${ch.title ? " - " + esc(ch.title) : ""} <span class="sub">(${ch.count} câu)</span>`)}</li>`).join("") + `</ul>`;
         html += `</li>`;
       }
@@ -1520,7 +1525,7 @@ async function renderStruct() {
   }
   $("#treeBox").innerHTML = TREE.courses.length ? `<ul>${html}</ul>` : `<span class="msg">Chưa có học phần nào.</span>`;
   $("#newTbCourse").innerHTML = TREE.courses.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join("");
-  $("#newChTb").innerHTML = TREE.textbooks.map(t => `<option value="${t.id}">${esc(courseName(t.course_id))} / ${esc(t.name)}</option>`).join("");
+  $("#newChTb").innerHTML = TREE.textbooks.map(t => `<option value="${t.id}">${esc(coursesOf(t))} / ${esc(t.name)}</option>`).join("");
 }
 
 // cấu trúc: học phần và giáo trình thu gọn như tab Ngân hàng; trạng thái nhớ trên máy
@@ -1600,6 +1605,10 @@ async function saveNode(kind, id) {
     renderStruct();
   } catch (e) { const m = $("#nMsg"); if (m) m.textContent = e.message; else toast(e.message, true); }
 }
+const unlinkTb = (cid, tid) => structAction(async () => {
+  if (!confirm("Gỡ giáo trình khỏi học phần này? Giáo trình và chương vẫn còn ở các học phần khác.")) return false;
+  await api(`/api/course_textbooks/${cid}/${tid}`, { method: "DELETE" });
+});
 const delNode = (kind, id) => structAction(async () => {
   if (!confirm("Xóa mục này? Chỉ xóa được khi không còn dữ liệu bên trong.")) return false;
   await api(`/api/${kind}/${id}`, { method: "DELETE" });
@@ -2261,8 +2270,8 @@ function fillPassSelect(row) {
   const list = TREE.chapters.filter(c => cnt[c.id]).map(c => {
     const tb = TREE.textbooks.find(t => t.id == c.textbook_id);
     const cid = tb ? tb.course_id : 0;
-    return { c, tb, cid, text: fold(`${courseName(cid)} ${tb ? tb.name : ""} ${c.code} ${c.title || ""}`) };
-  }).filter(x => x.c.id == cur || ((!sel.length || sel.includes(String(x.cid))) && (!q || x.text.includes(q))))
+    return { c, tb, cid, text: fold(`${tb ? coursesOf(tb) : ""} ${tb ? tb.name : ""} ${c.code} ${c.title || ""}`) };
+  }).filter(x => x.c.id == cur || ((!sel.length || (x.tb && x.tb.course_ids.some(c => sel.includes(String(c))))) && (!q || x.text.includes(q))))
     .sort((a, b) => (b.c.id == cur) - (a.c.id == cur));
   const shown = list.slice(0, 200);
   pch.innerHTML = shown.length
