@@ -83,6 +83,18 @@ Mỗi câu có mã ổn định, dạng `HọcPhần-GiáoTrình-Chương-Số`,
 Lưu trong `data/qbank.db` (SQLite). Sao lưu bằng cách sao chép file này.
 Khi nâng cấp từ bản có cấu trúc cũ (giáo trình thuộc một học phần), app tự chép file vào `data/backup/qbank_truoc_nang_cap_<thời điểm>.db` trước khi đổi. Giáo trình trùng tên ở nhiều học phần được gộp vào một bản; chương trùng mã được gộp, không câu nào bị xóa.
 
+## Điều khiển bằng Claude (MCP)
+`mcp_server.py` là MCP server (stdio, chỉ dùng thư viện chuẩn của Python). Server gọi API của app đang chạy, không đọc SQLite trực tiếp, nên mã câu, chống trùng và sao lưu vẫn được giữ.
+
+1. Mở app: `python3 app.py` (giữ cửa sổ này mở).
+2. Thêm server vào Claude Code trên cùng máy:
+   ```bash
+   claude mcp add qbank -- python3 /duong/dan/toi/demix/qbank/mcp_server.py
+   ```
+   Nếu app không dùng cổng mặc định, thêm `-e QBANK_URL=http://127.0.0.1:<cổng>`.
+3. Công cụ có sẵn: `list_tree`, `list_questions`, `create_course`, `create_textbook`, `link_textbook`, `create_chapter`, `import_chapters`. Không có công cụ xóa.
+4. `import_chapters` mặc định chỉ kiểm tra (`dry_run`). Claude chỉ ghi thật sau khi bạn xác nhận kết quả kiểm tra.
+
 ## Hướng cải tiến
 
 ### 1. Logic chức năng

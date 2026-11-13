@@ -1,0 +1,129 @@
+"""MCP server của QBank: giao thức JSON-RPC và cách gọi API (dùng HTTP server giả)."""
+import json
+import os
+import sys
+import threading
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
+import pytest
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+
+import mcp_server  # noqa: E402
+
+CALLS = []
+
+
+class Stub(BaseHTTPRequestHandler):
+    def log_message(self, *a):
+        pass
+
+    def _reply(self, code, obj):
+        data = json.dumps(obj, ensure_ascii=False).encode("utf-8")
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def _body(self):
+        return self.rfile.read(int(self.headers.get("Content-Length") or 0))
+
+    def do_GET(self):
+        CALLS.append(("GET", self.path, None))
+        if self.path.startswith("/api/tree"):
+            return self._reply(200, {"courses": [{"id": 1, "name": "TN3", "code": "N3A", "exam_meta": {}}],
+                                     "textbooks": [{"id": 1, "name": "Trainer 3", "code": "TR3", "course_ids": [1], "course_id": 1}],
+                                     "chapters": [{"id": 5, "textbook_id": 1, "code": "B01", "title": "Bài 1", "count": 4}]})
+        if self.path.startswith("/api/questions"):
+            return self._reply(200, {"items": [{"code": "N3A-TR3-B01-001", "qtype": "TN", "bloom": 1, "status": "da_duyet",
+                                               "courses_all": "TN3", "textbook": "Trainer 3", "chapter_label": "Trainer 3 / B01",
+                                               "content": "x" * 500, "used_count": 0}], "total": 1})
+        self._reply(404, {"error": "không tìm thấy"})
+
+    def do_POST(self):
+        body = self._body()
+        CALLS.append(("POST", self.path, body))
+        if self.path.startswith("/api/chapters/import"):
+            if "dry_run=1" in self.path:
+                return self._reply(200, {"counts": {"thêm": 1, "bỏ qua": 0, "lỗi": 1}, "rows": [
+                    {"line": 2, "code": "B02", "title": "Bài 2", "status": "thêm", "note": ""},
+                    {"line": 3, "code": "", "title": "", "status": "lỗi", "note": "thiếu mã chương"}]})
+            return self._reply(200, {"counts": {"thêm": 1, "bỏ qua": 0, "lỗi": 1}, "rows": [
+                {"line": 3, "code": "", "title": "", "status": "lỗi", "note": "thiếu mã chương"}]})
+        if self.path == "/api/chapters":
+            return self._reply(400, {"error": "Mã chương đã tồn tại"})
+        self._reply(201, {"ok": True, "id": 9})
+
+
+@pytest.fixture(scope="module")
+def stub():
+    srv = HTTPServer(("127.0.0.1", 0), Stub)
+    t = threading.Thread(target=srv.serve_forever, daemon=True)
+    t.start()
+    old = mcp_server.BASE_URL
+    mcp_server.BASE_URL = f"http://127.0.0.1:{srv.server_address[1]}"
+    yield srv
+    mcp_server.BASE_URL = old
+    srv.shutdown()
+
+
+def call(name, args):
+    resp = mcp_server.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": name, "arguments": args}})
+    res = resp["result"]
+    return res["isError"], json.loads(res["content"][0]["text"]) if not res["isError"] else res["content"][0]["text"]
+
+
+def test_initialize_echoes_protocol_and_lists_tools():
+    r = mcp_server.handle({"jsonrpc": "2.0", "id": 0, "method": "initialize", "params": {"protocolVersion": "2025-06-18"}})
+    assert r["result"]["protocolVersion"] == "2025-06-18"
+    assert "tools" in r["result"]["capabilities"]
+    names = [t["name"] for t in mcp_server.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/list"})["result"]["tools"]]
+    assert {"list_tree", "list_questions", "create_chapter", "import_chapters"} <= set(names)
+    assert "delete" not in " ".join(names)  # không có công cụ xóa
+
+
+def test_notifications_get_no_reply():
+    assert mcp_server.handle({"jsonrpc": "2.0", "method": "notifications/initialized"}) is None
+
+
+def test_list_tree_and_questions(stub):
+    err, tree = call("list_tree", {})
+    assert not err and tree["chapters"][0]["questions"] == 4
+    err, res = call("list_questions", {"course_id": 1, "limit": 5})
+    assert not err and res["total"] == 1
+    assert len(res["items"][0]["content"]) == 300  # nội dung được rút gọn
+    assert "course_id=1" in CALLS[-1][1] and "per=5" in CALLS[-1][1]
+
+
+def test_import_defaults_to_dry_run_and_real_write_needs_false(stub):
+    csv = "Mã,Tên chương\nB02,Bài 2\n,thiếu mã\n"
+    err, res = call("import_chapters", {"textbook_id": 1, "csv": csv})
+    assert not err and res["dry_run"] is True
+    assert "dry_run=1" in CALLS[-1][1]
+    err, res = call("import_chapters", {"textbook_id": 1, "csv": csv, "dry_run": False})
+    assert not err and res["dry_run"] is False
+    assert "dry_run" not in CALLS[-1][1]
+    assert CALLS[-1][2] == csv.encode("utf-8")  # gửi nguyên nội dung CSV dạng UTF-8
+
+
+def test_api_error_is_returned_as_tool_error(stub):
+    err, msg = call("create_chapter", {"textbook_id": 1, "code": "B01"})
+    assert err and "đã tồn tại" in msg
+
+
+def test_bad_arguments_and_unknown_tool(stub):
+    err, msg = call("create_chapter", {"textbook_id": "abc", "code": "B01"})
+    assert err and "số nguyên" in msg
+    r = mcp_server.handle({"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "xoa_tat_ca"}})
+    assert "error" in r
+
+
+def test_unreachable_app_gives_clear_message():
+    old = mcp_server.BASE_URL
+    mcp_server.BASE_URL = "http://127.0.0.1:1"
+    try:
+        err, msg = call("list_tree", {})
+    finally:
+        mcp_server.BASE_URL = old
+    assert err and "Không kết nối được app" in msg
