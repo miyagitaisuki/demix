@@ -65,6 +65,12 @@
   .ctab td.num input { width:64px; }
   .wiznav { position:sticky; bottom:0; z-index:6; background:#f1f5f9; padding-bottom:10px; }
   .pctbar label { white-space:nowrap; }
+  .tkwrap { position:relative; }
+  .tk-pop { position:absolute; z-index:30; top:110%; left:0; width:min(560px, 90vw); max-height:420px; overflow:auto; background:#fff;
+            border:1px solid #cbd5e1; border-radius:10px; box-shadow:0 8px 24px rgba(15,23,42,.15); padding:10px 12px; }
+  .tk-pop .tk-g { border-top:1px solid #eef2f7; padding:6px 0; }
+  .tk-pop label { display:block; padding:2px 0; font-size:13px; cursor:pointer; }
+  .tk-pop .tk-g > label:not(.tk-h) { padding-left:20px; }
   .pctbar .ok { color:#16a34a; font-weight:600; } .pctbar .bad { color:#b91c1c; font-weight:600; }
   .wiznav { margin-top:14px; padding-top:10px; border-top:1px solid var(--line); }
   .twocol { display:flex; gap:16px; align-items:flex-start; }
@@ -309,6 +315,7 @@
       <button data-tab="struct">Cấu trúc</button>
       <button data-tab="stats">Thống kê</button>
       <button data-tab="export">Xuất đề</button>
+      <button data-tab="grade">Chấm bài</button>
     </nav>
     <button class="upd-btn" id="updBtn" onclick="checkUpdate(true)" title="Kiểm tra và cài bản cập nhật QBank"><i class="fa-solid fa-cloud-arrow-down"></i><span id="updLabel">Cập nhật</span></button>
     <button class="rcollapse" id="ribbonToggle" title="Thu gọn/mở ribbon (Ctrl+F1)"><i class="fa-solid fa-chevron-up"></i></button>
@@ -399,6 +406,15 @@
         <div class="rgroup-name">Cấu trúc đề</div>
       </div>
     </div>
+    <div class="ribbon-page" data-page="grade">
+      <div class="rgroup">
+        <div class="rgroup-items">
+          <button class="rbtn" onclick="window.open('/cham-bai', '_blank')"><i class="fa-solid fa-up-right-from-square"></i><span>Mở tab mới</span></button>
+          <button class="rbtn" onclick="window.open('/api/omr/sheet?tn=40&opts=4&made=3&sbd=6', '_blank')"><i class="fa-solid fa-print"></i><span>Phiếu 40 câu</span></button>
+        </div>
+        <div class="rgroup-name">Chấm phiếu trắc nghiệm</div>
+      </div>
+    </div>
   </div>
 </header>
 <main>
@@ -428,6 +444,7 @@
     <div class="f"><label>Chương</label><select id="fChapter"></select></div>
     <div class="f"><label>Mức Bloom</label><select id="fBloom"><option value="">Mọi mức</option></select></div>
     <div class="f"><label>Loại câu</label><select id="fType"><option value="">Mọi loại</option><option value="TN">Trắc nghiệm</option><option value="DS">Đúng/sai</option><option value="DT">Điền từ</option><option value="TL">Tự luận</option></select></div>
+    <div class="f"><label>Dạng bài</label><select id="fTask" style="max-width:240px"><option value="">Mọi dạng bài</option></select></div>
     <div class="f"><label>Trạng thái</label><select id="fStatus" title="Trạng thái"><option value="">Mọi trạng thái</option><option value="nhap">Nháp</option><option value="da_duyet">Đã duyệt</option><option value="ngung">Ngưng dùng</option></select></div>
   </div>
   <div class="filterbar">
@@ -447,6 +464,7 @@
     <span><b id="selCount">0</b> câu đã chọn</span>
     <select id="bulkChap"></select>
     <select id="bulkBloom"><option value="">Giữ mức Bloom</option><option value="1">1. Biết</option><option value="2">2. Hiểu</option><option value="3">3. Vận dụng</option><option value="4">4. Phân tích</option><option value="5">5. Đánh giá</option></select>
+    <select id="bulkTask" style="max-width:220px"><option value="">Giữ dạng bài</option></select>
     <button onclick="bulkApply()">Áp dụng</button>
     <button onclick="setStatus('da_duyet')">Duyệt</button>
     <button onclick="setStatus('nhap')">Đưa về Nháp</button>
@@ -533,6 +551,10 @@
 </section>
 
 <!-- ============ XUẤT ĐỀ ============ -->
+<section id="grade">
+<iframe id="gradeFrame" data-src="/cham-bai?embed=1" title="Chấm bài" style="width:100%;height:calc(100vh - var(--hdr, 120px) - 40px);border:0;border-radius:10px;background:transparent"></iframe>
+</section>
+
 <section id="export">
   <nav class="stepper" id="stepper">
     <button class="step on" data-step="1" onclick="goStep(1)"><span>1</span> Phần và dạng câu</button>
@@ -725,6 +747,11 @@ document.querySelectorAll(".ribbon-tabs button").forEach(b => b.onclick = () => 
   if (b.dataset.tab === "struct") renderStruct();
   if (b.dataset.tab === "stats") { loadStats(); loadDifficulty(); }
   if (b.dataset.tab === "export") loadExport();
+  if (b.dataset.tab === "grade") {  // nạp trang chấm bài lần đầu mở tab; mở lại thì cập nhật danh sách đề vừa xuất
+    const gf = document.getElementById("gradeFrame");
+    if (!gf.src) gf.src = gf.dataset.src;
+    else { try { gf.contentWindow.qbankRefresh(); } catch (e) {} }
+  }
 });
 document.getElementById("ribbonToggle").onclick = () => setRibbonMin(!isRibbonMin());
 document.addEventListener("keydown", e => {
@@ -815,10 +842,60 @@ $("#fTextbook").onchange = () => { fillChapterFilter(); updateImportTarget(); lo
 $("#fChapter").onchange = () => loadQuestions();  // không truyền Event làm số trang
 $("#fBloom").onchange = () => loadQuestions();
 $("#fType").onchange = () => loadQuestions();
+$("#fTask").onchange = () => loadQuestions();
 $("#fSearch").addEventListener("keydown", e => { if (e.key === "Enter") loadQuestions(); });
 $("#fTag").addEventListener("keydown", e => { if (e.key === "Enter") loadQuestions(); });
 $("#fTag").addEventListener("change", () => loadQuestions());
 $("#fStatus").onchange = () => loadQuestions();
+// ---------- dạng bài: danh mục (dựng sẵn + giáo viên thêm), số câu từng dạng
+let TASKS = { skills: {}, tasks: [], unclassified: 0 };
+let TASKMAP = {};
+async function loadTasks() {
+  TASKS = await api("/api/tasks");
+  TASKMAP = Object.fromEntries(TASKS.tasks.map(t => [t.code, t]));
+  const keep = $("#fTask").value;
+  const skillOpts = Object.entries(TASKS.skills).map(([sk, name]) => {
+    const list = TASKS.tasks.filter(t => t.skill === sk && t.count > 0);
+    if (!list.length) return "";
+    const n = list.reduce((a, t) => a + t.count, 0);
+    return `<optgroup label="${esc(name)}"><option value="skill:${sk}">Mọi dạng ${esc(name.toLowerCase())} (${n})</option>`
+      + list.map(t => `<option value="${t.code}">${esc(t.name)} (${t.count})</option>`).join("") + `</optgroup>`;
+  }).join("");
+  $("#fTask").innerHTML = `<option value="">Mọi dạng bài</option>`
+    + (TASKS.unclassified ? `<option value="_none">Chưa phân loại (${TASKS.unclassified})</option>` : "") + skillOpts;
+  $("#fTask").value = [...$("#fTask").options].some(o => o.value === keep) ? keep : "";
+  $("#bulkTask").innerHTML = `<option value="">Giữ dạng bài</option><option value="_none">→ Chưa phân loại</option>` + taskOptions("", null);
+}
+const taskShort = code => { const t = TASKMAP[code]; return t ? t.name : code; };
+// danh sách chọn dạng bài theo nhóm kỹ năng; emptyLabel: dòng "để trống"; allowAdd: thêm dòng "+ Thêm dạng bài…"
+function taskOptions(selected, emptyLabel, allowAdd = false) {
+  const head = emptyLabel ? `<option value="">${esc(emptyLabel)}</option>` : "";
+  const groups = Object.entries(TASKS.skills).map(([sk, name]) => {
+    const list = TASKS.tasks.filter(t => t.skill === sk);
+    return list.length ? `<optgroup label="${esc(name)}">` + list.map(t => `<option value="${t.code}" ${t.code === selected ? "selected" : ""}>${esc(t.name)}</option>`).join("") + `</optgroup>` : "";
+  }).join("");
+  return head + groups + (allowAdd ? `<option value="__add">+ Thêm dạng bài riêng…</option>` : "");
+}
+// chọn dạng bài trong form câu hỏi: đổi luôn hình thức (Loại) theo dạng bài; "+ Thêm…" thì hỏi tên rồi thêm vào danh mục
+async function taskPicked(sel) {
+  if (sel.value === "__add") {
+    const name = prompt("Tên dạng bài mới (ví dụ: Chọn câu trả lời phù hợp hội thoại):");
+    const skills = Object.entries(TASKS.skills);
+    const sk = name && prompt("Thuộc kỹ năng nào? Gõ số:\n" + skills.map(([k, v], i) => `${i + 1}. ${v}`).join("\n"), "1");
+    const skill = sk && skills[(+sk || 0) - 1];
+    if (!name || !skill) { sel.value = ""; return; }
+    try {
+      const r = await postJson("/api/tasks", { name, skill: skill[0], qtype: $("#eType").value });
+      await loadTasks();
+      sel.innerHTML = taskOptions(r.code, "Tự nhận dạng khi lưu", true);
+      toast(`Đã thêm dạng bài "${name}".`);
+    } catch (e) { toast(e.message, true); sel.value = ""; }
+    return;
+  }
+  const t = TASKMAP[sel.value];
+  if (t && $("#eType").value !== t.qtype) { $("#eType").value = t.qtype; renderRubricEditor(); }
+}
+
 async function loadTagList() {
   const tags = await api("/api/tags");
   $("#tagList").innerHTML = tags.map(t => `<option value="${esc(t.tag)}">${esc(t.tag)} (${t.count})</option>`).join("");
@@ -862,12 +939,12 @@ function toggleSel(id, on) { on ? SEL.add(id) : SEL.delete(id); updateSelBar(); 
 function selectShown() { document.querySelectorAll(".qsel").forEach(c => { c.checked = true; SEL.add(+c.value); }); updateSelBar(); }
 function clearSel() { SEL.clear(); document.querySelectorAll(".qsel").forEach(c => c.checked = false); updateSelBar(); }
 async function bulkApply() {
-  const chap = $("#bulkChap").value, bloom = $("#bulkBloom").value;
+  const chap = $("#bulkChap").value, bloom = $("#bulkBloom").value, task = $("#bulkTask").value;
   if (!SEL.size) return;
-  if (!chap && !bloom) { toast("Chọn chương hoặc mức Bloom cần đổi.", true); return; }
+  if (!chap && !bloom && !task) { toast("Chọn chương, mức Bloom hoặc dạng bài cần đổi.", true); return; }
   if (!confirm(`Đổi ${SEL.size} câu đã chọn?`)) return;
   try {
-    const r = await postJson("/api/questions/bulk", { ids: [...SEL], chapter_id: chap || null, bloom: bloom || null });
+    const r = await postJson("/api/questions/bulk", { ids: [...SEL], chapter_id: chap || null, bloom: bloom || null, task: task || null });
     toast(`Đã cập nhật ${r.updated} câu.`);
     clearSel();
     loadQuestions();
@@ -896,7 +973,7 @@ async function loadQuestions(page = 0) {
   await loadTree();
   QPAGE = Math.max(0, page);
   const p = new URLSearchParams();
-  const pairs = {course_id:"#fCourse", textbook_id:"#fTextbook", chapter_id:"#fChapter", bloom:"#fBloom", qtype:"#fType", tag:"#fTag", status:"#fStatus"};
+  const pairs = {course_id:"#fCourse", textbook_id:"#fTextbook", chapter_id:"#fChapter", bloom:"#fBloom", qtype:"#fType", task:"#fTask", tag:"#fTag", status:"#fStatus"};
   for (const [k, sel] of Object.entries(pairs)) if ($(sel).value) p.set(k, $(sel).value);
   if ($("#fSearch").value.trim()) p.set("q", $("#fSearch").value.trim());
   p.set("page", QPAGE); p.set("per", QPER);
@@ -908,6 +985,7 @@ async function loadQuestions(page = 0) {
   QMAP = Object.fromEntries(list.map(x => [x.id, x]));
   renderBankTree();
   loadTagList();
+  await loadTasks();  // tên dạng bài cho cột Loại
   if (TRASH_OPEN) loadTrash();  // thùng rác đang mở: làm mới sau mỗi thay đổi
   $("#qBody").innerHTML = list.map(qRowHtml).join("") || `<tr><td colspan="9" class="msg" style="padding:24px;text-align:center">Chưa có câu hỏi nào. Nhấn “Câu mới” hoặc nhập từ .docx ở ribbon, nhóm “Nhập / Xuất”.</td></tr>`;
 }
@@ -931,7 +1009,7 @@ function qRowHtml(q) {
     <td><div style="font-weight:600">${esc(q.courses_all || q.course)}</div><div class="sub">${esc(q.textbook)}</div><div class="sub">${chap}</div>${tags}</td>
     <td><span class="badge ${BLOOM_CLS[q.bloom]}">${q.bloom}. ${BLOOM[q.bloom]}</span></td>
     <td>${q.clo ? `<span class="badge clo">${esc(q.clo)}</span>` : `<span class="sub">—</span>`}</td>
-    <td><span class="qt">${q.qtype}</span></td>
+    <td><span class="qt">${q.qtype}</span>${q.task ? `<div class="sub" style="margin-top:4px">${esc(taskShort(q.task))}</div>` : `<div class="sub warn" style="margin-top:4px">Chưa phân loại</div>`}</td>
     <td><div class="stem">${esc(q.content)}</div>${mediaHtml(q.media)}${opts}${ans}</td>
     <td>${statusBadge(q.status)}<div class="sub" style="margin-top:4px">${q.points != null ? q.points + " điểm · " : ""}${used}</div></td>
     <td class="acts"><button class="ib" title="Sửa" onclick="editQ(${q.id})"><i class="fa-solid fa-pen-to-square"></i></button><button class="ib del" title="Xóa" onclick="delQ(${q.id})"><i class="fa-solid fa-trash-can"></i></button></td>
@@ -1051,6 +1129,7 @@ async function editQ(id) {
   await loadTree();
   let q = { chapter_id: $("#fChapter").value || "", bloom: 1, qtype: "TN", content: "", options: ["", "", "", ""], answer: "A", solution: "" };
   if (id) q = await api(`/api/questions/${id}`);
+  if (!TASKS.tasks.length) await loadTasks();
   if (!TREE.chapters.length) { alert("Hãy tạo học phần, giáo trình, chương trong tab Cấu trúc trước."); return; }
   await loadPassages();
   $("#editor").style.display = "block";
@@ -1063,6 +1142,7 @@ async function editQ(id) {
       <label>Trạng thái</label><select id="eStatus">${Object.entries(STATUS_LABEL).map(([k, v]) => `<option value="${k}" ${k === (q.status || "nhap") ? "selected" : ""}>${v}</option>`).join("")}</select>
       <label>CLO</label><input id="eClo" style="width:90px" placeholder="CLO1" value="${esc(q.clo || "")}">
       <label>Điểm</label><input id="ePoints" class="n" style="width:70px" placeholder="—" value="${q.points ?? ""}">
+      <label>Dạng bài</label><select id="eTask" style="max-width:260px" onchange="taskPicked(this)">${taskOptions(q.task || "", "Tự nhận dạng khi lưu", true)}</select>
       <label>Loại</label><select id="eType" onchange="renderRubricEditor()">${["TN","DS","DT","TL"].map(t=>`<option value="${t}" ${q.qtype==t?"selected":""}>${t==="TN"?"Trắc nghiệm":t==="DS"?"Đúng/sai":t==="DT"?"Điền từ":"Tự luận"}</option>`).join("")}</select> <label title="Chỉ áp dụng cho Điền từ: học viên được viết tối đa bấy nhiêu từ (0 = không giới hạn)">Số từ tối đa <input id="eLimit" class="n" style="width:60px" value="${q.word_limit || 0}"></label>
     </div>
     <div class="row"><label>Đoạn văn (tùy chọn). Chọn đoạn có sẵn trong chương, hoặc nhập đoạn mới; đoạn giống hệt trong chương sẽ được dùng chung.</label></div>
@@ -1318,7 +1398,7 @@ async function saveQ(confirmPassage = false) {
   const body = {
     chapter_id: $("#eChap").value, bloom: $("#eBloom").value, qtype: $("#eType").value,
     content: $("#eContent").value, answer: $("#eAns").value, solution: $("#eSol").value, transcript: $("#eTrans").value, translation: $("#eTransVi").value, points: $("#ePoints").value,
-    clo: $("#eClo").value, tags: $("#eTags").value, media: EDIT_MEDIA, status: $("#eStatus").value,
+    clo: $("#eClo").value, tags: $("#eTags").value, media: EDIT_MEDIA, status: $("#eStatus").value, task: $("#eTask").value,
     word_limit: $("#eLimit") ? $("#eLimit").value : 0,
     passage: $("#ePassage").value,
     ...($("#ePassage").value.trim() ? { passage_media: EDIT_PMEDIA } : {}),
@@ -1903,6 +1983,7 @@ function readSections() {
   return [...document.querySelectorAll(".sec")].map(card => ({
     title: card.querySelector(".st").value,
     qtype: card.querySelector(".sq").value,
+    tasks: [...(card._tasks || [])],
     shuffle: card.querySelector(".ss").checked,
     listening: card.querySelector(".sl").checked,
     matrix: matrixOf(card),
@@ -1943,12 +2024,12 @@ function loadConfig() {
 function applyCfg(cfg) {
   $("#sections").innerHTML = "";
   for (const s of cfg.sections || []) {
-    addSection(s.title || "", s.qtype || "");
+    addSection(s.title || "", s.qtype || "", s.tasks || []);
     const card = $("#sections").lastElementChild;
     card.querySelector(".ss").checked = s.shuffle !== false;
     card.querySelector(".sl").checked = !!s.listening;
     for (const m of s.matrix || []) {
-      if (m.n > 0 && haveFor(m.chapter_id, m.bloom, s.qtype || "") > 0) card._vals.set(valKey(m.chapter_id, m.bloom), m.n);
+      if (m.n > 0 && haveFor(m.chapter_id, m.bloom, { qtype: s.qtype || "", tasks: s.tasks || [] }) > 0) card._vals.set(valKey(m.chapter_id, m.bloom), m.n);
     }
     for (const ps of s.passages || []) addPassRow(card, ps.chapter_id, ps.n);
     // cấu trúc cũ "nhập tay" không có tổng/tỷ lệ thật: giữ mặc định; cấu trúc cũ "theo tỷ lệ" và cấu trúc mới thì nạp lại
@@ -2030,9 +2111,10 @@ function clearCourses() {
   filterExportRows();
 }
 
-function addSection(title = "", qtype = "") {
+function addSection(title = "", qtype = "", tasks = []) {
   const div = document.createElement("div");
   div.className = "card sec";
+  div._tasks = [...tasks];  // dạng bài của phần ([] = mọi dạng bài; "" = câu chưa phân loại)
   div._vals = new Map();  // số câu đã nhập
   div._items = [];        // các mục đang hiển thị (đầu học phần hoặc dòng chương)
   div._sums = {};         // tổng câu theo học phần
@@ -2041,7 +2123,9 @@ function addSection(title = "", qtype = "") {
   div.innerHTML = `
     <div class="row sh">
       <input class="st" style="width:260px" placeholder="Tiêu đề phần" value="${esc(title)}" oninput="this.closest('.sec').querySelector('.sec-title').textContent=this.value">
-      <select class="sq" onchange="refreshSection(this.closest('.sec'))">${Object.entries(QT).map(([k, v]) => `<option value="${k}" ${k === qtype ? "selected" : ""}>${v}</option>`).join("")}</select>
+      <select class="sq" title="Hình thức câu: quyết định cách in và chấm" onchange="refreshSection(this.closest('.sec'))">${Object.entries(QT).map(([k, v]) => `<option value="${k}" ${k === qtype ? "selected" : ""}>${v}</option>`).join("")}</select>
+      <span class="tkwrap"><button type="button" class="g tk-btn" title="Chỉ lấy câu thuộc các dạng bài đã chọn" onclick="toggleTaskPop(this.closest('.sec'))">Dạng bài: mọi dạng ▾</button>
+        <div class="tk-pop" style="display:none"></div></span>
       <label><input type="checkbox" class="ss" checked> Xáo câu & phương án</label>
       <label title="Chỉ các câu của phần này được ghép vào file đề nghe (De_xxx_nghe.mp3)"><input type="checkbox" class="sl"> Phần nghe</label>
       <span style="flex:1"></span>
@@ -2079,17 +2163,82 @@ function addSection(title = "", qtype = "") {
   div.querySelector(".tblwrap").addEventListener("scroll", () => scheduleWindow(div), { passive: true });
   renderCard(div);
   pctInput(div.querySelector(".pc-total"));
+  taskBtnLabel(div);
 }
 
-// số câu sẵn có của một ô: chỉ đếm đúng dạng câu của phần ("" = mọi dạng)
-function haveOf(c, bloom, qtype) {
-  return qtype ? ((c.counts_by_qtype || {})[qtype] || {})[bloom] || 0 : (c.counts[bloom] || 0);
+// ---------- dạng bài của một phần: hộp chọn nhiều dạng, nhóm theo kỹ năng; chỉ hiện dạng có câu đã duyệt
+const secFilter = card => ({ qtype: card.querySelector(".sq").value, tasks: card._tasks || [] });
+const taskListLabel = tasks => !tasks || !tasks.length ? "mọi dạng bài"
+  : tasks.length <= 2 ? tasks.map(t => t ? taskShort(t) : "Chưa phân loại").join("; ") : `${tasks.length} dạng bài`;
+function taskBtnLabel(card) {
+  const b = card.querySelector(".tk-btn");
+  b.textContent = "Dạng bài: " + taskListLabel(card._tasks) + " ▾";
+  b.classList.toggle("p", !!card._tasks.length);
+  b.classList.toggle("g", !card._tasks.length);
 }
+async function toggleTaskPop(card) {
+  const pop = card.querySelector(".tk-pop");
+  if (pop.style.display !== "none") { pop.style.display = "none"; return; }
+  document.querySelectorAll(".tk-pop").forEach(p => p.style.display = "none");
+  if (!TASKS.tasks.length) await loadTasks();
+  const qtype = card.querySelector(".sq").value, sel = new Set(card._tasks);
+  const avail = t => t.approved > 0 && (!qtype || t.qtype === qtype);
+  const groups = Object.entries(TASKS.skills).map(([sk, name]) => {
+    const list = TASKS.tasks.filter(t => t.skill === sk && (avail(t) || sel.has(t.code)));
+    if (!list.length) return "";
+    return `<div class="tk-g"><label class="tk-h"><input type="checkbox" ${list.every(t => sel.has(t.code)) ? "checked" : ""} onchange="taskSkillToggle(this)"> <b>${esc(name)}</b></label>`
+      + list.map(t => `<label><input type="checkbox" class="tk-c" value="${t.code}" ${sel.has(t.code) ? "checked" : ""} onchange="taskPopChanged(this)"> ${esc(t.name)} <span class="sub">(${t.approved})</span></label>`).join("") + `</div>`;
+  }).join("");
+  pop.innerHTML = `<div class="row" style="justify-content:space-between"><b>Chỉ lấy câu thuộc dạng bài:</b>
+      <span><button type="button" class="g" onclick="taskPopClear(this)">Mọi dạng bài</button> <button type="button" class="p" onclick="this.closest('.tk-pop').style.display='none'">Xong</button></span></div>
+    <div class="sub" style="margin-bottom:6px">Không tick dạng nào = lấy mọi dạng bài. Số trong ngoặc là câu đã duyệt.${qtype ? " Chỉ hiện dạng bài có hình thức " + QT[qtype] + "." : ""}</div>`
+    + (groups || `<div class="sub">Chưa có câu đã duyệt nào${qtype ? " hình thức " + QT[qtype] : ""}.</div>`)
+    + (TASKS.unclassified ? `<div class="tk-g"><label><input type="checkbox" class="tk-c" value="" ${sel.has("") ? "checked" : ""} onchange="taskPopChanged(this)"> Câu chưa phân loại</label></div>` : "");
+  pop.style.display = "block";
+}
+function taskSkillToggle(box) {
+  box.closest(".tk-g").querySelectorAll(".tk-c").forEach(c => c.checked = box.checked);
+  taskPopChanged(box);
+}
+function taskPopClear(btn) {
+  btn.closest(".tk-pop").querySelectorAll("input[type=checkbox]").forEach(c => c.checked = false);
+  taskPopChanged(btn);
+}
+function taskPopChanged(el) {
+  const card = el.closest(".sec");
+  card._tasks = [...card.querySelectorAll(".tk-pop .tk-c:checked")].map(c => c.value);
+  card.querySelectorAll(".tk-g").forEach(g => {
+    const h = g.querySelector(".tk-h input");
+    if (h) h.checked = [...g.querySelectorAll(".tk-c")].every(c => c.checked);
+  });
+  taskBtnLabel(card);
+  refreshSection(card);
+  card.querySelectorAll(".prow").forEach(fillPassSelect);
+  saveWizard();
+}
+document.addEventListener("click", e => {  // bấm ra ngoài thì đóng hộp chọn dạng bài
+  if (!e.target.closest(".tkwrap")) document.querySelectorAll(".tk-pop").forEach(p => p.style.display = "none");
+});
+
+// số câu sẵn có của một ô: chỉ đếm đúng dạng câu của phần ("" = mọi dạng)
+// f: hình thức (chuỗi) hoặc bộ lọc {qtype, tasks} của phần
+function haveOf(c, bloom, f) {
+  if (typeof f !== "object" || !f) f = { qtype: f || "", tasks: [] };
+  if (!f.tasks || !f.tasks.length) return f.qtype ? ((c.counts_by_qtype || {})[f.qtype] || {})[bloom] || 0 : (c.counts[bloom] || 0);
+  let n = 0;
+  for (const [key, m] of Object.entries(c.counts_by_qt_task || {})) {
+    const i = key.indexOf("|"), qt = key.slice(0, i), task = key.slice(i + 1);
+    if ((!f.qtype || qt === f.qtype) && f.tasks.includes(task)) n += m[bloom] || 0;
+  }
+  return n;
+}
+const filterLabel = f => [f.qtype ? QT[f.qtype] : "", f.tasks && f.tasks.length ? taskListLabel(f.tasks) : ""].filter(Boolean).join(", ");
 
 // ô nhập số câu; ô không có câu nào (theo dạng của phần) bị khóa và làm mờ
 function cellHtml(c, k, qtype, val = 0, ro = false) {
   const have = haveOf(c, k, qtype);
-  const tip = have > 0 ? `Có ${have} câu` : `Chưa có câu mức ${BLOOM[k]}${qtype ? " dạng " + QT[qtype] : ""}`;
+  const lab = filterLabel(typeof qtype === "object" && qtype ? qtype : { qtype, tasks: [] });
+  const tip = have > 0 ? `Có ${have} câu` : `Chưa có câu mức ${BLOOM[k]}${lab ? " (" + lab + ")" : ""}`;
   return `<td class="num"><input class="n cell" data-ch="${c.id}" data-b="${k}" data-have="${have}" value="${have > 0 ? val : 0}"`
     + (have > 0 && !ro ? ` oninput="cellInput(this)"` : "") + (ro || have === 0 ? " disabled" : "")
     + (have === 0 ? ` style="opacity:.35"` : "") + ` title="${tip}"></td>`;
@@ -2098,7 +2247,7 @@ function cellHtml(c, k, qtype, val = 0, ro = false) {
 // các mục hiển thị của một phần: theo dạng, học phần, tìm kiếm, "chỉ dòng đã nhập", thu gọn
 // forPick: lấy mọi chương khớp học phần + tìm kiếm (bỏ qua thu gọn và "chỉ dòng đã nhập") để tick/tự phân bổ
 function buildItems(card, forPick = false) {
-  const qtype = card.querySelector(".sq").value;
+  const qtype = secFilter(card);
   const sel = selectedCourses();
   const q = fold($("#xSearch").value.trim());
   const onlyFilled = !forPick && $("#xOnlyFilled").checked;
@@ -2156,7 +2305,7 @@ function renderAll() { document.querySelectorAll(".sec").forEach(renderCard); }
 function renderWindow(card) {
   const wrap = card.querySelector(".tblwrap");
   const tb = card.querySelector(".cbody");
-  const qtype = card.querySelector(".sq").value;
+  const qtype = secFilter(card);
   const items = card._items, colspan = BLOOMS.length + 2;
   if (!items.length) {
     tb.innerHTML = `<tr><td class="msg" colspan="${colspan}">Không có chương nào khớp bộ lọc.</td></tr>`;
@@ -2208,7 +2357,7 @@ function updateTotals(card) {
 function shortCount() {
   let bad = 0;
   document.querySelectorAll(".sec").forEach(card => {
-    const qtype = card.querySelector(".sq").value;
+    const qtype = secFilter(card);
     for (const [k, n] of card._vals) {
       const [ch, b] = k.split(":");
       if (n > haveFor(ch, b, qtype)) bad++;
@@ -2241,7 +2390,7 @@ function paintCell(i) {
 
 // số câu của phần theo ma trận (thứ tự chương rồi mức Bloom)
 function matrixOf(card) {
-  const qtype = card.querySelector(".sq").value;
+  const qtype = secFilter(card);
   return [...card._vals].map(([k, n]) => {
     const [ch, b] = k.split(":").map(Number);
     return { chapter_id: ch, bloom: b, n, ord: (CHMAP.get(ch) || {})._ord || 0 };
@@ -2252,7 +2401,7 @@ function matrixOf(card) {
 
 // đổi dạng câu của phần: bỏ số đã nhập ở các ô không còn câu dạng này, rồi vẽ lại
 function refreshSection(card) {
-  const qtype = card.querySelector(".sq").value;
+  const qtype = secFilter(card);
   for (const k of [...card._vals.keys()]) {
     const [ch, b] = k.split(":");
     if (!haveFor(ch, b, qtype)) card._vals.delete(k);
@@ -2308,7 +2457,7 @@ function spreadEven(caps, R, shift) {
 }
 
 function allocPercent(card) {
-  const qtype = card.querySelector(".sq").value;
+  const qtype = secFilter(card);
   const N = Math.max(0, Math.floor(+card.querySelector(".pc-total").value || 0));
   const pct = {};
   card.querySelectorAll(".pc-p").forEach(sel => { pct[sel.dataset.b] = +sel.value; });
@@ -2358,7 +2507,7 @@ function autoAlloc(card) {
 function fillVisible(card) {
   const b = card.querySelector(".fb-b").value;
   const n = Math.max(0, parseInt(card.querySelector(".fb-n").value, 10) || 0);
-  const qtype = card.querySelector(".sq").value;
+  const qtype = secFilter(card);
   let capped = 0;
   for (const it of card._items) {
     if (it.head) continue;
@@ -2397,7 +2546,17 @@ function fillPassSelect(row) {
   const pch = row.querySelector(".pch");
   const cur = pch.value || row.dataset.cur || "";
   const cnt = {};
-  PASSAGES.forEach(p => cnt[p.chapter_id] = (cnt[p.chapter_id] || 0) + 1);
+  const card = row.closest(".sec"), f = card ? secFilter(card) : { qtype: "", tasks: [] };
+  if (f.qtype || f.tasks.length) {  // phần có lọc hình thức/dạng bài: chỉ đếm đoạn có câu đã duyệt phù hợp
+    for (const c of CHMAP.values()) {
+      let n = 0;
+      for (const [key, v] of Object.entries(c.passages_by_qt_task || {})) {
+        const i = key.indexOf("|"), qt = key.slice(0, i), task = key.slice(i + 1);
+        if ((!f.qtype || qt === f.qtype) && (!f.tasks.length || f.tasks.includes(task))) n += v;
+      }
+      if (n) cnt[c.id] = n;
+    }
+  } else PASSAGES.forEach(p => cnt[p.chapter_id] = (cnt[p.chapter_id] || 0) + 1);
   const list = TREE.chapters.filter(c => cnt[c.id]).map(c => {
     const tb = TREE.textbooks.find(t => t.id == c.textbook_id);
     const cid = tb ? tb.course_id : 0;
@@ -2464,7 +2623,7 @@ function renderPreview() {
   const body = sections.map((s, si) => {
     const items = PREVIEW.sections[si].items;
     if (!items.length) return "";
-    return `<div class="card"><b>${esc(s.title || "Phần " + (si + 1))}</b> <span class="sub">${QT[s.qtype] || ""}</span>` +
+    return `<div class="card"><b>${esc(s.title || "Phần " + (si + 1))}</b> <span class="sub">${esc(filterLabel(s))}</span>` +
       items.map((it, ii) => { n++; return `
         <div class="row" style="align-items:flex-start;border-bottom:1px solid var(--line);padding-bottom:6px">
           <div style="width:32px">${n}.</div>
@@ -2482,7 +2641,7 @@ async function swapItem(si, ii) {
   const cur = PREVIEW.sections[si].items[ii];
   const exclude = PREVIEW.sections.flatMap(s => s.items.map(i => i.id));
   try {
-    const rep = await postJson("/api/exam/swap", { chapter_id: cur.chapter_id, bloom: cur.bloom, qtype: cur.qtype,
+    const rep = await postJson("/api/exam/swap", { chapter_id: cur.chapter_id, bloom: cur.bloom, qtype: cur.qtype, task: cur.task ?? null,
                                                   passage: cur.passage, exclude });
     PREVIEW.sections[si].items[ii] = rep;
     renderPreview();
@@ -2567,7 +2726,7 @@ function buildSummary() {
   const withPassages = sections.some(s => s.passages.length);
   const count = sections.reduce((a, s) => a + s.matrix.reduce((b, c) => b + c.n, 0), 0);
   const rows = sections.filter(s => s.matrix.length || s.passages.length).map((s, i) => `
-    <tr><td>${esc(s.title || "Phần " + (i + 1))}</td><td>${QT[s.qtype] || "Mọi dạng"}</td>
+    <tr><td>${esc(s.title || "Phần " + (i + 1))}</td><td>${esc(filterLabel(s) || "Mọi dạng")}</td>
       <td class="num">${s.matrix.reduce((b, c) => b + c.n, 0)}</td>
       <td class="num">${s.passages.reduce((b, p) => b + p.n, 0) || "—"}</td>
       <td>${s.shuffle ? "Có" : "Không"}</td></tr>`).join("");

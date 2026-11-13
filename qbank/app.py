@@ -39,6 +39,7 @@ from xml.sax.saxutils import escape
 from docx.shared import Pt, Cm
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
+import omr
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 if getattr(sys, "frozen", False):  # chạy từ file đóng gói PyInstaller
@@ -82,6 +83,221 @@ LABEL_HINT = "Nhìn hình và ghi tên đúng cho vị trí được đánh số
 
 def is_label(it):
     return it.get("qtype") == "DT" and has_tag(it, LABEL_TAG)
+
+
+# ---------------------------------------------------------------- dạng bài
+# Hình thức (qtype: TN/DS/DT/TL) chỉ quyết định cách in và chấm; dạng bài cho biết câu kiểm tra kỹ năng gì.
+# Danh mục dựng sẵn theo cấu trúc đề JLPT (問題の構成) và các dạng đọc kiểu IELTS mà app hỗ trợ.
+# Giáo viên thêm được dạng riêng (bảng task_types). Mã dạng bài không đổi sau khi tạo.
+SKILLS = {"kanji": "Chữ Hán", "tuvung": "Từ vựng", "nguphap": "Ngữ pháp", "hoithoai": "Hội thoại",
+          "doc": "Đọc hiểu", "nghe": "Nghe hiểu", "viet": "Viết", "chuyennganh": "Chuyên ngành", "khac": "Khác"}
+# (mã, kỹ năng, tên, hình thức mặc định, thẻ đi kèm)
+BUILTIN_TASKS = [
+    ("kanji-doc", "kanji", "漢字読み – Chọn cách đọc chữ Hán", "TN", ""),
+    ("kanji-viet", "kanji", "表記 – Chọn cách viết chữ Hán", "TN", ""),
+    ("tv-ngucanh", "tuvung", "文脈規定 – Chọn từ hợp ngữ cảnh", "TN", ""),
+    ("tv-dongnghia", "tuvung", "言い換え類義 – Chọn từ/câu đồng nghĩa", "TN", ""),
+    ("tv-cachdung", "tuvung", "用法 – Chọn câu dùng từ đúng", "TN", ""),
+    ("tv-taotu", "tuvung", "語形成 – Tạo từ (tiền tố, hậu tố)", "TN", ""),
+    ("np-chon", "nguphap", "文法形式の判断 – Chọn mẫu ngữ pháp điền chỗ trống", "TN", ""),
+    ("np-trotu", "nguphap", "Chọn trợ từ", "TN", ""),
+    ("np-ynghia", "nguphap", "Ý nghĩa / cách dùng mẫu câu", "TN", ""),
+    ("np-sapxep", "nguphap", "文の組み立て – Sắp xếp câu (★)", "TN", ""),
+    ("np-doanvan", "nguphap", "文章の文法 – Ngữ pháp trong đoạn văn", "TN", ""),
+    ("np-timloi", "nguphap", "Tìm lỗi sai", "TN", ""),
+    ("np-dien", "nguphap", "Điền ngữ pháp / trợ từ", "DT", ""),
+    ("np-dungsai", "nguphap", "Phán đoán câu đúng / sai", "DS", ""),
+    ("ht-dap", "hoithoai", "Chọn câu đáp phù hợp", "TN", ""),
+    ("doc-noidung", "doc", "内容理解 – Hiểu nội dung", "TN", ""),
+    ("doc-thongtin", "doc", "情報検索 – Tìm thông tin (thông báo, bảng biểu)", "TN", ""),
+    ("doc-tieude", "doc", "Chọn tiêu đề cho đoạn", "TN", MATCH_TAG),
+    ("doc-tfng", "doc", "Đúng / Sai / Không có thông tin", "TN", "TFNG"),
+    ("doc-tonghop", "doc", "統合理解 – So sánh hai bài", "TN", ""),
+    ("doc-chutruong", "doc", "主張理解 – Luận điểm tác giả", "TN", ""),
+    ("doc-dungsai", "doc", "Đúng / sai theo bài đọc", "DS", ""),
+    ("doc-dien", "doc", "Điền tóm tắt / bảng theo bài", "DT", ""),
+    ("doc-ghinhan", "doc", "Ghi nhãn sơ đồ", "DT", LABEL_TAG),
+    ("nghe-kadai", "nghe", "課題理解 – Hiểu nhiệm vụ", "TN", ""),
+    ("nghe-point", "nghe", "ポイント理解 – Nắm ý chính", "TN", ""),
+    ("nghe-gaiyo", "nghe", "概要理解 – Hiểu khái quát", "TN", ""),
+    ("nghe-hatsuwa", "nghe", "発話表現 – Chọn cách nói", "TN", ""),
+    ("nghe-sokuji", "nghe", "即時応答 – Đáp lời ngay", "TN", ""),
+    ("nghe-tonghop", "nghe", "統合理解 – Nghe tổng hợp", "TN", ""),
+    ("viet-sakubun", "viet", "作文 – Viết đoạn văn", "TL", ""),
+    ("viet-traloi", "viet", "Trả lời câu hỏi", "TL", ""),
+    ("viet-vietlai", "viet", "Viết lại câu (kính ngữ, sửa lỗi)", "TL", ""),
+    ("cn-kienthuc", "chuyennganh", "Kiến thức chuyên ngành", "TN", ""),
+]
+TASK_TAGS = {c: (t, tag) for c, _, _, t, tag in BUILTIN_TASKS if tag}  # dạng bài -> (hình thức, thẻ quy định cách in/chấm)
+TASK_CODE = re.compile(r"[a-z0-9][a-z0-9-]{1,29}")
+
+
+def task_catalog():
+    """Danh mục dạng bài: dựng sẵn + do giáo viên thêm. [{code, skill, skill_name, name, qtype, tag, builtin}]"""
+    out = [{"code": c, "skill": s, "skill_name": SKILLS[s], "name": n, "qtype": t, "tag": tag, "builtin": True}
+           for c, s, n, t, tag in BUILTIN_TASKS]
+    for r in q("SELECT code, skill, name, qtype FROM task_types ORDER BY id", fetch=True):
+        out.append({"code": r["code"], "skill": r["skill"], "skill_name": SKILLS.get(r["skill"], r["skill"]),
+                    "name": r["name"], "qtype": r["qtype"], "tag": "", "builtin": False})
+    return out
+
+
+def task_map():
+    return {t["code"]: t for t in task_catalog()}
+
+
+def add_task_type(body):
+    """Thêm dạng bài riêng. Mã tự sinh từ kỹ năng nếu không nhập."""
+    name = re.sub(r"\s+", " ", str(body.get("name", ""))).strip()[:80]
+    skill = str(body.get("skill", "khac"))
+    qtype = str(body.get("qtype", "TN")).upper()
+    if not name:
+        raise ValueError("Thiếu tên dạng bài")
+    if skill not in SKILLS:
+        raise ValueError("Kỹ năng không hợp lệ")
+    if qtype not in QTYPES:
+        raise ValueError("Hình thức phải là TN, DS, DT hoặc TL")
+    tasks = task_map()
+    if any(t["name"].lower() == name.lower() for t in tasks.values()):
+        raise ValueError("Đã có dạng bài cùng tên")
+    code = str(body.get("code", "")).strip().lower()
+    if code:
+        if not TASK_CODE.fullmatch(code):
+            raise ValueError("Mã dạng bài chỉ gồm chữ thường không dấu, số và gạch nối (2–30 ký tự)")
+        if code in tasks:
+            raise ValueError("Mã dạng bài đã có")
+    else:
+        n = 1
+        while f"{skill}-rieng{n}" in tasks:
+            n += 1
+        code = f"{skill}-rieng{n}"
+    q("INSERT INTO task_types(code, skill, name, qtype) VALUES(?,?,?,?)", (code, skill, name, qtype))
+    return code
+
+
+def delete_task_type(code):
+    if code in {t[0] for t in BUILTIN_TASKS}:
+        raise ValueError("Dạng bài dựng sẵn không xóa được")
+    n = q("SELECT COUNT(*) AS n FROM questions WHERE task=?", (code,), True)[0]["n"]
+    if n:
+        raise ValueError(f"Còn {n} câu thuộc dạng bài này; đổi dạng bài của các câu đó trước")
+    q("DELETE FROM task_types WHERE code=?", (code,))
+
+
+def resolve_task(value):
+    """Mã hoặc tên dạng bài (không phân biệt hoa thường) -> mã; '' nếu để trống."""
+    v = re.sub(r"\s+", " ", str(value or "")).strip()
+    if not v:
+        return ""
+    tasks = task_map()
+    if v.lower() in tasks:
+        return v.lower()
+    for t in tasks.values():
+        if t["name"].lower() == v.lower() or t["name"].split(" – ")[0].lower() == v.lower():
+            return t["code"]
+    raise ValueError(f"Dạng bài '{v}' không có trong danh mục")
+
+
+_RUBY = re.compile(r"\{([^|{}]*)\|[^{}]*\}")
+_KANA_ONLY = re.compile(r"^[぀-ヿ\s・ー〜～（）()]+$")
+_BLANK = re.compile(r"（\s*）|\(\s*\)|＿|_{2,}|★")
+
+
+def guess_task(qtype, content, options, tags="", passage="", textbook="", has_audio=False):
+    """Đoán dạng bài từ câu lệnh, phương án, đoạn văn, thẻ và giáo trình. '' = không đoán được.
+    Dùng khi nâng cấp CSDL và khi lưu câu chưa chọn dạng bài; giáo viên sửa lại được."""
+    text = _RUBY.sub(r"\1", content or "")
+    opts = [_RUBY.sub(r"\1", str(o)) for o in options or []]
+    p = _RUBY.sub(r"\1", passage or "")
+    t = (tags or "").lower()
+    if qtype == "TN" and ",tfng," in t:
+        return "doc-tfng"
+    if qtype == "TN" and f",{MATCH_TAG}," in t:
+        return "doc-tieude"
+    if qtype == "DT" and f",{LABEL_TAG}," in t:
+        return "doc-ghinhan"
+    listening = has_audio or "nghe" in (textbook or "").lower() or "ra-de-nghe" in t or "聴解" in p
+    if listening and qtype == "TN":
+        if "へんじ" in text or "返事" in text:
+            return "nghe-sokuji"
+        if "なんと" in text and "いいますか" in text.replace("言", "い"):
+            return "nghe-hatsuwa"
+        if "まず" in text or "このあと" in text or "この後" in text:
+            return "nghe-kadai"
+        return "nghe-point"
+    if qtype == "TL":
+        if re.search(r"\d+\s*[〜~～-]?\s*\d*\s*字", text):
+            return "viet-sakubun"
+        if re.search(r"書き換え|書きかえ|直し|言い換え", text):
+            return "viet-vietlai"
+        return "viet-traloi"
+    if qtype == "DT":
+        return "doc-dien" if passage else "np-dien"
+    if qtype == "DS":
+        return "doc-dungsai" if passage else "np-dungsai"
+    # TN
+    if passage:
+        if re.search(r"[（(]\s*\d+\s*[）)]\s*に入る", text):
+            return "np-doanvan"
+        if p.lstrip("「『 ").startswith("■") or (re.search(r"料金|いくら", text) and re.search(r"料金|円", p)):
+            return "doc-thongtin"
+        return "doc-noidung"
+    filled = [o for o in opts if o.strip()]
+    if re.search(r"読み方|読みを|訓読み|音読み", text) or \
+            ("<u>" in text and filled and all(_KANA_ONLY.match(o) for o in filled)):
+        return "kanji-doc"
+    if "漢字で書" in text or ("<u>" in text and filled and not any(_KANA_ONLY.match(o) for o in filled)):
+        return "kanji-viet"
+    if re.search(r"じゅんばん|順番|ならべ|並べ|sắp xếp", text, re.I) or len(re.findall(r"\s/\s", text)) >= 2:
+        return "np-sapxep"
+    if re.search(r"間違|まちがい", text):
+        return "np-timloi"
+    if re.search(r"chọn cách (chào|nói|trả lời|đáp)", text, re.I):
+        return "ht-dap"
+    if re.search(r"意味|気持ち|どんな(時|とき|場合|場面)|言い換え|同じ", text) or \
+            re.search(r"câu nào|chọn câu|đúng ngữ pháp|diễn đạt|cùng nghĩa|nghĩa là", text, re.I):
+        return "np-ynghia"
+    if "chuyên ngành" in (textbook or "").lower() or "thương mại" in (textbook or "").lower():
+        return "cn-kienthuc"
+    if "kanji" in (textbook or "").lower() and _BLANK.search(text):
+        return "tv-ngucanh"
+    if _BLANK.search(text):
+        if filled and all(len(o.strip()) <= 2 for o in filled):
+            return "np-trotu"
+        return "np-chon"
+    if "どれ" in text:  # 「…」について正しいものはどれですか: hỏi về câu/mẫu câu
+        return "np-ynghia"
+    if re.search(r"(^|\n)\s*[AＡ]\s*[:：]", text) or re.search(r"(か|ですか|ますか)。?\s*$", text):
+        return "ht-dap"
+    return ""
+
+
+def classify_all(only_empty=True):
+    """Gán dạng bài cho câu chưa có (only_empty) hoặc mọi câu. Trả về số câu đã gán."""
+    rows = q("""SELECT qs.id, qs.qtype, qs.content, qs.options, qs.tags, qs.media, qs.task, t.name AS textbook,
+                COALESCE(p.content, qs.passage, '') AS ptext, COALESCE(p.media, '[]') AS pmedia
+                FROM questions qs JOIN chapters ch ON ch.id = qs.chapter_id JOIN textbooks t ON t.id = ch.textbook_id
+                LEFT JOIN passages p ON p.id = qs.passage_id""" + (" WHERE qs.task = ''" if only_empty else ""), fetch=True)
+    guessed = {}
+    for r in rows:
+        audio = any(m.get("kind") == "audio" for m in json.loads(r["media"] or "[]") + json.loads(r["pmedia"] or "[]"))
+        guessed[r["id"]] = guess_task(r["qtype"], r["content"], json.loads(r["options"] or "[]"), r["tags"], r["ptext"],
+                                      r["textbook"], audio)
+    # một đoạn văn là một dạng bài: đoạn thông báo/bảng biểu có câu tra thông tin thì mọi câu hỏi nội dung của đoạn cũng là tra thông tin
+    by_passage = {}
+    for r in q("SELECT id, passage_id, task FROM questions WHERE passage_id IS NOT NULL", fetch=True):
+        by_passage.setdefault(r["passage_id"], []).append((r["id"], guessed.get(r["id"], r["task"])))
+    for items in by_passage.values():
+        if any(t == "doc-thongtin" for _, t in items):
+            for qid, t in items:
+                if t == "doc-noidung" and qid in guessed:
+                    guessed[qid] = "doc-thongtin"
+    done = [(code, r["id"]) for r in rows for code in [guessed[r["id"]]] if code and code != r["task"]]
+    if done:
+        with closing(sqlite3.connect(DB_PATH)) as conn:
+            conn.executemany("UPDATE questions SET task=? WHERE id=?", done)
+            conn.commit()
+    return len(done)
 DEFAULT_COURSE = "Chưa phân loại"
 PORT = int(os.environ.get("QBANK_PORT", "8765"))
 TEXTTS_URL = os.environ.get("TEXTTS_API_URL", "http://127.0.0.1:8000").rstrip("/")  # API của textts (python server.py)
@@ -260,6 +476,14 @@ def init_storage():
     ensure_column("passages", "media", "TEXT NOT NULL DEFAULT '[]'")  # âm thanh/hình dùng chung cho mọi câu của đoạn
     # câu có sẵn từ trước được coi là đã duyệt, để đề đang dùng không bị thiếu câu
     ensure_column("questions", "status", "TEXT NOT NULL DEFAULT 'da_duyet'")
+    q("""CREATE TABLE IF NOT EXISTS task_types(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            code TEXT NOT NULL UNIQUE,
+            skill TEXT NOT NULL DEFAULT 'khac',
+            name TEXT NOT NULL,
+            qtype TEXT NOT NULL DEFAULT 'TN')""")
+    # dạng bài (mã trong danh mục, '' = chưa phân loại); lần đầu thêm cột thì tự đoán cho mọi câu đã có
+    new_task_col = ensure_column("questions", "task", "TEXT NOT NULL DEFAULT ''")
     q("""CREATE TABLE IF NOT EXISTS trash(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             deleted_at TEXT NOT NULL,
@@ -269,6 +493,8 @@ def init_storage():
     q("CREATE UNIQUE INDEX IF NOT EXISTS idx_questions_code ON questions(code)")
     for r in q("SELECT id FROM questions WHERE code IS NULL OR code=''", fetch=True):
         q("UPDATE questions SET code=? WHERE id=?", (make_code(r["id"]), r["id"]))
+    if new_task_col:
+        classify_all()
     # mẫu đi kèm bản đóng gói: chép vào thư mục dữ liệu nếu chưa có, để người dùng sửa được
     bundled = os.path.join(RES_DIR, "templates")
     if os.path.abspath(bundled) != os.path.abspath(TPL_DIR) and os.path.isdir(bundled):
@@ -279,6 +505,8 @@ def init_storage():
         make_sample_templates()
     if not os.path.exists(os.path.join(TPL_DIR, "de_thi_chuan.docx")):
         make_official_templates()
+    if not os.path.exists(os.path.join(TPL_DIR, MC_TEMPLATE)):
+        make_mc_template()
 
 
 # ---------------------------------------------------------------- textts (tạo file nghe)
@@ -493,6 +721,8 @@ def ensure_column(table, col, decl):
         if col not in cols:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {decl}")
             conn.commit()
+            return True
+    return False
 
 
 def migrate_if_needed():
@@ -748,6 +978,17 @@ def clean_question(data):
     if qtype not in QTYPES:
         raise ValueError("Loại câu phải là TN, DS, DT hoặc TL")
     tags_norm = norm_tags(data.get("tags", ""))
+    passage = str(data.get("passage", "")).strip()
+    media = norm_media(data.get("media") or [])
+    task = resolve_task(data.get("task"))
+    if not task:  # chưa chọn dạng bài: đoán từ câu lệnh, phương án, đoạn văn, giáo trình
+        tb = q("SELECT t.name FROM chapters ch JOIN textbooks t ON t.id = ch.textbook_id WHERE ch.id=?", (chapter_id,), True)
+        audio = any(m["kind"] == "audio" for m in media) or \
+            any(m.get("kind") == "audio" for m in (data.get("passage_media") or []) if isinstance(m, dict))
+        task = guess_task(qtype, content, options, tags_norm, passage, (tb[0].get("name") or "") if tb else "", audio)
+    t_qtype, t_tag = TASK_TAGS.get(task, ("", ""))
+    if t_tag and t_qtype == qtype and f",{t_tag.lower()}," not in tags_norm.lower():
+        tags_norm = norm_tags(tags_list(tags_norm) + [t_tag])  # dạng bài có thẻ đi kèm (TFNG, nối tiêu đề, ghi nhãn)
     try:
         word_limit = int(data.get("word_limit") or 0)
     except (TypeError, ValueError):
@@ -779,12 +1020,10 @@ def clean_question(data):
         options = []
     else:  # TL: giữ đáp án/gợi ý chấm nếu có
         options = []
-    passage = str(data.get("passage", "")).strip()
     clo = str(data.get("clo", "")).strip()[:20]
     if not clo and is_dialogue(content, passage):  # câu đối đáp mặc định là CLO3
         clo = "CLO3"
-    tags = norm_tags(data.get("tags", ""))
-    media = norm_media(data.get("media") or [])
+    tags = tags_norm
     status = str(data.get("status") or "nhap")
     if status not in STATUSES:
         raise ValueError("Trạng thái phải là Nháp, Đã duyệt hoặc Ngưng dùng")
@@ -816,11 +1055,11 @@ def clean_question(data):
     return dict(chapter_id=chapter_id, bloom=bloom, qtype=qtype, content=content,
                 options=json.dumps(options, ensure_ascii=False), answer=answer, solution=solution,
                 transcript=transcript, translation=translation, passage=passage, points=points, clo=clo, tags=tags, media=json.dumps(media, ensure_ascii=False),
-                status=status, rubric=json.dumps(rubric, ensure_ascii=False), word_limit=word_limit)
+                status=status, rubric=json.dumps(rubric, ensure_ascii=False), word_limit=word_limit, task=task)
 
 
-INSERT_Q = """INSERT INTO questions(code,chapter_id,bloom,qtype,content,options,answer,solution,transcript,translation,passage,passage_id,points,clo,tags,media,status,rubric,word_limit)
-              VALUES(:code,:chapter_id,:bloom,:qtype,:content,:options,:answer,:solution,:transcript,:translation,:passage,:passage_id,:points,:clo,:tags,:media,:status,:rubric,:word_limit)"""
+INSERT_Q = """INSERT INTO questions(code,chapter_id,bloom,qtype,content,options,answer,solution,transcript,translation,passage,passage_id,points,clo,tags,media,status,rubric,word_limit,task)
+              VALUES(:code,:chapter_id,:bloom,:qtype,:content,:options,:answer,:solution,:transcript,:translation,:passage,:passage_id,:points,:clo,:tags,:media,:status,:rubric,:word_limit,:task)"""
 
 
 def row_to_api(r):
@@ -1010,6 +1249,7 @@ IMPORT_COLUMNS = {
     "so_tu": ["số từ", "so tu", "số từ tối đa", "so tu toi da", "giới hạn từ", "gioi han tu"],
     "status": ["trạng thái", "trang thai", "status"],
     "ma_cau": ["mã câu", "ma cau"],
+    "dang_bai": ["dạng bài", "dang bai", "task"],
 }
 IMPORT_REQUIRED = ("ma", "noi_dung", "dap_an", "loai", "muc")
 
@@ -1211,6 +1451,7 @@ def parse_rows(tables, textbook_id, dry_run=False, docx=True):
                     "clo": get("clo"),
                     "tags": get("tags"),
                     "word_limit": get("so_tu"),  # điền từ: số từ tối đa, để trống = không giới hạn
+                    "task": get("dang_bai"),  # mã hoặc tên dạng bài; để trống = tự nhận dạng
                     "status": STATUS_IMPORT.get(get("status").strip().lower(), ""),
                 })
                 qcode = get("ma_cau")
@@ -1219,6 +1460,9 @@ def parse_rows(tables, textbook_id, dry_run=False, docx=True):
                 upd = hit[0] if hit else None
                 if upd and upd["textbook_id"] != textbook_id:
                     raise ValueError(f"câu {qcode} thuộc giáo trình khác, không cập nhật từ file này")
+                if upd and not get("dang_bai"):  # cột Dạng bài trống khi cập nhật: giữ dạng bài đang có
+                    old_task = q("SELECT task FROM questions WHERE id=?", (upd["id"],), True)[0]["task"]
+                    payload["task"] = old_task or payload["task"]
                 same, other, key = check_duplicate(index, payload)
                 if upd:  # câu đang sửa không tính là trùng với chính nó
                     same = [h for h in same if h[0] != upd["id"]]
@@ -1265,7 +1509,15 @@ def parse_rows(tables, textbook_id, dry_run=False, docx=True):
             "dry_run": dry_run, "rows": rows_out}
 
 
-def pick_base_exam(matrix, qtype=None, usage=None, taken=None, rng=None, counts=None):
+def task_sql(tasks, col="task"):
+    """Điều kiện lọc theo danh sách dạng bài của phần ('' trong danh sách = câu chưa phân loại). Rỗng = mọi dạng bài."""
+    tasks = [str(t) for t in (tasks or []) if t is not None]
+    if not tasks:
+        return "", []
+    return f" AND {col} IN ({','.join('?' * len(tasks))})", tasks
+
+
+def pick_base_exam(matrix, qtype=None, usage=None, taken=None, rng=None, counts=None, tasks=None):
     """matrix: [{chapter_id, bloom, n}] -> câu gốc của một phần.
     Ưu tiên câu ra đề ít lần nhất (chưa ra đề = 0), rồi câu có lần dùng gần nhất cũ hơn;
     các câu còn ngang nhau được chọn ngẫu nhiên theo rng (có seed thì tái tạo được).
@@ -1285,6 +1537,9 @@ def pick_base_exam(matrix, qtype=None, usage=None, taken=None, rng=None, counts=
         if qtype:
             sql += " AND qtype=?"
             args.append(qtype)
+        tsql, targs = task_sql(tasks)
+        sql += tsql
+        args += targs
         pool = [row_to_api(p) for p in q(sql, args, fetch=True) if p["id"] not in taken]
         if len(pool) < n:
             shortage.append(f"{chapter_label(cell['chapter_id'])} / Bloom {cell['bloom']}: cần {n}, có {len(pool)}")
@@ -1325,9 +1580,12 @@ def find_replacement(spec, exclude, usage):
         raise ValueError("Câu thuộc đoạn văn không đổi riêng lẻ; hãy chọn lại cả phần")
     sql = "SELECT * FROM questions WHERE chapter_id=? AND bloom=? AND qtype=? AND passage_id IS NULL AND status='da_duyet'"
     args = [int(spec["chapter_id"]), int(spec["bloom"]), str(spec["qtype"])]
+    if spec.get("task") is not None:  # cùng dạng bài với câu đang đổi
+        sql += " AND task=?"
+        args.append(str(spec["task"]))
     pool = [row_to_api(p) for p in q(sql, args, fetch=True) if p["id"] not in exclude]
     if not pool:
-        raise ValueError("Không còn câu thay thế cùng chương, mức Bloom và dạng")
+        raise ValueError("Không còn câu thay thế cùng chương, mức Bloom, hình thức và dạng bài")
     random.shuffle(pool)
     pool.sort(key=lambda it: usage.get(it["id"]) or "")
     it = pool[0]
@@ -1335,7 +1593,7 @@ def find_replacement(spec, exclude, usage):
     return it
 
 
-def pick_passages(entries, qtype, usage, taken, rng=None):
+def pick_passages(entries, qtype, usage, taken, rng=None, tasks=None):
     """Ma trận theo đoạn: entries = [{chapter_id, n}] -> lấy n đoạn của chương (ưu tiên đoạn ít dùng),
     mỗi đoạn lấy mọi câu chưa dùng (đúng dạng của phần nếu có). Đoạn không có câu phù hợp thì bỏ qua."""
     out = []
@@ -1350,6 +1608,9 @@ def pick_passages(entries, qtype, usage, taken, rng=None):
             if qtype:
                 sql += " AND qtype=?"
                 args.append(qtype)
+            tsql, targs = task_sql(tasks)
+            sql += tsql
+            args += targs
             items = [row_to_api(r) for r in q(sql + " ORDER BY id", args, fetch=True) if r["id"] not in taken]
             if items:
                 cands.append(items)
@@ -1380,8 +1641,8 @@ def build_section(s, usage, taken, ids=None, rng=None, counts=None):
     qtype = s.get("qtype") or None
     base = []
     if any(int(c.get("n", 0)) > 0 for c in s.get("matrix", [])):
-        base += pick_base_exam(s.get("matrix", []), qtype, usage, taken, rng, counts)
-    base += pick_passages(s.get("passages", []), qtype, usage, taken, rng)
+        base += pick_base_exam(s.get("matrix", []), qtype, usage, taken, rng, counts, s.get("tasks"))
+    base += pick_passages(s.get("passages", []), qtype, usage, taken, rng, s.get("tasks"))
     return base
 
 
@@ -1881,6 +2142,31 @@ def _plain_header(doc, left_lines, right_lines):
     return tbl
 
 
+MC_TEMPLATE = "de_trac_nghiem.docx"
+
+
+def make_mc_template(path=None):
+    """Mẫu đề trắc nghiệm dùng kèm Phiếu trả lời chấm máy: mã đề in to, ô họ tên/số báo danh,
+    nhắc thí sinh tô đáp án vào phiếu; không in đáp án trong đề."""
+    d = Document()
+    _plain_header(d,
+        [("TRƯỜNG ĐẠI HỌC QUY NHƠN", True, True), ("KHOA NGOẠI NGỮ", True, True), ("", False, False),
+         ("MÃ ĐỀ: {{MA_DE}}", True, True)],
+        [("ĐỀ THI TRẮC NGHIỆM KẾT THÚC HỌC PHẦN", True, True),
+         ("HỌC KỲ {{HOC_KY}} NĂM HỌC {{NAM_HOC}}", True, True),
+         ("Học phần: {{TEN_HP}}", False, False),
+         ("Mã HP {{MA_HP}}          Số tín chỉ: {{SO_TC}}", False, False),
+         ("Thời gian làm bài: {{THOI_GIAN}} phút (Không kể thời gian phát đề)", False, False),
+         ("Đề có {{SO_CAU}} câu, {{SO_TRANG}} trang", False, False)])
+    d.add_paragraph("Họ và tên: ...................................................   Số báo danh: ....................")
+    note = d.add_paragraph()
+    note.add_run("Thí sinh làm bài trên PHIẾU TRẢ LỜI TRẮC NGHIỆM: ghi và tô số báo danh, mã đề; "
+                 "với mỗi câu tô kín một ô ứng với phương án đúng. Không làm bài trên đề thi.").italic = True
+    d.add_paragraph("{{CAU_HOI}}")
+    d.add_paragraph("--------------- HẾT ---------------").alignment = 1
+    d.save(path or os.path.join(TPL_DIR, MC_TEMPLATE))
+
+
 def make_official_templates():
     """Mẫu đề và mẫu đáp án theo định dạng trường. Khoa, tên trường và cấu trúc cố định;
     học phần, mã HP, số tín chỉ, khóa, năm học, học kỳ, thời gian và mã đề được điền khi xuất."""
@@ -1915,18 +2201,18 @@ def make_official_templates():
     d.save(os.path.join(TPL_DIR, "dap_an_chuan.docx"))
 
 
-IMPORT_HEADERS = ["Mã chương", "Nội dung", "Đáp án", "Loại", "Mức", "Đoạn văn", "Lời giải", "Transcript", "Dịch", "CLO", "Thẻ", "Số từ"]
+IMPORT_HEADERS = ["Mã chương", "Nội dung", "Đáp án", "Loại", "Mức", "Đoạn văn", "Lời giải", "Transcript", "Dịch", "CLO", "Thẻ", "Số từ", "Dạng bài"]
 IMPORT_EXAMPLES = [
-    ("B01", "{試験|しけん}の{結果|けっか}が悪かった。\nA. おけばよかった\nB. おくべきだ", "A", "TN", "1", "", "", "", "", "CLO1", "", ""),
-    ("B01", "「インターンシップを通して」と同じ意味はどれですか。\nA. 間に\nB. おかげで", "B", "TN", "2", "私は先月、インターンシップに参加しました。", "", "", "", "CLO1", "", ""),
-    ("B01", "Câu đúng/sai:\na) 私は学生です。\nb) 本を読むです。", "ĐS", "DS", "2", "", "", "", "", "CLO1", "", ""),
-    ("B01", "Thư viện được xây dựng năm 1990.", "A", "TN", "2", "Thư viện trường được xây dựng năm 1990 và mở rộng năm 2015.", "", "", "", "CLO2", "tfng", ""),
-    ("B01", "Đoạn 1\nA. Lợi ích của thư viện\nB. Lịch sử xây dựng\nC. Cách mượn sách", "A", "TN", "2", "Đoạn 1: Nhiều sinh viên chọn học ở thư viện vì yên tĩnh.\nĐoạn 2: Thư viện có nhiều sách mới.", "", "", "", "CLO2", "noitieude", ""),
-    ("B02", "Vị trí 1 trên sơ đồ tim", "động mạch chủ", "DT", "1", "", "", "", "", "CLO1", "ghinhan", ""),
-    ("B02", "学校の___", "がっこう", "DT", "1", "", "", "", "", "CLO1", "", ""),
-    ("B02", "Thư viện có ___ tầng.", "ba|3", "DT", "1", "", "", "", "", "CLO1", "", "2"),
-    ("B02", "女{おんな}の人{ひと}は これから どこへ 行{い}きますか。\nA. 1かい\nB. 2かい\nC. 3かい\nD. 4かい", "B", "TN", "1", "", "くつうりば = quầy giày dép", "[3] デパートで 女{おんな}の人{ひと}と 店員{てんいん}が はなしています。\n[1] すみません、くつうりばは どこですか。\n[2] 2階{かい}に なりました。", "[3] Ở cửa hàng, người phụ nữ và nhân viên đang nói chuyện.\n[1] Xin lỗi, quầy giày ở đâu?\n[2] Đã chuyển xuống tầng 2.", "CLO1", "", ""),
-    ("B02", "A: どこへ行きますか。\nB: 駅へ行きます。\n\nこの会話の続きを書いてください。", "", "TL", "3", "", "会話の内容と文法の正確さ", "", "", "CLO3", "", ""),
+    ("B01", "{試験|しけん}の{結果|けっか}が悪かった。\nA. おけばよかった\nB. おくべきだ", "A", "TN", "1", "", "", "", "", "CLO1", "", "", "np-chon"),
+    ("B01", "「インターンシップを通して」と同じ意味はどれですか。\nA. 間に\nB. おかげで", "B", "TN", "2", "私は先月、インターンシップに参加しました。", "", "", "", "CLO1", "", "", "doc-noidung"),
+    ("B01", "Câu đúng/sai:\na) 私は学生です。\nb) 本を読むです。", "ĐS", "DS", "2", "", "", "", "", "CLO1", "", "", "np-dungsai"),
+    ("B01", "Thư viện được xây dựng năm 1990.", "A", "TN", "2", "Thư viện trường được xây dựng năm 1990 và mở rộng năm 2015.", "", "", "", "CLO2", "tfng", "", "doc-tfng"),
+    ("B01", "Đoạn 1\nA. Lợi ích của thư viện\nB. Lịch sử xây dựng\nC. Cách mượn sách", "A", "TN", "2", "Đoạn 1: Nhiều sinh viên chọn học ở thư viện vì yên tĩnh.\nĐoạn 2: Thư viện có nhiều sách mới.", "", "", "", "CLO2", "noitieude", "", "doc-tieude"),
+    ("B02", "Vị trí 1 trên sơ đồ tim", "động mạch chủ", "DT", "1", "", "", "", "", "CLO1", "ghinhan", "", "doc-ghinhan"),
+    ("B02", "学校の___", "がっこう", "DT", "1", "", "", "", "", "CLO1", "", "", "np-dien"),
+    ("B02", "Thư viện có ___ tầng.", "ba|3", "DT", "1", "", "", "", "", "CLO1", "", "2", "doc-dien"),
+    ("B02", "女{おんな}の人{ひと}は これから どこへ 行{い}きますか。\nA. 1かい\nB. 2かい\nC. 3かい\nD. 4かい", "B", "TN", "1", "", "くつうりば = quầy giày dép", "[3] デパートで 女{おんな}の人{ひと}と 店員{てんいん}が はなしています。\n[1] すみません、くつうりばは どこですか。\n[2] 2階{かい}に なりました。", "[3] Ở cửa hàng, người phụ nữ và nhân viên đang nói chuyện.\n[1] Xin lỗi, quầy giày ở đâu?\n[2] Đã chuyển xuống tầng 2.", "CLO1", "", "", "nghe-kadai"),
+    ("B02", "A: どこへ行きますか。\nB: 駅へ行きます。\n\nこの会話の続きを書いてください。", "", "TL", "3", "", "会話の内容と文法の正確さ", "", "", "CLO3", "", "", "viet-traloi"),
 ]
 
 
@@ -1939,7 +2225,9 @@ def make_import_template():
                     "Lời giải (tùy chọn) | Transcript (tùy chọn, câu nghe: kịch bản/lời thoại, mỗi lượt nói một dòng, vai ghi [1] [2]) | "
                     "Dịch (tùy chọn, bản dịch tiếng Việt của transcript, cùng số dòng) | CLO (tùy chọn, một CLO cho mỗi câu, ví dụ CLO1) | "
                     "Thẻ (tùy chọn, nhiều thẻ cách nhau bằng dấu phẩy: tfng, noitieude, ghinhan) | "
-                    "Số từ (tùy chọn, chỉ cho DT: số từ tối đa 1–20, để trống = không giới hạn). Thứ tự cột tùy ý. "
+                    "Số từ (tùy chọn, chỉ cho DT: số từ tối đa 1–20, để trống = không giới hạn) | "
+                    "Dạng bài (tùy chọn, mã trong danh mục dạng bài, ví dụ kanji-doc, np-sapxep, doc-tieude, nghe-sokuji; "
+                    "để trống = app tự nhận dạng). Thứ tự cột tùy ý. "
                     "Furigana viết dạng {試験|しけん}. "
                     "TN: mỗi phương án một dòng bắt đầu bằng A. B. C. D.; # đầu phương án = cố định vị trí. "
                     "DS: mỗi ý một dòng bắt đầu a) b) c); đáp án Đ S Đ S. DT: nhiều đáp án cách nhau bằng |. "
@@ -1957,6 +2245,8 @@ def make_import_template():
                     "CLO: ghi một CLO cho mỗi câu, ví dụ CLO1; câu đối đáp hoặc tự luận viết hội thoại ghi CLO3; để trống nếu chưa rõ; "
                     "Thẻ: chỉ dùng tfng, noitieude, ghinhan khi đúng dạng câu, để trống với câu thường; "
                     "TFNG và nối tiêu đề chỉ dùng cho Loại TN; ghinhan chỉ dùng cho Loại DT. "
+                    "Dạng bài: ghi mã dạng bài đúng với kỹ năng câu kiểm tra (xem danh mục trong app, mục Dạng bài); "
+                    "các câu cùng một đoạn văn ghi cùng một dạng bài. "
                     "không thêm cột ngoài danh sách trên, không gộp ô, không để dòng trống giữa các câu.")
     t = d.add_table(rows=1, cols=len(IMPORT_HEADERS))
     t.style = "Table Grid"
@@ -1991,11 +2281,11 @@ def update_question(qid, payload, status_raw=""):
     with closing(sqlite3.connect(DB_PATH)) as conn:
         conn.execute("PRAGMA foreign_keys = ON")
         conn.execute("""UPDATE questions SET chapter_id=?, bloom=?, qtype=?, content=?, options=?, answer=?, solution=?,
-                        transcript=?, translation=?, passage=?, passage_id=?, clo=?, tags=?, word_limit=?, status=? WHERE id=?""",
+                        transcript=?, translation=?, passage=?, passage_id=?, clo=?, tags=?, word_limit=?, status=?, task=? WHERE id=?""",
                      (payload["chapter_id"], payload["bloom"], payload["qtype"], payload["content"], payload["options"],
                       payload["answer"], payload["solution"], payload["transcript"], payload["translation"],
                       payload.get("passage", ""), pid, payload["clo"],
-                      payload["tags"], payload["word_limit"], status, qid))
+                      payload["tags"], payload["word_limit"], status, payload["task"], qid))
         conn.commit()
 
 
@@ -2017,14 +2307,14 @@ def export_row(r):
         answer = " ".join("Đ" if c == "D" else "S" for c in answer)
     return [r["code"], r["chapter_code"], "\n".join(lines), answer, qtype, str(r["bloom"]), r["passage"],
             r["solution"], r["transcript"], r["translation"], r["clo"], ", ".join(tags_list(r["tags"])), str(r["word_limit"] or ""),
-            STATUSES.get(r["status"], "")]
+            r["task"], STATUSES.get(r["status"], "")]
 
 
 def export_questions_csv(textbook_id, chapter_id=None):
     """Xuất câu hỏi của một giáo trình (tùy chọn một chương) ra CSV cùng cột với file nhập.
     Có cột Mã câu: nhập lại file đã sửa sẽ cập nhật đúng câu đó."""
     sql = """SELECT qs.id, qs.code, qs.qtype, qs.bloom, qs.content, qs.options, qs.answer, qs.solution, qs.transcript, qs.translation, qs.clo,
-             qs.tags, qs.word_limit, qs.status, ch.code AS chapter_code,
+             qs.tags, qs.word_limit, qs.status, qs.task, ch.code AS chapter_code,
              COALESCE((SELECT p.content FROM passages p WHERE p.id = qs.passage_id), qs.passage, '') AS passage
              FROM questions qs JOIN chapters ch ON ch.id = qs.chapter_id WHERE ch.textbook_id = ?"""
     args = [int(textbook_id)]
@@ -2143,12 +2433,19 @@ def stats():
     tree = get_tree()
     counts = {}  # chương -> mức -> số câu (mọi dạng)
     by_qt = {}   # chương -> dạng -> mức -> số câu (để ô ma trận của từng phần chỉ đếm đúng dạng)
-    for r in q("SELECT chapter_id, bloom, qtype, status, (passage_id IS NULL) AS np, COUNT(*) AS n FROM questions GROUP BY chapter_id, bloom, qtype, status, np", fetch=True):
+    by_qtt = {}  # chương -> "hình thức|dạng bài" -> mức -> số câu (phần có lọc dạng bài)
+    passages_by = {}  # chương -> "hình thức|dạng bài" -> số đoạn văn có câu đã duyệt thuộc nhóm đó
+    for r in q("""SELECT chapter_id, bloom, qtype, task, status, (passage_id IS NULL) AS np, COUNT(*) AS n FROM questions
+                  GROUP BY chapter_id, bloom, qtype, task, status, np""", fetch=True):
         c = counts.setdefault(r["chapter_id"], {b: 0 for b in BLOOM})
         c[r["bloom"]] += r["n"]
         # ô ma trận chỉ tính câu đã duyệt và không thuộc đoạn (câu đoạn văn chỉ ra đề theo cả đoạn)
         if r["status"] == "da_duyet" and r["np"]:
             by_qt.setdefault(r["chapter_id"], {}).setdefault(r["qtype"], {b: 0 for b in BLOOM})[r["bloom"]] += r["n"]
+            by_qtt.setdefault(r["chapter_id"], {}).setdefault(f"{r['qtype']}|{r['task']}", {b: 0 for b in BLOOM})[r["bloom"]] += r["n"]
+    for r in q("""SELECT chapter_id, qtype, task, COUNT(DISTINCT passage_id) AS n FROM questions
+                  WHERE passage_id IS NOT NULL AND status='da_duyet' GROUP BY chapter_id, qtype, task""", fetch=True):
+        passages_by.setdefault(r["chapter_id"], {})[f"{r['qtype']}|{r['task']}"] = r["n"]
     # số câu chưa từng ra đề: chương -> dạng -> mức -> số câu
     unused = {}
     for r in q("""SELECT qs.chapter_id, qs.qtype, qs.bloom, COUNT(*) AS n FROM questions qs
@@ -2174,6 +2471,8 @@ def stats():
         r["course_ids"] = links.get(r["textbook_id"], [])
         r["counts"] = counts.get(r["id"], {b: 0 for b in BLOOM})
         r["counts_by_qtype"] = by_qt.get(r["id"], {})
+        r["counts_by_qt_task"] = by_qtt.get(r["id"], {})
+        r["passages_by_qt_task"] = passages_by.get(r["id"], {})
         r["total"] = sum(r["counts"].values())
         chapters.append(r)
     return {"chapters": chapters, "blooms": BLOOM, "by_type": by_type, "unused": unused,
@@ -2204,7 +2503,7 @@ def build_items(rows):
                       "bloom": r["bloom"], "qtype": r["qtype"], "content": r["content"], "options": r["options"],
                       "answer": r["answer"], "solution": r["solution"], "passage": r["passage"],
                       "transcript": r.get("transcript", ""), "translation": r.get("translation", ""),
-                      "points": r.get("points"), "clo": r.get("clo", ""), "tags": r.get("tags", []),
+                      "points": r.get("points"), "clo": r.get("clo", ""), "tags": r.get("tags", []), "task": r.get("task", ""),
                       "media": r.get("media", []), "status": r.get("status", "da_duyet"),
                       "passage_media": r.get("passage_media", []),
                       "media_files": {m["file"]: base64.b64encode(open(os.path.join(MEDIA_DIR, m["file"]), "rb").read()).decode()
@@ -2303,13 +2602,15 @@ def similar_pairs(threshold=SIMILAR_THRESHOLD):
                         "content": b["content"][:160]}]} for r, a, b in pairs]
 
 
-def bulk_update(ids, chapter_id=None, bloom=None):
-    """Đổi chương và/hoặc mức Bloom cho nhiều câu. Kiểm tra trùng trước khi đổi; lỗi thì không đổi câu nào."""
+def bulk_update(ids, chapter_id=None, bloom=None, task=None):
+    """Đổi chương, mức Bloom và/hoặc dạng bài cho nhiều câu. Kiểm tra trùng trước khi đổi; lỗi thì không đổi câu nào."""
     ids = [int(i) for i in ids]
     if not ids:
         raise ValueError("Chưa chọn câu nào")
     if bloom is not None and int(bloom) not in BLOOM:
         raise ValueError("Mức Bloom không hợp lệ")
+    if task is not None:
+        task = "" if task == "_none" else resolve_task(task)
     if chapter_id is not None and not q("SELECT id FROM chapters WHERE id=?", (int(chapter_id),), fetch=True):
         raise ValueError("Chương đích không tồn tại")
     rows = q(f"SELECT id, content, options, passage FROM questions WHERE id IN ({','.join('?' * len(ids))})", ids, fetch=True)
@@ -2333,6 +2634,8 @@ def bulk_update(ids, chapter_id=None, bloom=None):
                              (int(chapter_id), new_pids[i], i))
             if bloom is not None:
                 conn.execute("UPDATE questions SET bloom=? WHERE id=?", (int(bloom), i))
+            if task is not None:
+                conn.execute("UPDATE questions SET task=? WHERE id=?", (task, i))
         conn.commit()
     return {"updated": len(ids)}
 
@@ -2448,6 +2751,8 @@ def restore_item(item, index, allow_dup=False):
             os.makedirs(MEDIA_DIR, exist_ok=True)
             with open(os.path.join(MEDIA_DIR, fname), "wb") as f:
                 f.write(base64.b64decode(b64))
+    if str(item.get("task") or "").lower() not in task_map():  # dạng bài riêng chưa có ở máy này: để app tự nhận dạng
+        item["task"] = ""
     payload = clean_question(dict(item, chapter_id=chapter_id))
     same, _, key = check_duplicate(index, payload)
     if same and not allow_dup:
@@ -2702,6 +3007,14 @@ class Handler(BaseHTTPRequestHandler):
                 sql += " AND qs.bloom=?"; args.append(int(arg("bloom")))
             if arg("qtype"):
                 sql += " AND qs.qtype=?"; args.append(arg("qtype"))
+            if arg("task"):  # dạng bài; "_none" = chưa phân loại; "skill:doc" = mọi dạng bài của một kỹ năng
+                if arg("task") == "_none":
+                    sql += " AND qs.task=''"
+                elif arg("task").startswith("skill:"):
+                    codes = [t["code"] for t in task_catalog() if t["skill"] == arg("task")[6:]] or ["-"]
+                    sql += f" AND qs.task IN ({','.join('?' * len(codes))})"; args += codes
+                else:
+                    sql += " AND qs.task=?"; args.append(arg("task"))
             if arg("status") in STATUSES:
                 sql += " AND qs.status=?"; args.append(arg("status"))
             if arg("tag"):  # thẻ lưu dạng ",a,b," nên khớp ",thẻ," là chính xác
@@ -2734,6 +3047,12 @@ class Handler(BaseHTTPRequestHandler):
                                         "aivis": h.get("aivis_connected", False)})
             except ValueError as e:
                 return self._json(200, {"ok": False, "url": TEXTTS_URL, "error": str(e)})
+        if p == "/api/tasks":  # danh mục dạng bài kèm số câu (mọi trạng thái) và số câu đã duyệt
+            counts = {r["task"]: (r["n"], r["ok"]) for r in q(
+                "SELECT task, COUNT(*) AS n, SUM(status='da_duyet') AS ok FROM questions GROUP BY task", fetch=True)}
+            items = [dict(t, count=counts.get(t["code"], (0, 0))[0], approved=counts.get(t["code"], (0, 0))[1] or 0)
+                     for t in task_catalog()]
+            return self._json(200, {"skills": SKILLS, "tasks": items, "unclassified": counts.get("", (0, 0))[0]})
         if p == "/api/tags":  # thẻ đang dùng và số câu của từng thẻ
             count = {}
             for r in q("SELECT tags FROM questions WHERE tags <> ''", fetch=True):
@@ -2784,6 +3103,24 @@ class Handler(BaseHTTPRequestHandler):
         if p == "/api/templates":
             names = sorted(f for f in os.listdir(TPL_DIR) if f.lower().endswith(".docx"))
             return self._json(200, names)
+        if p == "/cham-bai":  # trang quét phiếu trả lời và chấm tự động
+            with open(os.path.join(STATIC, "cham-bai.html"), "rb") as f:
+                return self._send(200, f.read(), "text/html; charset=utf-8")
+        if p == "/api/omr/exports":  # các lần xuất đề, kèm số câu chấm máy được (0 = bản xuất cũ, chưa có đáp án chấm máy)
+            out = []
+            for r in q("SELECT id, created_at, name, codes, config FROM exam_exports ORDER BY id DESC LIMIT 200", fetch=True):
+                keys = json.loads(r["config"] or "{}").get("omr_keys") or {}
+                out.append({"id": r["id"], "created_at": r["created_at"], "name": r["name"], "codes": r["codes"],
+                            "gradable": max((len(v) for v in keys.values()), default=0)})
+            return self._json(200, out)
+        if p == "/api/omr/export":  # đáp án và bố cục phiếu của một lần xuất
+            exp = omr_export(int(arg("id") or 0))
+            exp["spec"]["sbd"] = int(arg("sbd") or 6)
+            return self._json(200, dict(exp, layout=omr.layout(exp["spec"])))
+        if p == "/api/omr/layout":  # bố cục phiếu theo tham số (phiếu trắng, đáp án nhập tay)
+            return self._json(200, omr.layout(omr_spec_args(arg)))
+        if p == "/api/omr/sheet":  # trang in phiếu trả lời / tờ đáp án đục lỗ
+            return self._send(200, omr_sheet_html(arg).encode("utf-8"), "text/html; charset=utf-8")
         if p == "/api/exports":  # lịch sử các lần xuất (không kèm nội dung file)
             return self._json(200, q("""SELECT id, created_at, name, codes, length(data) AS size
                                         FROM exam_exports ORDER BY id DESC LIMIT 200""", fetch=True))
@@ -2925,9 +3262,18 @@ class Handler(BaseHTTPRequestHandler):
             b = self._json_body()
             rows = [(line.get("code", ""), line.get("pct", "")) for line in b.get("rows", [])]
             return self._json(200, record_results(b.get("exam_code", ""), rows))
-        if p == "/api/questions/bulk":  # đổi chương/mức Bloom cho nhiều câu
+        if p == "/api/omr/grade":  # chấm các phiếu đã đọc theo đáp án của lần xuất hoặc đáp án nhập tay
+            return self._json(200, omr_grade(self._json_body()))
+        if p == "/api/omr/results":  # lưu tỷ lệ đúng từng câu từ các phiếu đã chấm (độ khó thực tế)
+            return self._json(200, omr_save_results(self._json_body()))
+        if p == "/api/tasks":  # thêm dạng bài riêng
+            return self._json(201, {"ok": True, "code": add_task_type(self._json_body())})
+        if p == "/api/tasks/classify":  # tự nhận dạng bài cho câu chưa phân loại (all=true: đoán lại mọi câu)
+            return self._json(200, {"updated": classify_all(only_empty=not self._json_body().get("all"))})
+        if p == "/api/questions/bulk":  # đổi chương/mức Bloom/dạng bài cho nhiều câu
             b = self._json_body()
-            return self._json(200, bulk_update(b.get("ids", []), b.get("chapter_id") or None, b.get("bloom") or None))
+            return self._json(200, bulk_update(b.get("ids", []), b.get("chapter_id") or None, b.get("bloom") or None,
+                                               b.get("task") or None))
         if p == "/api/questions/bulk-delete":  # xóa nhiều câu đã chọn (trả về bản sao lưu để hoàn tác)
             return self._json(200, trash_questions(self._json_body().get("ids", [])))
         if p == "/api/trash/restore":
@@ -3062,7 +3408,7 @@ class Handler(BaseHTTPRequestHandler):
             conn.execute("PRAGMA foreign_keys = ON")
             cur = conn.execute("""UPDATE questions SET chapter_id=:chapter_id, bloom=:bloom, qtype=:qtype, content=:content,
                  options=:options, answer=:answer, solution=:solution, transcript=:transcript, translation=:translation, passage=:passage, passage_id=:passage_id, rubric=:rubric,
-                 points=:points, clo=:clo, tags=:tags, media=:media, status=:status, word_limit=:word_limit WHERE id=:id""", payload)
+                 points=:points, clo=:clo, tags=:tags, media=:media, status=:status, word_limit=:word_limit, task=:task WHERE id=:id""", payload)
             conn.commit()
             updated = cur.rowcount
         if not updated:
@@ -3089,6 +3435,10 @@ class Handler(BaseHTTPRequestHandler):
             if not left and has_chapters:
                 raise ValueError("Giáo trình còn chương, phải còn ít nhất một học phần (hoặc xóa giáo trình trước)")
             q("DELETE FROM course_textbooks WHERE course_id=? AND textbook_id=?", (cid, tid))
+            return self._json(200, {"ok": True})
+        tk = re.fullmatch(r"/api/tasks/([a-z0-9-]+)", path)
+        if tk:  # xóa dạng bài riêng (không còn câu nào dùng)
+            delete_task_type(tk.group(1))
             return self._json(200, {"ok": True})
         tr = re.fullmatch(r"/api/trash/(\d+)", path)
         if tr:
@@ -3190,11 +3540,13 @@ class Handler(BaseHTTPRequestHandler):
         out = io.BytesIO()
         usage_rows = []
         codes = []
+        omr_keys = {}  # đáp án chấm máy theo mã đề (câu TN, DS), để quét phiếu trả lời
         with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
             for i in range(variants):
                 code = f"{prefix}{start + i:03d}"
                 codes.append(code)
                 exam = [(t, make_variant(b, sh, rng)) for t, b, sh, _ in parts]
+                omr_keys[code] = omr.keys_from_flat(flatten(exam))
                 # file nghe chỉ ghép các câu của phần được đánh dấu "Phần nghe", giữ nguyên số thứ tự trong đề
                 lis_flags = [flag for *_, flag in parts]
                 data = render_docx(tpl_path, body.get("meta", {}), exam, code,
@@ -3226,13 +3578,156 @@ class Handler(BaseHTTPRequestHandler):
               (now, exam_name, ", ".join(codes),
                json.dumps({"meta": body.get("meta", {}), "variants": variants, "start": start,
                            "prefix": prefix, "template": tpl, "seed": seed,
-                           "picked_ids": [[it["id"] for it in base] for _, base, *_ in parts]}, ensure_ascii=False), data))
+                           "picked_ids": [[it["id"] for it in base] for _, base, *_ in parts],
+                           "omr_keys": omr_keys}, ensure_ascii=False), data))
 
         fname = export_filename(meta.get("ma_hp"), codes_all, now)
         self._send(200, data, "application/zip",
                    {"X-Reused": str(reused), "X-Variants": str(variants), "X-Seed": str(seed),
                     "X-Listening": str(listening_made) if listening else "",
                     "Content-Disposition": attachment_header(fname)})
+
+
+# ---------------------------------------------------------------- chấm phiếu trắc nghiệm (OMR)
+def omr_export(export_id):
+    """Đáp án chấm máy của một lần xuất đề: {id, name, codes, keys: {mã đề: [câu]}, spec}."""
+    rows = q("SELECT id, created_at, name, codes, config FROM exam_exports WHERE id=?", (int(export_id or 0),), fetch=True)
+    if not rows:
+        raise ValueError("Không tìm thấy lần xuất đề này")
+    cfg = json.loads(rows[0]["config"] or "{}")
+    keys = cfg.get("omr_keys")
+    if not keys:
+        raise ValueError("Lần xuất này chưa có đáp án chấm máy (xuất trước khi có chức năng chấm phiếu); hãy xuất lại đề "
+                         "hoặc nhập đáp án tay")
+    if not any(keys.values()):
+        raise ValueError("Đề này không có câu trắc nghiệm hay đúng/sai nào để chấm máy")
+    return {"id": rows[0]["id"], "name": rows[0]["name"], "created_at": rows[0]["created_at"],
+            "codes": list(keys), "keys": keys, "spec": omr.spec_from_keys(keys), "meta": cfg.get("meta") or {}}
+
+
+OMR_KEY_LINE = re.compile(r"\s*([\w-]+)\s*[:：\t ]\s*([A-Ha-h.\- ]+)\s*")
+
+
+def omr_manual_keys(text):
+    """Đáp án nhập tay, mỗi dòng một mã đề: "001: ABCDA..." (dấu - hoặc . = câu không chấm). Chỉ câu trắc nghiệm."""
+    keys = {}
+    for ln in str(text or "").splitlines():
+        if not ln.strip():
+            continue
+        m = OMR_KEY_LINE.fullmatch(ln)
+        if not m:
+            raise ValueError(f"Dòng đáp án không đúng dạng 'mã đề: ABCD…': {ln.strip()[:40]}")
+        ans = re.sub(r"\s+", "", m.group(2)).upper()
+        keys[m.group(1)] = [{"n": i + 1, "qtype": "TN", "answer": a, "nopt": 4, "qcode": "", "points": None}
+                            for i, a in enumerate(ans) if a in omr.LETTERS]
+    if not keys:
+        raise ValueError("Chưa nhập đáp án")
+    opts = max([omr.LETTERS.index(i["answer"]) + 1 for k in keys.values() for i in k] + [4])
+    for k in keys.values():
+        for i in k:
+            i["nopt"] = opts
+    return keys
+
+
+def omr_keys_of(body):
+    if body.get("export_id"):
+        return omr_export(body["export_id"])["keys"]
+    return omr_manual_keys(body.get("manual_keys"))
+
+
+def omr_match_code(keys, made):
+    """Mã đề đọc trên phiếu (chỉ chữ số) -> mã đề trong đáp án; None nếu không khớp hoặc khớp nhiều mã."""
+    made = "".join(ch for ch in str(made or "") if ch.isdigit())
+    if not made:
+        return None
+    if made in keys:
+        return made
+    hits = [c for c in keys if omr.code_digits(c, len(made)) == made]
+    return hits[0] if len(hits) == 1 else None
+
+
+def omr_grade_sheet(key, answers):
+    """Chấm một phiếu. answers: {số câu: 'A' | '' (bỏ trống) | '*' (tô nhiều ô) | 'DSDS' (đúng/sai, ? = không đọc được)}.
+    TN đúng cả câu mới được điểm; DS tính theo tỷ lệ ý đúng. Điểm câu = điểm trong ngân hàng, không có thì 1."""
+    answers = {str(k): str(v or "") for k, v in (answers or {}).items()}
+    raw = top = 0.0
+    detail = []
+    for it in key:
+        got = answers.get(str(it["n"]), "")
+        pts = float(it["points"]) if it.get("points") is not None else 1.0
+        if it["qtype"] == "TN":
+            frac = 1.0 if got == it["answer"] else 0.0
+        else:
+            want = it["answer"][:it["nopt"]]
+            frac = sum(1 for a, b in zip(want, got) if a == b) / max(len(want), 1)
+        raw += pts * frac
+        top += pts
+        detail.append({"n": it["n"], "qtype": it["qtype"], "key": it["answer"], "got": got, "frac": round(frac, 4),
+                       "qcode": it.get("qcode", "")})
+    return {"raw": round(raw, 2), "max": round(top, 2), "score10": round(raw / top * 10, 2) if top else 0,
+            "correct": sum(1 for d in detail if d["frac"] == 1), "total": len(detail), "detail": detail}
+
+
+def omr_grade(body):
+    keys = omr_keys_of(body)
+    out = []
+    for sh in body.get("sheets") or []:
+        code = sh.get("code") if sh.get("code") in keys else omr_match_code(keys, sh.get("made"))
+        if code not in keys:
+            out.append({"code": None, "error": "Mã đề trên phiếu không khớp mã đề nào; hãy chọn mã đề cho phiếu này"})
+            continue
+        out.append(dict(omr_grade_sheet(keys[code], sh.get("answers")), code=code))
+    return {"codes": list(keys), "results": out}
+
+
+def omr_save_results(body):
+    """Tỷ lệ làm đúng từng câu (theo mã câu trong ngân hàng) của các phiếu đã chấm -> lưu vào kết quả thi (độ khó thực tế)."""
+    exp = omr_export(body.get("export_id"))
+    stats = {}  # mã câu -> [số phiếu, tổng tỷ lệ đúng]
+    for sh in body.get("sheets") or []:
+        code = sh.get("code") if sh.get("code") in exp["keys"] else omr_match_code(exp["keys"], sh.get("made"))
+        if code not in exp["keys"]:
+            continue
+        for d in omr_grade_sheet(exp["keys"][code], sh.get("answers"))["detail"]:
+            if d["qcode"]:
+                st = stats.setdefault(d["qcode"], [0, 0.0])
+                st[0] += 1
+                st[1] += d["frac"]
+    if not stats:
+        raise ValueError("Chưa có phiếu nào chấm được để lưu")
+    exam_code = str(body.get("exam_code") or exp["name"] or f"Lần xuất {exp['id']}")[:80]
+    res = record_results(exam_code, [(c, round(v[1] / v[0] * 100, 1)) for c, v in stats.items()])
+    return dict(res, questions=len(stats), exam_code=exam_code)
+
+
+def omr_spec_args(arg):
+    return {"tn": arg("tn") or 0, "ds": int(arg("ds") or 0), "opts": arg("opts") or 4,
+            "sbd": arg("sbd") or 6, "made": arg("made") or 3}
+
+
+def omr_sheet_html(arg):
+    """Trang in phiếu trả lời (trắng) hoặc tờ đáp án đục lỗ (key=mã đề hoặc key=all) của một lần xuất."""
+    title, sub = arg("title"), arg("subtitle")
+    if arg("export_id"):
+        exp = omr_export(int(arg("export_id")))
+        spec = dict(exp["spec"], sbd=int(arg("sbd") or 6))
+        meta = exp["meta"]
+        title = title or " · ".join(x for x in (meta.get("ten_hp"), exp["name"]) if x)
+        sub = sub or " · ".join(x for x in (f"Mã HP {meta['ma_hp']}" if meta.get("ma_hp") else "",
+                                           f"Thời gian {meta['thoi_gian']} phút" if meta.get("thoi_gian") else "") if x)
+        want = arg("key")
+        if want:
+            codes = exp["codes"] if want == "all" else [want]
+            pages = []
+            for c in codes:
+                if c not in exp["keys"]:
+                    raise ValueError(f"Không có mã đề {c} trong lần xuất này")
+                pages.append(omr.sheet_svg(spec, title, sub, key={i["n"]: i["answer"] for i in exp["keys"][c]}, code=c))
+            return omr.sheet_page(pages, "Tờ đáp án đục lỗ")
+    else:
+        spec = omr_spec_args(arg)
+    copies = min(max(int(arg("copies") or 1), 1), 50)
+    return omr.sheet_page([omr.sheet_svg(spec, title, sub)] * copies)
 
 
 def reset_usage(body):

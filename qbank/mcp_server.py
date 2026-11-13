@@ -17,7 +17,7 @@ import urllib.request
 
 BASE_URL = os.environ.get("QBANK_URL", "http://127.0.0.1:8765").rstrip("/")
 PROTOCOL = "2024-11-05"
-SERVER_INFO = {"name": "qbank", "version": "1.3.0"}
+SERVER_INFO = {"name": "qbank", "version": "1.4.0"}
 
 
 class ApiError(Exception):
@@ -70,16 +70,16 @@ def tool_list_tree(args):
 
 
 def tool_list_questions(args):
-    """Tìm câu hỏi. Lọc theo học phần, giáo trình, chương, mức Bloom, dạng (TN/DS/DT/TL), trạng thái, từ khóa."""
+    """Tìm câu hỏi. Lọc theo học phần, giáo trình, chương, mức Bloom, hình thức (TN/DS/DT/TL), dạng bài, trạng thái, từ khóa."""
     per = min(max(int(args.get("limit", 20)), 1), 50)
     page = max(int(args.get("page", 0)), 0)
     params = {
         "course_id": args.get("course_id"), "textbook_id": args.get("textbook_id"),
         "chapter_id": args.get("chapter_id"), "bloom": args.get("bloom"), "qtype": args.get("qtype"),
-        "status": args.get("status"), "q": args.get("query"), "per": per, "page": page,
+        "task": args.get("task"), "status": args.get("status"), "q": args.get("query"), "per": per, "page": page,
     }
     r = api("GET", "/api/questions", params)
-    items = [{"code": i["code"], "qtype": i["qtype"], "bloom": i["bloom"], "status": i["status"],
+    items = [{"id": i.get("id"), "code": i["code"], "qtype": i["qtype"], "task": i.get("task", ""), "bloom": i["bloom"], "status": i["status"],
               "course": i.get("courses_all") or i.get("course"), "textbook": i.get("textbook"),
               "chapter": i.get("chapter_label"), "content": (i.get("content") or "")[:300],
               "used_count": i.get("used_count", 0)} for i in r["items"]]
@@ -164,7 +164,8 @@ def tool_create_question(args):
             "qtype": args.get("qtype", "TN"), "content": args.get("content", ""), "options": args.get("options") or [],
             "answer": args.get("answer", ""), "solution": args.get("solution", ""), "passage": args.get("passage", ""),
             "clo": args.get("clo", ""), "tags": args.get("tags", ""), "status": args.get("status", "nhap"),
-            "transcript": args.get("transcript", ""), "translation": args.get("translation", "")}
+            "transcript": args.get("transcript", ""), "translation": args.get("translation", ""),
+            "task": args.get("task", "")}
     if args.get("points") is not None:
         body["points"] = args["points"]
     if args.get("confirm_passage") is True:  # nhãn đoạn văn gần giống đoạn có sẵn: chỉ tạo đoạn mới khi người dùng đã xác nhận
@@ -204,7 +205,7 @@ def tool_check_duplicates(args):
 
 AUDIO_EXT = (".mp3", ".wav", ".ogg", ".m4a")
 QUESTION_FIELDS = ("chapter_id", "bloom", "qtype", "content", "options", "answer", "solution", "transcript", "translation", "passage",
-                   "rubric", "points", "clo", "tags", "status", "word_limit")
+                   "rubric", "points", "clo", "tags", "status", "word_limit", "task")
 
 
 def _read_file(path, exts, what):
@@ -317,7 +318,7 @@ def tool_get_question_audio(args):
 # ---------------------------------------------------------------- công cụ rà soát, sửa, ra đề, sao lưu
 STATUS_VALUES = ("nhap", "da_duyet", "ngung")
 EDITABLE_FIELDS = ("content", "options", "answer", "solution", "passage", "bloom", "qtype", "clo", "tags", "points",
-                   "word_limit", "transcript", "translation", "rubric")
+                   "word_limit", "transcript", "translation", "rubric", "task")
 
 
 def api_raw(method, path, body=None):
@@ -440,6 +441,31 @@ def tool_set_status(args):
         return {"ok": True, "dry_run": False, "status": status, "changed": r.get("updated", r.get("changed", len(ids))),
                 "questions": rows}
     return {"ok": True, "dry_run": True, "status": status, "would_change": len(ids), "questions": rows}
+
+
+# --- dạng bài
+def tool_list_tasks(args):
+    """Danh mục dạng bài (mã, kỹ năng, tên, hình thức mặc định) kèm số câu và số câu đã duyệt của từng dạng."""
+    r = api("GET", "/api/tasks")
+    return {"skills": r["skills"], "unclassified": r["unclassified"],
+            "tasks": [{k: t[k] for k in ("code", "skill", "name", "qtype", "count", "approved", "builtin")} for t in r["tasks"]]}
+
+
+def tool_add_task_type(args):
+    """Thêm dạng bài riêng vào danh mục (chỉ khi người dùng yêu cầu)."""
+    if not _writes(args):
+        return {"ok": True, "dry_run": True, "would_add": {k: args.get(k) for k in ("name", "skill", "qtype", "code")}}
+    r = api("POST", "/api/tasks", body={k: args.get(k) for k in ("name", "skill", "qtype", "code") if args.get(k)})
+    return {"ok": True, "dry_run": False, "code": r.get("code")}
+
+
+def tool_classify_tasks(args):
+    """Tự nhận dạng bài cho câu chưa phân loại (all=true: đoán lại mọi câu, ghi đè dạng bài đang có)."""
+    if not _writes(args):
+        r = api("GET", "/api/tasks")
+        return {"ok": True, "dry_run": True, "unclassified": r["unclassified"]}
+    r = api("POST", "/api/tasks/classify", body={"all": args.get("all") is True})
+    return {"ok": True, "dry_run": False, "updated": r.get("updated", 0)}
 
 
 # --- ra đề và xuất đề
@@ -598,6 +624,7 @@ TOOLS = [
          "course_id": {"type": "integer"}, "textbook_id": {"type": "integer"}, "chapter_id": {"type": "integer"},
          "bloom": {"type": "integer", "minimum": 1, "maximum": 5},
          "qtype": {"type": "string", "enum": ["TN", "DS", "DT", "TL"]},
+         "task": {"type": "string", "description": "mã dạng bài (list_tasks); _none = chưa phân loại; skill:doc = mọi dạng bài của kỹ năng"},
          "status": {"type": "string", "enum": ["nhap", "da_duyet", "ngung"]},
          "query": {"type": "string", "description": "từ khóa trong nội dung, phương án, lời giải, đáp án, mã"},
          "limit": {"type": "integer", "minimum": 1, "maximum": 50},
@@ -636,6 +663,8 @@ TOOLS = [
          "translation": {"type": "string", "description": "Bản dịch tiếng Việt của transcript, cùng số dòng"},
          "passage": {"type": "string", "description": "Đoạn văn / kịch bản hiển thị kèm câu"},
          "clo": {"type": "string"}, "tags": {"type": "string"}, "points": {"type": "number"},
+         "task": {"type": "string", "description": "Mã dạng bài trong list_tasks (vd kanji-doc, np-sapxep, doc-tieude, nghe-sokuji). "
+                                                   "Để trống thì app tự nhận dạng. Câu nghe dùng nghe-*; câu cùng đoạn văn dùng cùng một dạng bài."},
          "status": {"type": "string", "enum": ["nhap", "da_duyet", "ngung"]},
          "audio_script": {"type": "string"},
          "audio_target": {"type": "string", "enum": ["question", "passage"], "default": "question"},
@@ -700,6 +729,7 @@ TOOLS = [
                           "bloom": {"type": "integer", "minimum": 1, "maximum": 5},
                           "qtype": {"type": "string", "enum": ["TN", "DS", "DT", "TL"]}, "clo": {"type": "string"},
                           "tags": {"type": "string"}, "points": {"type": "number"}, "word_limit": {"type": "integer"},
+                          "task": {"type": "string", "description": "mã dạng bài (list_tasks)"},
                           "transcript": {"type": "string"}, "translation": {"type": "string"},
                           "rubric": {"type": "array", "items": {}}, "confirm_passage": {"type": "boolean"},
                           "dry_run": {"type": "boolean", "default": True}}, ["question_id"])},
@@ -709,9 +739,26 @@ TOOLS = [
      "inputSchema": _obj({"ids": {"type": "array", "items": {"type": "integer"}, "maxItems": 200},
                           "status": {"type": "string", "enum": ["nhap", "da_duyet", "ngung"]},
                           "dry_run": {"type": "boolean", "default": True}}, ["ids", "status"])},
+    # ---- dạng bài
+    {"name": "list_tasks", "handler": tool_list_tasks,
+     "description": "CHỈ ĐỌC. Danh mục dạng bài (kỹ năng → dạng bài: mã, tên, hình thức mặc định) kèm số câu từng dạng và số câu chưa phân loại. "
+                    "Dùng mã dạng bài cho create_question/update_question (task) và cho sections[].tasks khi ra đề.",
+     "inputSchema": _obj({})},
+    {"name": "add_task_type", "handler": tool_add_task_type,
+     "description": "Thêm dạng bài riêng vào danh mục, chỉ khi người dùng yêu cầu. Mặc định dry_run=true.",
+     "inputSchema": _obj({"name": {"type": "string"},
+                          "skill": {"type": "string", "enum": ["kanji", "tuvung", "nguphap", "hoithoai", "doc", "nghe", "viet", "chuyennganh", "khac"]},
+                          "qtype": {"type": "string", "enum": ["TN", "DS", "DT", "TL"]},
+                          "code": {"type": "string", "description": "tùy chọn: chữ thường không dấu, số, gạch nối"},
+                          "dry_run": {"type": "boolean", "default": True}}, ["name", "skill"])},
+    {"name": "classify_tasks", "handler": tool_classify_tasks,
+     "description": "Tự nhận dạng bài cho các câu chưa phân loại (all=true: đoán lại mọi câu, ghi đè dạng bài giáo viên đã chọn; chỉ dùng khi người dùng bảo). "
+                    "Mặc định dry_run=true: chỉ báo số câu chưa phân loại.",
+     "inputSchema": _obj({"all": {"type": "boolean", "default": False}, "dry_run": {"type": "boolean", "default": True}})},
     # ---- ra đề và xuất đề
     {"name": "preview_exam", "handler": tool_preview_exam,
-     "description": "CHỈ ĐỌC. Xem trước các câu sẽ được chọn cho đề theo cấu trúc sections (matrix chương x mức Bloom x số câu, passages). "
+     "description": "CHỈ ĐỌC. Xem trước các câu sẽ được chọn cho đề theo cấu trúc sections (matrix chương x mức Bloom x số câu, passages; "
+                    "mỗi phần lọc được theo qtype và tasks = danh sách mã dạng bài, '' = câu chưa phân loại). "
                     "Không ghi lịch sử dùng câu, không tạo file.",
      "inputSchema": _obj({"sections": {"type": "array", "items": {"type": "object"}}}, ["sections"])},
     {"name": "export_exam", "handler": tool_export_exam,

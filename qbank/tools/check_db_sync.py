@@ -25,7 +25,7 @@ SAMPLE_DIR = os.path.join(BASE, "mau_nhap")
 COLUMN_TO_HEADER = {
     "code": "Mã câu", "chapter_id": "Mã chương", "content": "Nội dung", "options": "Nội dung", "answer": "Đáp án",
     "qtype": "Loại", "bloom": "Mức", "passage": "Đoạn văn", "solution": "Lời giải", "transcript": "Transcript",
-    "translation": "Dịch", "clo": "CLO", "tags": "Thẻ", "word_limit": "Số từ", "status": "Trạng thái",
+    "translation": "Dịch", "clo": "CLO", "tags": "Thẻ", "word_limit": "Số từ", "status": "Trạng thái", "task": "Dạng bài",
 }
 # cột do app tự quản lý, không nằm trong file nhập (hình/âm thanh, điểm, rubric, khóa nội bộ)
 NOT_IMPORTED = {"id", "passage_id", "media", "points", "rubric"}
