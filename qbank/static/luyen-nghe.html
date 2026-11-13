@@ -83,10 +83,15 @@ kbd{background:var(--acc2);border:1px solid var(--line);border-radius:6px;paddin
 .keys{color:var(--sub);font-size:14px;line-height:1.9}
 #osd{position:fixed;top:84px;right:28px;background:rgba(15,31,61,.88);color:#fff;border-radius:12px;padding:10px 20px;font-size:20px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:9}
 #osd.show{opacity:1}
+body.embed .logo,body.embed nav a[href="/"],body.embed nav .tab.active{display:none}
+body.embed nav{height:52px;padding:0 12px}
+body.embed nav .tab{height:52px}
+body.embed main{margin-top:14px}
 @media(max-width:760px){.opts{grid-template-columns:1fr}.player{flex-wrap:wrap}.vol{width:100%}nav a,nav .tab{padding:0 10px}}
 </style>
 </head>
 <body class="novi">
+<script>if (new URLSearchParams(location.search).has("embed")) document.body.classList.add("embed");</script>
 <nav>
   <div class="logo"><i>Q</i>QBank</div>
   <a href="/">Trang chủ</a>
@@ -378,6 +383,7 @@ document.addEventListener("keydown", e => {
     "+": () => size(3), "-": () => size(-3), "enter": again}[k];
   if (fn) { e.preventDefault(); fn(); }
 });
+window.addEventListener("message", e => { if (e.origin === location.origin && e.data === "qbank-pause") au.pause(); });
 loadSets();
 </script>
 </body>

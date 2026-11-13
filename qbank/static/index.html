@@ -289,7 +289,8 @@
   <div class="rbar-top">
     <div class="brand"><span class="logo">Q</span><span class="bn">QBank</span></div>
     <nav class="ribbon-tabs">
-      <button data-tab="bank" class="on">Ngân hàng</button>
+      <button data-tab="listen" class="on">Luyện nghe</button>
+      <button data-tab="bank">Ngân hàng</button>
       <button data-tab="struct">Cấu trúc</button>
       <button data-tab="stats">Thống kê</button>
       <button data-tab="export">Xuất đề</button>
@@ -298,7 +299,16 @@
     <button class="rcollapse" id="ribbonToggle" title="Thu gọn/mở ribbon (Ctrl+F1)"><i class="fa-solid fa-chevron-up"></i></button>
   </div>
   <div class="ribbon-body">
-    <div class="ribbon-page on" data-page="bank">
+    <div class="ribbon-page on" data-page="listen">
+      <div class="rgroup">
+        <div class="rgroup-items">
+          <button class="rbtn" onclick="window.open('/luyen-nghe', '_blank')"><i class="fa-solid fa-up-right-from-square"></i><span>Mở tab mới</span></button>
+          <button class="rbtn" onclick="document.getElementById('listenFrame').contentWindow.location.reload()"><i class="fa-solid fa-rotate"></i><span>Làm mới</span></button>
+        </div>
+        <div class="rgroup-name">Luyện nghe</div>
+      </div>
+    </div>
+    <div class="ribbon-page" data-page="bank">
       <div class="rgroup">
         <div class="rgroup-items">
           <button class="rbtn" onclick="editQ(null)"><i class="fa-solid fa-plus"></i><span>Câu mới</span></button>
@@ -378,7 +388,11 @@
 <main>
 
 <!-- ============ NGÂN HÀNG ============ -->
-<section id="bank" class="on">
+<section id="listen" class="on">
+<iframe id="listenFrame" src="/luyen-nghe?embed=1" title="Luyện nghe" style="width:100%;height:calc(100vh - var(--hdr, 120px) - 40px);border:0;border-radius:10px;background:transparent"></iframe>
+</section>
+
+<section id="bank">
 <div class="twocol">
 <aside class="side">
   <div class="side-head">
@@ -689,6 +703,9 @@ document.querySelectorAll(".ribbon-tabs button").forEach(b => b.onclick = () => 
   document.querySelectorAll(".ribbon-page").forEach(p => p.classList.toggle("on", p.dataset.page === b.dataset.tab));
   document.querySelectorAll("section").forEach(s => s.classList.toggle("on", s.id === b.dataset.tab));
   if (isRibbonMin()) document.body.classList.add("peek"); // thu gọn: bấm tab thì mở tạm ribbon
+  const lf = document.getElementById("listenFrame");
+  if (b.dataset.tab === "listen") { try { lf.contentWindow.focus(); } catch (e) {} }
+  else if (lf.contentWindow) lf.contentWindow.postMessage("qbank-pause", location.origin);  // rời tab: dừng audio
   if (b.dataset.tab === "struct") renderStruct();
   if (b.dataset.tab === "stats") { loadStats(); loadDifficulty(); }
   if (b.dataset.tab === "export") loadExport();
