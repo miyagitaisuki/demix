@@ -127,3 +127,19 @@ def test_unreachable_app_gives_clear_message():
     finally:
         mcp_server.BASE_URL = old
     assert err and "Không kết nối được app" in msg
+
+
+def test_create_question_with_audio_attaches_to_passage(stub):
+    err, res = call("create_question", {"chapter_id": 5, "content": "男の人は何をしますか。", "options": ["a", "b", "c", "d"],
+                                        "answer": "A", "passage": "[1] こんにちは\n[2] はい", "audio_script": "[1] こんにちは\n[2] はい",
+                                        "audio_target": "passage", "audio_level": "N3"})
+    assert not err and res["id"] == 9
+    paths = [c[1] for c in CALLS[-2:]]
+    assert paths == ["/api/tts", "/api/questions"]
+    sent = json.loads(CALLS[-1][2])
+    assert "passage_media" in sent and "media" not in sent and sent["status"] == "nhap"
+
+
+def test_create_question_audio_needs_passage_when_target_passage(stub):
+    err, msg = call("create_question", {"chapter_id": 5, "content": "x", "audio_script": "[1] a", "audio_target": "passage"})
+    assert err and "passage" in msg

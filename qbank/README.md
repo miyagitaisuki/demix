@@ -250,6 +250,9 @@ Chi tiết từng lỗi và cách tái hiện: `docs/bao_cao_kiem_thu_2026-11-02
   - **Xuất Moodle XML:** chọn câu rồi bấm "Xuất Moodle XML"; không chọn thì xuất mọi câu đã duyệt. Trắc nghiệm → multichoice (một đáp án); đúng/sai nhiều ý → mỗi ý là một câu truefalse; điền từ → shortanswer (mọi đáp án chấp nhận); tự luận → essay, hướng dẫn chấm đặt vào graderinfo. Danh mục Moodle theo học phần/giáo trình/chương. Ảnh và âm thanh được nhúng vào câu Moodle. Chưa thử nhập vào Moodle thật: cần kiểm tra trên máy có Moodle trước khi dùng cho lớp.
 - **Chưa làm (tính năng mới):** QTI; dùng chung qua mạng nội bộ có đăng nhập; cấu hình tên trường và khoa.
 
+## Claude tạo câu nghe qua MCP
+Tool `create_question` của `mcp_server.py` tạo câu hỏi (mặc định Nháp) và, nếu có `audio_script`, gọi textts tạo mp3 rồi đính kèm vào câu (`audio_target=question`) hoặc đoạn văn dùng chung (`audio_target=passage`, cần `passage`). Cần bật app và textts. Câu nghe do Claude tạo nằm ở trạng thái Nháp để người dùng nghe lại và duyệt.
+
 ## Tạo file nghe bằng textts
 Câu hỏi dạng nghe có thể tạo âm thanh ngay trong form sửa câu, không cần thu âm.
 1. Bật API textts trên cùng máy: mở app textts, hoặc chạy `python server.py` trong repo textts (cổng 8000). Muốn dùng VOICEVOX hoặc AivisSpeech thì bật engine đó trước; Edge cần Internet.
