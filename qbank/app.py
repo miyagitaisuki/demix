@@ -1033,6 +1033,59 @@ def parse_import(data: bytes, textbook_id, dry_run=False):
     return parse_rows(tables, textbook_id, dry_run, docx=True)
 
 
+CHAPTER_CODE_HEADERS = ("mã", "ma", "mã chương", "ma chuong", "code")
+CHAPTER_TITLE_HEADERS = ("tên", "ten", "tên chương", "ten chuong", "tiêu đề", "tieu de", "title")
+
+
+def plan_chapters(rows, textbook_id):
+    """Đọc danh sách chương từ bảng: cột Mã và Tên chương, dòng đầu là tiêu đề nếu có.
+    Trả về từng dòng kèm trạng thái: thêm / bỏ qua (mã đã có) / lỗi (thiếu hoặc trùng mã trong file)."""
+    rows = [list(r) for r in rows]
+    if not any(str(c).strip() for r in rows for c in r):
+        raise ValueError("File không có dữ liệu")
+    code_col, title_col, header = 0, 1, False
+    head = [str(c).strip().lower() for c in rows[0]] if rows else []
+    if head and head[0] in CHAPTER_CODE_HEADERS:
+        header = True
+        for i, h in enumerate(head):
+            if h in CHAPTER_TITLE_HEADERS:
+                title_col = i
+    existing = {r["code"] for r in q("SELECT code FROM chapters WHERE textbook_id=?", (textbook_id,), True)}
+    seen, out = set(), []
+    for n, cells in enumerate(rows, start=1):
+        if header and n == 1:
+            continue
+        cells = [str(c).strip() for c in cells]
+        if not any(cells):
+            continue
+        code = cells[code_col] if len(cells) > code_col else ""
+        title = cells[title_col] if len(cells) > title_col else ""
+        if not code:
+            status, note = "lỗi", "thiếu mã chương"
+        elif code in seen:
+            status, note = "lỗi", "mã trùng trong file"
+        elif code in existing:
+            status, note = "bỏ qua", "chương đã có"
+        else:
+            status, note = "thêm", ""
+        if code:
+            seen.add(code)
+        out.append({"line": n, "code": code, "title": title, "status": status, "note": note})
+    return out
+
+
+def import_chapters(rows, textbook_id, dry_run=False):
+    """Nhập hàng loạt chương vào giáo trình đã chọn. dry_run: chỉ kiểm tra, không ghi."""
+    plan = plan_chapters(rows, textbook_id)
+    counts = {k: sum(1 for r in plan if r["status"] == k) for k in ("thêm", "bỏ qua", "lỗi")}
+    if not dry_run and counts["thêm"]:
+        with closing(sqlite3.connect(DB_PATH)) as conn:
+            conn.executemany("INSERT INTO chapters(textbook_id, code, title) VALUES(?, ?, ?)",
+                             [(textbook_id, r["code"], r["title"]) for r in plan if r["status"] == "thêm"])
+            conn.commit()
+    return {"dry_run": dry_run, "counts": counts, "rows": plan}
+
+
 STATUS_IMPORT = {**{v.lower(): k for k, v in STATUSES.items()}, **{k: k for k in STATUSES}}
 
 
@@ -2492,6 +2545,12 @@ class Handler(BaseHTTPRequestHandler):
             save_passage_media(new_id, body)
             warnings = [f"Trùng nội dung với câu {code_of(h[0])} ở chương khác" for h in other[:3]]
             return self._json(201, {"ok": True, "id": new_id, "code": code_of(new_id), "warnings": warnings})
+        if p == "/api/chapters/import":  # nhập hàng loạt chương từ CSV/xlsx (cột Mã, Tên chương)
+            textbook_id = int(parse_qs(u.query).get("textbook_id", [""])[0] or 0)
+            if not textbook_id:
+                raise ValueError("Chọn giáo trình trước khi nhập chương")
+            dry = parse_qs(u.query).get("dry_run", ["0"])[0] == "1"
+            return self._json(200, import_chapters(read_table_text(self._raw()), textbook_id, dry))
         if p == "/api/import-text":  # CSV hoặc dữ liệu dán từ Excel
             textbook_id = int(parse_qs(u.query).get("textbook_id", [""])[0] or 0)
             if not textbook_id:
