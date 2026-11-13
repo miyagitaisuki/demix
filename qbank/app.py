@@ -2518,6 +2518,64 @@ def check_passage(chapter_id, text, confirmed=False):
                           f"Nếu là cùng một đoạn, hãy chọn đoạn đó ở danh sách; nếu vẫn muốn tạo đoạn mới, xác nhận lại.")
 
 
+def check_candidates(items, threshold=SIMILAR_THRESHOLD, limit=3):
+    """Kiểm trùng hàng loạt trước khi tạo câu: mỗi câu dự định (chapter_id, qtype, content, options) được đối chiếu với
+    ngân hàng (trùng y hệt theo dup_key; gần giống >= threshold, cùng dạng) và với các câu khác trong cùng lô.
+    Dùng chỉ mục 3-ký-tự như similar_pairs nên một lô vài chục câu chỉ mất một lần quét ngân hàng."""
+    from difflib import SequenceMatcher
+    from collections import defaultdict
+    rows = q(QUESTION_SQL + " ORDER BY qs.id", fetch=True)
+    keys = {r["id"]: dup_key(r["content"], json.loads(r["options"])) for r in rows}
+    by_key = defaultdict(list)
+    grams = defaultdict(set)
+    for r in rows:
+        k = keys[r["id"]]
+        by_key[k].append(r)
+        for g in {k[i:i + 3] for i in range(len(k) - 2)}:
+            grams[(r["qtype"], g)].add(r["id"])
+    by_id = {r["id"]: r for r in rows}
+    cands = []
+    for it in items:
+        opts = [str(o).strip() for o in (it.get("options") or []) if str(o).strip()]
+        cands.append({"chapter_id": int(it.get("chapter_id") or 0), "qtype": str(it.get("qtype") or "TN").upper(),
+                      "content": str(it.get("content") or ""), "key": dup_key(str(it.get("content") or ""), opts)})
+
+    def ratio_of(a, b):
+        sm = SequenceMatcher(None, a, b, autojunk=False)
+        if sm.real_quick_ratio() < threshold or sm.quick_ratio() < threshold:
+            return 0.0
+        return sm.ratio()
+
+    out = []
+    for i, c in enumerate(cands):
+        k = c["key"]
+        exact = [{"code": r["code"], "chapter": r["chapter_label"], "same_chapter": r["chapter_id"] == c["chapter_id"]}
+                 for r in by_key.get(k, [])]
+        shared = defaultdict(int)
+        for g in {k[j:j + 3] for j in range(len(k) - 2)}:
+            ids = grams.get((c["qtype"], g), ())
+            if len(ids) <= 300:
+                for rid in ids:
+                    shared[rid] += 1
+        similar = []
+        for rid, n in shared.items():
+            if n < 3 or keys[rid] == k or not keys[rid]:
+                continue
+            ratio = ratio_of(k, keys[rid])
+            if ratio >= threshold:
+                r = by_id[rid]
+                similar.append({"code": r["code"], "ratio": round(ratio, 3), "chapter": r["chapter_label"],
+                                "content": (r["content"] or "")[:120]})
+        similar.sort(key=lambda x: -x["ratio"])
+        in_batch = [{"index": j, "ratio": 1.0 if cands[j]["key"] == k else round(ratio_of(k, cands[j]["key"]), 3)}
+                    for j in range(len(cands)) if j != i and cands[j]["qtype"] == c["qtype"] and k and cands[j]["key"]
+                    and (cands[j]["key"] == k or ratio_of(k, cands[j]["key"]) >= threshold)]
+        same_ch = any(e["same_chapter"] for e in exact)
+        status = "trùng" if same_ch else ("trùng chương khác" if exact else ("gần giống" if similar or in_batch else "mới"))
+        out.append({"index": i, "status": status, "exact": exact[:limit], "similar": similar[:limit], "in_batch": in_batch[:limit]})
+    return out
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "QBank/2.0"
 
@@ -2776,6 +2834,13 @@ class Handler(BaseHTTPRequestHandler):
         mc = re.fullmatch(r"/api/chapters/(\d+)/clear", p)
         if mc:  # xóa toàn bộ câu trong chương, giữ tên chương; sao lưu trước
             return self._json(200, clear_chapter_questions(int(mc.group(1)), bool(self._json_body().get("confirm"))))
+        if p == "/api/check-candidates":  # kiểm trùng hàng loạt trước khi tạo câu (không ghi gì)
+            items = self._json_body().get("items")
+            if not isinstance(items, list) or not items:
+                raise ValueError("Thiếu danh sách items")
+            if len(items) > 100:
+                raise ValueError("Tối đa 100 câu mỗi lần kiểm")
+            return self._json(200, {"results": check_candidates(items)})
         if p == "/api/import-text":  # CSV hoặc dữ liệu dán từ Excel
             textbook_id = int(parse_qs(u.query).get("textbook_id", [""])[0] or 0)
             if not textbook_id:

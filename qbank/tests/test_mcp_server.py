@@ -264,6 +264,20 @@ def test_get_question_audio_lists_both_levels(monkeypatch):
     err, res = call("get_question_audio", {"question_id": 7})
     assert not err and res["question_audio"][0]["file"] == "old.mp3" and res["passage_audio"][0]["file"] == "pold.mp3"
 
+def test_check_duplicates_tool_summarises(monkeypatch):
+    seen = []
+
+    def fake_api(method, path, params=None, body=None, content_type="application/json"):
+        seen.append((method, path, body))
+        return {"results": [{"index": 0, "status": "mới"}, {"index": 1, "status": "trùng"}, {"index": 2, "status": "mới"}]}
+
+    monkeypatch.setattr(mcp_server, "api", fake_api)
+    err, res = call("check_duplicates", {"items": [{"chapter_id": 1, "content": "a"}] * 3})
+    assert not err and res["summary"] == {"mới": 2, "gần giống": 0, "trùng chương khác": 0, "trùng": 1}
+    assert seen[-1][:2] == ("POST", "/api/check-candidates")
+    err, msg = call("check_duplicates", {"items": []})
+    assert err and "items" in msg
+
 
 def test_create_question_passes_confirm_passage_only_when_true(monkeypatch):
     seen = []

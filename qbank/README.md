@@ -267,6 +267,9 @@ Chi tiết từng lỗi và cách tái hiện: `docs/bao_cao_kiem_thu_2026-11-02
 ### Thay và xóa file nghe qua MCP
 `attach_audio` mặc định thay file nghe cũ cùng cấp (câu hoặc đoạn văn) để mỗi câu chỉ có một file nghe (`replace=false` để gắn thêm). `get_question_audio` liệt kê file nghe của câu và đoạn văn; `remove_audio` gỡ file được chọn (hoặc mọi file nghe ở cấp đó) khỏi dữ liệu câu/đoạn văn, có `dry_run`. Chỉ sửa danh sách đính kèm trong CSDL qua API sẵn có; không cần build lại app.
 
+### Kiểm trùng trước khi tạo câu
+Công cụ MCP `check_duplicates` (API `POST /api/check-candidates`, không ghi gì) nhận tối đa 100 câu dự định tạo và trả về từng câu: `mới`, `gần giống` (>= 90%, cùng dạng), `trùng chương khác` hoặc `trùng` (cùng chương, app sẽ từ chối), kèm mã câu đã có và các câu trùng nhau trong chính lô. Dùng chỉ mục 3-ký-tự nên 30 câu đối chiếu 3000 câu mất ~0,2 giây. Cần build lại `QBank.exe` để có route này.
+
 ### MCP luôn đi kèm bản cập nhật
 - `python3 tools/build_exe.py` tạo `dist/QBank(.exe)` và `dist/QBankMCP(.exe)`; khai báo bản đóng gói bằng `claude mcp add qbank -- /duong/dan/QBankMCP.exe`. Phát hành bản mới thì đính kèm cả hai file.
 - Khi app đổi cấu trúc (thêm/đổi tên/xóa route API, thêm cột câu hỏi), MCP phải đổi theo. `tools/check_mcp_sync.py` kiểm tra: mọi đường dẫn MCP gọi còn tồn tại, mọi cột câu hỏi có trong `QUESTION_FIELDS`, và so route với `mcp_manifest.json`. Lệch thì kiểm tra báo lỗi; sửa `mcp_server.py` và tests rồi chạy `python3 tools/check_mcp_sync.py --update`.
