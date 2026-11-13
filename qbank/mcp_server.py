@@ -135,6 +135,33 @@ def tool_import_chapters(args):
                       "note": x["note"]} for x in r["rows"] if x["status"] != "thêm" or dry]}
 
 
+def tool_create_question(args):
+    """Tạo một câu hỏi (mặc định trạng thái Nháp). Có audio_script thì nhờ textts đọc kịch bản thành mp3 rồi đính kèm:
+    audio_target="passage" gắn vào đoạn văn (dùng chung cho mọi câu của đoạn, cần có passage), "question" gắn riêng vào câu."""
+    body = {"chapter_id": _int(args.get("chapter_id"), "chapter_id"), "bloom": args.get("bloom", 1),
+            "qtype": args.get("qtype", "TN"), "content": args.get("content", ""), "options": args.get("options") or [],
+            "answer": args.get("answer", ""), "solution": args.get("solution", ""), "passage": args.get("passage", ""),
+            "clo": args.get("clo", ""), "tags": args.get("tags", ""), "status": args.get("status", "nhap")}
+    if args.get("points") is not None:
+        body["points"] = args["points"]
+    script = str(args.get("audio_script") or "").strip()
+    audio = None
+    if script:
+        target = args.get("audio_target", "question")
+        if target not in ("question", "passage"):
+            raise ApiError('audio_target phải là "question" hoặc "passage"')
+        if target == "passage" and not str(body["passage"]).strip():
+            raise ApiError("Gắn audio vào đoạn văn thì phải có passage")
+        audio = api("POST", "/api/tts", body={"script": script, "engine": args.get("audio_engine") or "voicevox",
+                                              "level": args.get("audio_level")})
+        body["passage_media" if target == "passage" else "media"] = [audio]
+    r = api("POST", "/api/questions", body=body)
+    out = {"ok": True, "id": r.get("id"), "code": r.get("code"), "warnings": r.get("warnings", [])}
+    if audio:
+        out["audio"] = {"file": audio.get("name"), "duration_s": audio.get("duration_s")}
+    return out
+
+
 def _obj(props, required=()):
     return {"type": "object", "properties": props, "required": list(required), "additionalProperties": False}
 
@@ -173,6 +200,23 @@ TOOLS = [
                     "chỉ đặt dry_run=false sau khi người dùng đã xác nhận kết quả kiểm tra.",
      "inputSchema": _obj({"textbook_id": {"type": "integer"}, "csv": {"type": "string"},
                           "dry_run": {"type": "boolean", "default": True}}, ["textbook_id", "csv"])},
+    {"name": "create_question", "handler": tool_create_question,
+     "description": "Tạo một câu hỏi (mặc định Nháp, chờ người dùng duyệt). Câu nghe (聴解): đặt kịch bản hội thoại vào audio_script "
+                    "(mỗi dòng một lượt nói, [1] ..., [2] ...; furigana {漢字|かな}; nghỉ [pause=800]); QBank gọi textts tạo mp3 và đính kèm. "
+                    "Cần bật textts (cổng 8000). Hội thoại dùng chung nhiều câu: điền passage và audio_target=passage.",
+     "inputSchema": _obj({
+         "chapter_id": {"type": "integer"}, "bloom": {"type": "integer", "minimum": 1, "maximum": 5},
+         "qtype": {"type": "string", "enum": ["TN", "DS", "DT", "TL"]},
+         "content": {"type": "string"}, "options": {"type": "array", "items": {"type": "string"}},
+         "answer": {"type": "string", "description": "TN: chữ cái A/B/C/D; DT: đáp án (nhiều đáp án cách nhau bằng |)"},
+         "solution": {"type": "string"}, "passage": {"type": "string", "description": "Đoạn văn / kịch bản hiển thị kèm câu"},
+         "clo": {"type": "string"}, "tags": {"type": "string"}, "points": {"type": "number"},
+         "status": {"type": "string", "enum": ["nhap", "da_duyet", "ngung"]},
+         "audio_script": {"type": "string"},
+         "audio_target": {"type": "string", "enum": ["question", "passage"], "default": "question"},
+         "audio_engine": {"type": "string", "description": "voicevox (mặc định), aivis, edge… theo textts"},
+         "audio_level": {"type": "string", "enum": ["N5", "N4", "N3", "N2", "N1"]}},
+         ["chapter_id", "content"])},
 ]
 TOOL_BY_NAME = {t["name"]: t for t in TOOLS}
 
