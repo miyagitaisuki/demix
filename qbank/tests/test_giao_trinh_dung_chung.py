@@ -127,3 +127,40 @@ def test_unlink_refused_when_last_course_and_chapters_exist(db):
     tid = scalar("SELECT id FROM textbooks WHERE name='Trainer 3'")
     left = app.q("SELECT COUNT(*) AS n FROM course_textbooks WHERE textbook_id=? AND course_id<>?", (tid, cid), True)[0]["n"]
     assert left == 0  # đây là điều kiện mà endpoint DELETE /api/course_textbooks dùng để từ chối
+
+
+def test_chapter_csv_plans_and_skips_existing(db):
+    app.init_storage()
+    app.ensure_chapter(["Tiếng Nhật 3"], "Trainer 3", "B01", "Bài 1")
+    tb = scalar("SELECT id FROM textbooks WHERE name='Trainer 3'")
+    rows = [["Mã", "Tên chương"], ["B01", "Bài 1"], ["B02", "Bài 2"], ["", "thiếu mã"], ["B02", "trùng"], ["B03", ""]]
+    plan = app.plan_chapters(rows, tb)
+    assert [p["status"] for p in plan] == ["bỏ qua", "thêm", "lỗi", "lỗi", "thêm"]
+    assert plan[1]["line"] == 3 and plan[1]["code"] == "B02"
+    assert plan[3]["note"] == "mã trùng trong file"
+
+
+def test_chapter_csv_dry_run_does_not_write_and_commit_does(db):
+    app.init_storage()
+    app.ensure_chapter(["Tiếng Nhật 3"], "Trainer 3", "B01", "Bài 1")
+    tb = scalar("SELECT id FROM textbooks WHERE name='Trainer 3'")
+    rows = [["B02", "Bài 2"], ["B03", "Bài 3"]]
+    before = scalar("SELECT COUNT(*) FROM chapters")
+    check = app.import_chapters(rows, tb, dry_run=True)
+    assert check["counts"]["thêm"] == 2 and scalar("SELECT COUNT(*) FROM chapters") == before
+    done = app.import_chapters(rows, tb, dry_run=False)
+    assert done["counts"]["thêm"] == 2
+    assert scalar("SELECT COUNT(*) FROM chapters") == before + 2
+    assert scalar("SELECT title FROM chapters WHERE code='B03'") == "Bài 3"
+    again = app.import_chapters(rows, tb, dry_run=False)  # chạy lại không thêm trùng
+    assert again["counts"] == {"thêm": 0, "bỏ qua": 2, "lỗi": 0}
+
+
+def test_chapter_csv_without_header_and_with_bom(db):
+    app.init_storage()
+    app.q("INSERT INTO textbooks(name) VALUES('Sách mới')")
+    raw = "﻿B01,Bài một\nB02,Bài hai\n".encode("utf-8")
+    rows = app.read_table_text(raw)
+    plan = app.plan_chapters(rows, scalar("SELECT id FROM textbooks WHERE name='Sách mới'"))
+    assert [p["code"] for p in plan] == ["B01", "B02"]
+    assert plan[0]["title"] == "Bài một"

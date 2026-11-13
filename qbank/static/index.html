@@ -452,6 +452,8 @@
       <h3 class="ph">Thêm chương</h3>
       <div class="row"><select id="newChTb" style="flex:1"></select></div>
       <div class="row"><input id="newChCode" placeholder="Mã, VD: B03" style="width:100px"><input id="newChTitle" placeholder="Tên chương" style="flex:1"><button class="p" onclick="addChapter()">Thêm</button></div>
+      <div class="row"><button class="g" title="Nhập nhiều chương từ file CSV/Excel: cột Mã và Tên chương, dòng đầu có thể là tiêu đề. Chương vào giáo trình đã chọn ở trên." onclick="$('#chapterFile').click()"><i class="fa-solid fa-file-import"></i> Nhập CSV hàng loạt</button><span class="sub">Cột: Mã, Tên chương</span></div>
+      <input type="file" id="chapterFile" class="hfile" accept=".csv,.txt,.xlsx" onchange="importChapters(this)">
     </div>
   </div>
   <div id="structMsg" class="msg"></div>
@@ -1577,6 +1579,29 @@ const addCourse = () => structAction(async () => {
 const addTextbook = () => structAction(async () => {
   await postJson("/api/textbooks", { course_id: $("#newTbCourse").value, name: $("#newTb").value, code: $("#newTbCode").value }); $("#newTb").value = ""; $("#newTbCode").value = "";
 });
+// nhập hàng loạt chương: kiểm tra trước, hiện số dòng sẽ thêm / bỏ qua / lỗi, rồi mới ghi
+async function importChapters(input) {
+  const f = input.files[0]; if (!f) return;
+  const tid = $("#newChTb").value;
+  input.value = "";
+  if (!tid) { $("#structMsg").innerHTML = `<span class="err">Chọn giáo trình trước khi nhập chương.</span>`; return; }
+  try {
+    const buf = await f.arrayBuffer();
+    const check = await api(`/api/chapters/import?textbook_id=${tid}&dry_run=1`, { method: "POST", body: buf });
+    const c = check.counts;
+    if (!c["thêm"]) {
+      $("#structMsg").innerHTML = `<span class="err">Không có chương mới để thêm (bỏ qua ${c["bỏ qua"]}, lỗi ${c["lỗi"]}).</span>`;
+      return;
+    }
+    const ok = confirm(`Thêm ${c["thêm"]} chương vào giáo trình đã chọn?\nBỏ qua ${c["bỏ qua"]} chương đã có, ${c["lỗi"]} dòng lỗi (sẽ không thêm).`);
+    if (!ok) { $("#structMsg").textContent = "Đã hủy nhập."; return; }
+    const r = await api(`/api/chapters/import?textbook_id=${tid}`, { method: "POST", body: buf });
+    const errs = r.rows.filter(x => x.status === "lỗi").slice(0, 10).map(x => `dòng ${x.line}: ${esc(x.note)}`);
+    $("#structMsg").innerHTML = `Đã thêm ${r.counts["thêm"]} chương, bỏ qua ${r.counts["bỏ qua"]}.`
+      + (errs.length ? `<br><span class="err">Dòng lỗi (không thêm): ${errs.join("; ")}</span>` : "");
+    renderStruct();
+  } catch (e) { $("#structMsg").innerHTML = `<span class="err">${esc(e.message)}</span>`; }
+}
 const addChapter = () => structAction(async () => {
   await postJson("/api/chapters", { textbook_id: $("#newChTb").value, code: $("#newChCode").value, title: $("#newChTitle").value });
   $("#newChCode").value = ""; $("#newChTitle").value = ""; $("#newChCode").focus();
