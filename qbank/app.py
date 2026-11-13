@@ -956,6 +956,7 @@ IMPORT_COLUMNS = {
     "tags": ["thẻ", "the", "tags"],
     "so_tu": ["số từ", "so tu", "số từ tối đa", "so tu toi da", "giới hạn từ", "gioi han tu"],
     "status": ["trạng thái", "trang thai", "status"],
+    "ma_cau": ["mã câu", "ma cau"],
 }
 IMPORT_REQUIRED = ("ma", "noi_dung", "dap_an", "loai", "muc")
 
@@ -1097,7 +1098,7 @@ def parse_rows(tables, textbook_id, dry_run=False, docx=True):
     Mã chương phải đã có trong giáo trình được chọn; không tự tạo chương mới."""
     chapter_by_code = {r["code"]: r["id"] for r in q(
         "SELECT id, code FROM chapters WHERE textbook_id=?", (textbook_id,), True)}
-    added, errors, skipped, warnings = 0, [], [], []
+    added, updated, errors, skipped, warnings = 0, 0, [], [], []
     rows_out = []  # xem trước: trạng thái từng dòng
     index = dup_index()
     where = (lambda t, r: f"Bảng {t}, dòng {r}") if docx else (lambda t, r: f"Dòng {r}")
@@ -1157,7 +1158,16 @@ def parse_rows(tables, textbook_id, dry_run=False, docx=True):
                     "word_limit": get("so_tu"),  # điền từ: số từ tối đa, để trống = không giới hạn
                     "status": STATUS_IMPORT.get(get("status").strip().lower(), ""),
                 })
+                qcode = get("ma_cau")
+                hit = q("""SELECT qs.id, ch.textbook_id FROM questions qs JOIN chapters ch ON ch.id = qs.chapter_id
+                           WHERE qs.code = ?""", (qcode,), True) if qcode else []
+                upd = hit[0] if hit else None
+                if upd and upd["textbook_id"] != textbook_id:
+                    raise ValueError(f"câu {qcode} thuộc giáo trình khác, không cập nhật từ file này")
                 same, other, key = check_duplicate(index, payload)
+                if upd:  # câu đang sửa không tính là trùng với chính nó
+                    same = [h for h in same if h[0] != upd["id"]]
+                    other = [h for h in other if h[0] != upd["id"]]
                 label = where(t_idx, r_idx)
                 if payload["passage"] and not dry_run and not q(
                         "SELECT 1 FROM passages WHERE chapter_id=? AND content=?",
@@ -1172,6 +1182,15 @@ def parse_rows(tables, textbook_id, dry_run=False, docx=True):
                     skipped.append(f"{label}: trùng {ref_txt} trong cùng chương")
                     rows_out.append(dict(preview, status="skip", note=f"trùng {ref_txt}"))
                     continue
+                if upd:  # mã câu đã có trong CSDL: cập nhật đúng câu đó, không thêm bản mới
+                    if not dry_run:
+                        update_question(upd["id"], payload, get("status"))
+                    index.setdefault(key, []).append((upd["id"] if not dry_run else label, payload["chapter_id"], payload["content"]))
+                    updated += 1
+                    rows_out.append(dict(preview, status="update", note=f"cập nhật {qcode}"))
+                    continue
+                if qcode:  # mã không có trong CSDL: thêm như câu mới, báo để người dùng biết
+                    warnings.append(f"{label}: mã câu {qcode} không có trong CSDL, thêm như câu mới")
                 if dry_run:  # chưa ghi; dùng nhãn dòng để so trùng với các dòng sau trong cùng file
                     new_id = f"{label}"
                 else:
@@ -1187,7 +1206,7 @@ def parse_rows(tables, textbook_id, dry_run=False, docx=True):
                 errors.append(f"{where(t_idx, r_idx)}: {e}")
                 rows_out.append({"where": where(t_idx, r_idx), "code": "", "qtype": "",
                                  "content": "", "status": "error", "note": str(e)})
-    return {"added": added, "skipped": skipped, "warnings": warnings, "errors": errors,
+    return {"added": added, "updated": updated, "skipped": skipped, "warnings": warnings, "errors": errors,
             "dry_run": dry_run, "rows": rows_out}
 
 
@@ -1906,6 +1925,63 @@ def make_import_template_csv():
     return ("\ufeff" + buf.getvalue()).encode("utf-8")
 
 
+def update_question(qid, payload, status_raw=""):
+    """Ghi lại một câu đã có từ file nhập/xuất. Giữ nguyên mã, hình ảnh, điểm và rubric.
+    Trạng thái: để trống thì giữ trạng thái hiện có."""
+    status = STATUS_IMPORT.get(str(status_raw).strip().lower()) or \
+        q("SELECT status FROM questions WHERE id=?", (qid,), True)[0]["status"]
+    pid = resolve_passage(payload["chapter_id"], payload.get("passage"))
+    with closing(sqlite3.connect(DB_PATH)) as conn:
+        conn.execute("PRAGMA foreign_keys = ON")
+        conn.execute("""UPDATE questions SET chapter_id=?, bloom=?, qtype=?, content=?, options=?, answer=?, solution=?,
+                        passage=?, passage_id=?, clo=?, tags=?, word_limit=?, status=? WHERE id=?""",
+                     (payload["chapter_id"], payload["bloom"], payload["qtype"], payload["content"], payload["options"],
+                      payload["answer"], payload["solution"], payload.get("passage", ""), pid, payload["clo"],
+                      payload["tags"], payload["word_limit"], status, qid))
+        conn.commit()
+
+
+EXPORT_HEADERS = ["Mã câu"] + IMPORT_HEADERS + ["Trạng thái"]
+
+
+def export_row(r):
+    """Một câu thành một dòng theo đúng cột của file nhập (đảo ngược cách đọc của parse_rows)."""
+    qtype = r["qtype"]
+    opts = json.loads(r["options"] or "[]")
+    tfng = qtype == "TN" and TFNG_TAG in (r["tags"] or "").lower()  # TFNG: phương án cố định, không ghi ra
+    lines = [r["content"]]
+    if qtype == "TN" and not tfng:
+        lines += [f"{LETTERS[i]}. {o}" for i, o in enumerate(opts)]
+    elif qtype == "DS":
+        lines += [f"{chr(97 + i)}) {o}" for i, o in enumerate(opts)]
+    answer = r["answer"]
+    if qtype == "DS":  # DSD -> Đ S Đ (nhập lại được)
+        answer = " ".join("Đ" if c == "D" else "S" for c in answer)
+    return [r["code"], r["chapter_code"], "\n".join(lines), answer, qtype, str(r["bloom"]), r["passage"],
+            r["solution"], r["clo"], ", ".join(tags_list(r["tags"])), str(r["word_limit"] or ""),
+            STATUSES.get(r["status"], "")]
+
+
+def export_questions_csv(textbook_id, chapter_id=None):
+    """Xuất câu hỏi của một giáo trình (tùy chọn một chương) ra CSV cùng cột với file nhập.
+    Có cột Mã câu: nhập lại file đã sửa sẽ cập nhật đúng câu đó."""
+    sql = """SELECT qs.id, qs.code, qs.qtype, qs.bloom, qs.content, qs.options, qs.answer, qs.solution, qs.clo,
+             qs.tags, qs.word_limit, qs.status, ch.code AS chapter_code,
+             COALESCE((SELECT p.content FROM passages p WHERE p.id = qs.passage_id), qs.passage, '') AS passage
+             FROM questions qs JOIN chapters ch ON ch.id = qs.chapter_id WHERE ch.textbook_id = ?"""
+    args = [int(textbook_id)]
+    if chapter_id:
+        sql += " AND ch.id = ?"
+        args.append(int(chapter_id))
+    sql += " ORDER BY ch.code, qs.bloom, qs.id"
+    buf = io.StringIO()
+    w = csv.writer(buf, lineterminator="\n")
+    w.writerow(EXPORT_HEADERS)
+    for r in q(sql, args, True):
+        w.writerow(export_row(r))
+    return ("\ufeff" + buf.getvalue()).encode("utf-8")
+
+
 def make_sample_templates():
     """Tạo 2 template mẫu để người dùng thay bằng mẫu trường mình."""
     d = Document()
@@ -2510,6 +2586,13 @@ class Handler(BaseHTTPRequestHandler):
             body = json.dumps(backup_payload(), ensure_ascii=False, indent=1).encode()
             return self._send(200, body, "application/json; charset=utf-8",
                               {"Content-Disposition": 'attachment; filename="qbank_backup.json"'})
+        if p == "/api/export-questions":  # xuất câu hỏi của giáo trình (tùy chọn chương) ra CSV để sửa
+            tid = int(arg("textbook_id") or 0)
+            if not tid:
+                raise ValueError("Chọn giáo trình trước khi xuất")
+            body = export_questions_csv(tid, int(arg("chapter_id") or 0) or None)
+            return self._send(200, body, "text/csv; charset=utf-8",
+                              {"Content-Disposition": f'attachment; filename="cau_hoi_gt{tid}.csv"'})
         if p == "/api/import-template" and arg("format") == "csv":
             return self._send(200, make_import_template_csv(), "text/csv; charset=utf-8",
                               {"Content-Disposition": 'attachment; filename="mau_nhap_cau_hoi.csv"'})

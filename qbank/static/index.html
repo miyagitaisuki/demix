@@ -314,6 +314,7 @@
           <div class="rcol">
             <a class="rbtn sm" href="/api/import-template" download><i class="fa-solid fa-file-lines"></i>Tải mẫu nhập</a>
             <a class="rbtn sm" href="/api/import-template?format=csv" download title="Mẫu CSV cùng cột với mẫu Word; mở bằng Excel rồi lưu lại khi nhập"><i class="fa-solid fa-file-csv"></i>Mẫu CSV</a>
+            <a class="rbtn sm" href="#" onclick="exportCsv(event)" title="Xuất câu hỏi của giáo trình đang chọn (và chương nếu đã chọn) ra CSV để sửa; nhập lại sẽ cập nhật đúng câu"><i class="fa-solid fa-file-export"></i>Xuất CSV</a>
             <label class="rbtn sm" for="restoreFile"><i class="fa-solid fa-upload"></i>Khôi phục .json</label>
             <button class="rbtn sm" onclick="togglePaste()"><i class="fa-solid fa-paste"></i>Dán từ Excel</button>
           </div>
@@ -1389,19 +1390,19 @@ function renderImportPreview(r) {
   box.style.display = "block";
   IMPORT_ROWS = r.rows;
   const count = st => r.rows.filter(x => x.status === st).length;
-  const n = count("ok") + count("warn");
+  const n = count("ok") + count("warn") + count("update");
   const tb = TREE.textbooks.find(t => t.id == PENDING_IMPORT.tid);
   const tableErrors = (r.errors || []).length
     ? `<div class="row" style="background:#fef2f2;color:#b91c1c;padding:8px;border-radius:6px;margin-bottom:8px">
          <b>Lỗi cấp bảng, các bảng này bị bỏ qua:</b> ${esc(r.errors.join(" | "))}</div>` : "";
-  const chips = [["ok", "Sẽ nhập", "#dcfce7", "#166534"], ["warn", "Cảnh báo", "#fef3c7", "#92400e"],
+  const chips = [["ok", "Sẽ nhập", "#dcfce7", "#166534"], ["update", "Cập nhật", "#dbeafe", "#1e40af"], ["warn", "Cảnh báo", "#fef3c7", "#92400e"],
                  ["skip", "Bỏ qua (trùng)", "#e5e7eb", "#374151"], ["error", "Lỗi", "#fee2e2", "#b91c1c"]]
     .map(([st, label, bg, fg]) => `<span class="tag" style="background:${bg};color:${fg}">${label}: ${count(st)}</span>`).join(" ");
   box.innerHTML = tableErrors + `<div class="row"><b>Xem trước: ${esc(PENDING_IMPORT.name)}</b>
       <span class="sub">Sẽ nhập ${n} câu vào giáo trình «${esc(tb ? tb.name : "")}». Chưa có gì được ghi.</span></div>
     <div class="row">${chips}
       <label style="margin-left:auto">Hiển thị: <select id="importFilter" onchange="renderImportRows()">
-        <option value="">Tất cả dòng</option><option value="ok">Sẽ nhập</option><option value="warn">Cảnh báo</option>
+        <option value="">Tất cả dòng</option><option value="ok">Sẽ nhập</option><option value="update">Cập nhật</option><option value="warn">Cảnh báo</option>
         <option value="skip">Bỏ qua (trùng)</option><option value="error">Lỗi</option></select></label></div>
     <table><thead><tr><th>Vị trí</th><th>Mã chương</th><th>Loại</th><th>Nội dung</th><th>Trạng thái</th></tr></thead><tbody id="importRows"></tbody></table>
     <div class="row" style="margin-top:8px">
@@ -1410,7 +1411,7 @@ function renderImportPreview(r) {
   renderImportRows();
 }
 function renderImportRows() {
-  const badge = { ok: `<span class="tag">Sẽ nhập</span>`, warn: `<span class="tag" style="background:#fef3c7;color:#92400e">Nhập, có cảnh báo</span>`,
+  const badge = { ok: `<span class="tag">Sẽ nhập</span>`, update: `<span class="tag" style="background:#dbeafe;color:#1e40af">Cập nhật</span>`, warn: `<span class="tag" style="background:#fef3c7;color:#92400e">Nhập, có cảnh báo</span>`,
                   skip: `<span class="tag" style="background:#e5e7eb">Bỏ qua</span>`, error: `<span class="tag" style="background:#fee2e2;color:#b91c1c">Lỗi</span>` };
   const f = $("#importFilter") ? $("#importFilter").value : "";
   const rows = IMPORT_ROWS.filter(x => !f || x.status === f);
@@ -1421,20 +1422,28 @@ function renderImportRows() {
     : `<tr><td colspan="5" class="msg">Không có dòng nào ở trạng thái này.</td></tr>`;
 }
 function cancelImport() { PENDING_IMPORT = null; $("#importPreview").style.display = "none"; }
+// xuất câu hỏi của giáo trình (và chương) đang chọn ở bộ lọc ra CSV cùng cột với file nhập
+function exportCsv(e) {
+  e.preventDefault();
+  const tid = $("#fTextbook").value;
+  if (!tid) { toast("Chọn giáo trình ở bộ lọc trước khi xuất.", true); return; }
+  const chid = $("#fChapter").value;
+  location.href = `/api/export-questions?textbook_id=${tid}${chid ? `&chapter_id=${chid}` : ""}`;
+}
 async function confirmImport() {
   if (!PENDING_IMPORT) return;
   const { buf, tid, url } = PENDING_IMPORT;
   try {
     const r = await api(`${url}?textbook_id=${tid}`, { method: "POST", body: buf });
     $("#importMsg").innerHTML = importSummary("Đã nhập", r);
-    toast(`Đã nhập ${r.added} câu.`);
+    toast(`Đã nhập ${r.added} câu` + (r.updated ? `, cập nhật ${r.updated} câu.` : "."));
     cancelImport();
     loadQuestions();
   } catch (e) { $("#importMsg").innerHTML = `<span class="err">${esc(e.message)}</span>`; }
 }
 
 function importSummary(label, r) {
-  let html = `${label} ${r.added} câu.`;
+  let html = `${label} ${r.added} câu` + (r.updated ? `, cập nhật ${r.updated} câu` : "") + ".";
   if (r.skipped && r.skipped.length) html += ` Bỏ qua ${r.skipped.length} câu trùng: ${esc(r.skipped.join("; "))}.`;
   if (r.warnings && r.warnings.length) html += ` <span class="err">Cảnh báo: ${esc(r.warnings.join("; "))}</span>`;
   if (r.errors && r.errors.length) html += ` <span class="err">Lỗi: ${esc(r.errors.join(" | "))}</span>`;
