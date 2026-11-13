@@ -224,3 +224,20 @@ def test_check_duplicates_tool_summarises(monkeypatch):
     assert seen[-1][:2] == ("POST", "/api/check-candidates")
     err, msg = call("check_duplicates", {"items": []})
     assert err and "items" in msg
+
+
+def test_create_question_passes_confirm_passage_only_when_true(monkeypatch):
+    seen = []
+
+    def fake_api(method, path, params=None, body=None, content_type="application/json"):
+        seen.append(body)
+        return {"id": 1, "code": "X-1"}
+
+    monkeypatch.setattr(mcp_server, "api", fake_api)
+    base = {"chapter_id": 1, "content": "c", "options": ["a", "b"], "answer": "A", "passage": "ばん3"}
+    call("create_question", base)
+    assert "confirm_passage" not in seen[-1]
+    call("create_question", {**base, "confirm_passage": True})
+    assert seen[-1]["confirm_passage"] is True
+    tool = mcp_server.TOOL_BY_NAME["create_question"]
+    assert "confirm_passage" in tool["inputSchema"]["properties"]

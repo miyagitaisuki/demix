@@ -145,6 +145,8 @@ def tool_create_question(args):
             "transcript": args.get("transcript", ""), "translation": args.get("translation", "")}
     if args.get("points") is not None:
         body["points"] = args["points"]
+    if args.get("confirm_passage") is True:  # nhãn đoạn văn gần giống đoạn có sẵn: chỉ tạo đoạn mới khi người dùng đã xác nhận
+        body["confirm_passage"] = True
     script = str(args.get("audio_script") or "").strip()
     audio = None
     if script and not str(body["transcript"]).strip():
@@ -273,7 +275,7 @@ TOOLS = [
     {"name": "create_question", "handler": tool_create_question,
      "description": "Tạo một câu hỏi (mặc định Nháp, chờ người dùng duyệt). Câu nghe (聴解): đặt kịch bản hội thoại vào audio_script "
                     "(mỗi dòng một lượt nói, [1] ..., [2] ...; furigana {漢字|かな}; nghỉ [pause=800]); QBank gọi textts tạo mp3 và đính kèm. "
-                    "Cần bật textts (cổng 8000). Hội thoại dùng chung nhiều câu: điền passage và audio_target=passage.",
+                    "Cần bật textts (cổng 8000). Nếu báo đoạn văn gần giống đoạn có sẵn: dùng đúng chữ của đoạn đó để dùng chung, hoặc hỏi người dùng rồi gọi lại với confirm_passage=true. Hội thoại dùng chung nhiều câu: điền passage và audio_target=passage.",
      "inputSchema": _obj({
          "chapter_id": {"type": "integer"}, "bloom": {"type": "integer", "minimum": 1, "maximum": 5},
          "qtype": {"type": "string", "enum": ["TN", "DS", "DT", "TL"]},
@@ -288,7 +290,8 @@ TOOLS = [
          "audio_script": {"type": "string"},
          "audio_target": {"type": "string", "enum": ["question", "passage"], "default": "question"},
          "audio_engine": {"type": "string", "description": "voicevox (mặc định), aivis, edge… theo textts"},
-         "audio_level": {"type": "string", "enum": ["N5", "N4", "N3", "N2", "N1"]}},
+         "audio_level": {"type": "string", "enum": ["N5", "N4", "N3", "N2", "N1"]},
+         "confirm_passage": {"type": "boolean", "default": False, "description": "Đặt true khi app báo nhãn/đoạn văn gần giống đoạn có sẵn trong chương và người dùng đồng ý tạo đoạn mới (hoặc dùng đúng chữ của đoạn có sẵn để dùng chung)"}},
          ["chapter_id", "content"])},
     {"name": "check_duplicates", "handler": tool_check_duplicates,
      "description": "GỌI TRƯỚC create_question: kiểm trùng một lô câu dự định tạo (tối đa 100) với toàn ngân hàng, chưa ghi gì. "
