@@ -83,6 +83,9 @@ def path_known(path, routes):
 
 
 def main():
+    for stream in (sys.stdout, sys.stderr):  # CI Windows dùng cp1252: tiếng Việt sẽ lỗi nếu không ép UTF-8
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8")
     update = "--update" in sys.argv
     app_src, mcp_src = open(APP, encoding="utf-8").read(), open(MCP, encoding="utf-8").read()
     routes = app_routes(app_src)
