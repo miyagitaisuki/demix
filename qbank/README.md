@@ -92,7 +92,7 @@ Khi nâng cấp từ bản có cấu trúc cũ (giáo trình thuộc một học
    claude mcp add qbank -- python3 /duong/dan/toi/demix/qbank/mcp_server.py
    ```
    Nếu app không dùng cổng mặc định, thêm `-e QBANK_URL=http://127.0.0.1:<cổng>`.
-3. Công cụ có sẵn: `list_tree`, `list_questions`, `create_course`, `create_textbook`, `link_textbook`, `create_chapter`, `import_chapters`. Không có công cụ xóa.
+3. Công cụ có sẵn: `list_tree`, `list_questions`, `create_course`, `create_textbook`, `link_textbook`, `create_chapter`, `import_chapters`, `create_question`, `import_questions` (nhập .docx, mặc định chỉ kiểm tra) và `attach_audio` (gắn mp3 có sẵn vào câu hoặc đoạn văn). Không có công cụ xóa.
 4. `import_chapters` mặc định chỉ kiểm tra (`dry_run`). Claude chỉ ghi thật sau khi bạn xác nhận kết quả kiểm tra.
 
 ## Hướng cải tiến
@@ -249,6 +249,11 @@ Chi tiết từng lỗi và cách tái hiện: `docs/bao_cao_kiem_thu_2026-11-02
   - **Trạng thái duyệt câu:** Nháp (câu mới) → Đã duyệt (được ra đề) → Ngưng dùng (không ra đề, vẫn còn trong ngân hàng). Câu có sẵn trước đợt này được đặt là "Đã duyệt" để đề đang dùng không thiếu câu. Ma trận và xem trước chỉ chọn câu đã duyệt. Đổi trạng thái hàng loạt bằng các nút trong thanh chọn; lọc theo trạng thái ở thanh lọc ngân hàng. Sửa một câu đã duyệt không tự đưa về Nháp: người dùng tự đổi nếu cần.
   - **Xuất Moodle XML:** chọn câu rồi bấm "Xuất Moodle XML"; không chọn thì xuất mọi câu đã duyệt. Trắc nghiệm → multichoice (một đáp án); đúng/sai nhiều ý → mỗi ý là một câu truefalse; điền từ → shortanswer (mọi đáp án chấp nhận); tự luận → essay, hướng dẫn chấm đặt vào graderinfo. Danh mục Moodle theo học phần/giáo trình/chương. Ảnh và âm thanh được nhúng vào câu Moodle. Chưa thử nhập vào Moodle thật: cần kiểm tra trên máy có Moodle trước khi dùng cho lớp.
 - **Chưa làm (tính năng mới):** QTI; dùng chung qua mạng nội bộ có đăng nhập; cấu hình tên trường và khoa.
+
+### MCP luôn đi kèm bản cập nhật
+- `python3 tools/build_exe.py` tạo `dist/QBank(.exe)` và `dist/QBankMCP(.exe)`; khai báo bản đóng gói bằng `claude mcp add qbank -- /duong/dan/QBankMCP.exe`. Phát hành bản mới thì đính kèm cả hai file.
+- Khi app đổi cấu trúc (thêm/đổi tên/xóa route API, thêm cột câu hỏi), MCP phải đổi theo. `tools/check_mcp_sync.py` kiểm tra: mọi đường dẫn MCP gọi còn tồn tại, mọi cột câu hỏi có trong `QUESTION_FIELDS`, và so route với `mcp_manifest.json`. Lệch thì kiểm tra báo lỗi; sửa `mcp_server.py` và tests rồi chạy `python3 tools/check_mcp_sync.py --update`.
+- Tự động chạy ở ba chỗ: hook Claude Code (`.claude/settings.json`, sau khi sửa `app.py`/`mcp_server.py`), hook git `pre-commit` (bật một lần: `git config core.hooksPath .githooks`) và đầu `tools/build_exe.py`. Test `tests/test_mcp_sync.py` cũng kiểm tra khi chạy pytest.
 
 ## Claude tạo câu nghe qua MCP
 Tool `create_question` của `mcp_server.py` tạo câu hỏi (mặc định Nháp) và, nếu có `audio_script`, gọi textts tạo mp3 rồi đính kèm vào câu (`audio_target=question`) hoặc đoạn văn dùng chung (`audio_target=passage`, cần `passage`). Cần bật app và textts. Câu nghe do Claude tạo nằm ở trạng thái Nháp để người dùng nghe lại và duyệt.

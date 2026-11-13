@@ -16,7 +16,7 @@ import urllib.request
 
 BASE_URL = os.environ.get("QBANK_URL", "http://127.0.0.1:8765").rstrip("/")
 PROTOCOL = "2024-11-05"
-SERVER_INFO = {"name": "qbank", "version": "1.0.0"}
+SERVER_INFO = {"name": "qbank", "version": "1.1.0"}
 
 
 class ApiError(Exception):
@@ -162,6 +162,61 @@ def tool_create_question(args):
     return out
 
 
+AUDIO_EXT = (".mp3", ".wav", ".ogg", ".m4a")
+QUESTION_FIELDS = ("chapter_id", "bloom", "qtype", "content", "options", "answer", "solution", "passage",
+                   "rubric", "points", "clo", "tags", "status", "word_limit")
+
+
+def _read_file(path, exts, what):
+    path = str(path or "").strip()
+    if not path:
+        raise ApiError(f"Thiếu đường dẫn {what}")
+    if not path.lower().endswith(exts):
+        raise ApiError(f"{what} phải có đuôi {', '.join(exts)}")
+    if not os.path.isfile(path):
+        raise ApiError(f"Không thấy file: {path}")
+    with open(path, "rb") as f:
+        return f.read()
+
+
+def tool_import_questions(args):
+    """Nhập câu hỏi từ file .docx theo mẫu 8 cột. Mặc định dry_run=true: chỉ kiểm tra.
+    Câu nhập vào ở trạng thái Nháp. Đặt dry_run=false để ghi thật."""
+    tid = _int(args.get("textbook_id"), "textbook_id")
+    data = _read_file(args.get("file_path"), (".docx",), "File nhập")
+    dry = args.get("dry_run", True) is not False
+    r = api("POST", "/api/import", {"textbook_id": tid, "dry_run": "1" if dry else None}, body=data,
+            content_type="application/octet-stream")
+    return {"dry_run": dry, "added": r.get("added"), "errors": r.get("errors", []),
+            "skipped": r.get("skipped", []), "warnings": r.get("warnings", []),
+            "rows": [{"where": x.get("where"), "code": x.get("code"), "status": x.get("status"),
+                      "note": x.get("note")} for x in r.get("rows", [])]}
+
+
+def tool_attach_audio(args):
+    """Gắn một file âm thanh có sẵn (mp3, wav, ogg, m4a) vào câu hỏi (target=question) hoặc đoạn văn của câu (target=passage).
+    Giữ nguyên mọi trường của câu và các file đính kèm cũ; không đổi trạng thái."""
+    qid = _int(args.get("question_id"), "question_id")
+    target = args.get("target", "question")
+    if target not in ("question", "passage"):
+        raise ApiError('target phải là "question" hoặc "passage"')
+    raw = _read_file(args.get("file_path"), AUDIO_EXT, "File âm thanh")
+    q = api("GET", f"/api/questions/{qid}")
+    name = os.path.basename(str(args["file_path"]))
+    up = api("POST", "/api/media", {"name": name}, body=raw, content_type="application/octet-stream")
+    item = {"kind": up["kind"], "file": up["file"], "name": up["name"]}
+    if target == "passage":
+        if not q.get("passage_id"):
+            raise ApiError("Câu này không có đoạn văn để gắn audio")
+        api("PUT", f"/api/passages/{q['passage_id']}", body={"media": (q.get("passage_media") or []) + [item]})
+    else:
+        body = {k: q[k] for k in QUESTION_FIELDS if k in q}
+        body["media"] = (q.get("media") or []) + [item]
+        body["confirm_passage"] = True
+        api("PUT", f"/api/questions/{qid}", body=body)
+    return {"ok": True, "question_id": qid, "code": q.get("code"), "target": target, "file": name}
+
+
 def _obj(props, required=()):
     return {"type": "object", "properties": props, "required": list(required), "additionalProperties": False}
 
@@ -217,6 +272,19 @@ TOOLS = [
          "audio_engine": {"type": "string", "description": "voicevox (mặc định), aivis, edge… theo textts"},
          "audio_level": {"type": "string", "enum": ["N5", "N4", "N3", "N2", "N1"]}},
          ["chapter_id", "content"])},
+    {"name": "import_questions", "handler": tool_import_questions,
+     "description": "Nhập câu hỏi từ file .docx theo mẫu 8 cột (Mã chương phải có trong giáo trình đích). Mặc định chỉ kiểm tra "
+                    "(dry_run=true); chỉ đặt dry_run=false sau khi người dùng đã xác nhận. Câu nhập vào ở trạng thái Nháp.",
+     "inputSchema": _obj({"textbook_id": {"type": "integer"},
+                          "file_path": {"type": "string", "description": "đường dẫn .docx trên máy chạy app"},
+                          "dry_run": {"type": "boolean", "default": True}}, ["textbook_id", "file_path"])},
+    {"name": "attach_audio", "handler": tool_attach_audio,
+     "description": "Gắn file âm thanh có sẵn (mp3, wav, ogg, m4a; tối đa 15 MB) vào một câu hoặc đoạn văn của câu. "
+                    "Lấy question_id từ list_questions sau khi nhập. Không đổi trạng thái câu.",
+     "inputSchema": _obj({"question_id": {"type": "integer"},
+                          "file_path": {"type": "string", "description": "đường dẫn file âm thanh trên máy chạy app"},
+                          "target": {"type": "string", "enum": ["question", "passage"], "default": "question"}},
+                         ["question_id", "file_path"])},
 ]
 TOOL_BY_NAME = {t["name"]: t for t in TOOLS}
 

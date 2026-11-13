@@ -1,0 +1,5 @@
+#!/bin/sh
+# Chặn commit nếu mcp_server.py không còn khớp app.py. Bật một lần: git config core.hooksPath .githooks
+cd "$(git rev-parse --show-toplevel)/qbank" || exit 0
+PY=python3; command -v python3 >/dev/null 2>&1 || PY=python
+$PY tools/check_mcp_sync.py || { echo "Commit bị chặn: cập nhật mcp_server.py rồi chạy tools/check_mcp_sync.py --update" >&2; exit 1; }

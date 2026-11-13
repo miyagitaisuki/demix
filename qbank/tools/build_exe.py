@@ -3,7 +3,7 @@
 
 Chạy từ thư mục qbank/:  python3 tools/build_exe.py
 Cần: pip install pyinstaller python-docx
-Kết quả: dist/QBank(.exe). Dữ liệu (data/, templates/) được tạo cạnh file khi chạy lần đầu.
+Kết quả: dist/QBank(.exe) và dist/QBankMCP(.exe) (MCP server để Claude điều khiển app; luôn đi kèm). Dữ liệu (data/, templates/) được tạo cạnh file khi chạy lần đầu.
 """
 import os
 import subprocess
@@ -21,5 +21,10 @@ cmd = [
     "--collect-data", "pykakasi",  # từ điển chữ Hán (.db) để tự thêm furigana
     "app.py",
 ]
+# MCP phải khớp app: lệch thì dừng, không đóng gói bản MCP cũ
+subprocess.run([sys.executable, os.path.join("tools", "check_mcp_sync.py")], cwd=BASE, check=True)
 subprocess.run(cmd, cwd=BASE, check=True)
-print("Xong:", os.path.join(BASE, "dist", "QBank.exe" if os.name == "nt" else "QBank"))
+subprocess.run([sys.executable, "-m", "PyInstaller", "--noconfirm", "--onefile", "--name", "QBankMCP", "mcp_server.py"],
+               cwd=BASE, check=True)
+ext = ".exe" if os.name == "nt" else ""
+print("Xong:", os.path.join(BASE, "dist", "QBank" + ext), "và", os.path.join(BASE, "dist", "QBankMCP" + ext))
