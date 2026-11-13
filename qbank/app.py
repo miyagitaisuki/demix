@@ -581,6 +581,52 @@ def chapter_label(chapter_id):
 EXAM_META_KEYS = ("ten_hp", "ma_hp", "so_tc", "khoa_hoc", "nam_hoc", "hoc_ky", "thoi_gian")
 
 
+# ---------------------------------------------------------------- luyện nghe (trang /luyen-nghe, chỉ đọc)
+def _audio_files(media):
+    """File nghe còn tồn tại trong media: [{file, url, name, script}] (script = kịch bản textts nếu có)."""
+    out = []
+    for m in media or []:
+        if m.get("kind") == "audio" and os.path.isfile(os.path.join(MEDIA_DIR, m["file"])):
+            out.append({"file": m["file"], "url": f"/media/{m['file']}", "name": m.get("name", m["file"]),
+                        "script": (m.get("tts") or {}).get("script", "")})
+    return out
+
+
+def listening_item(r):
+    """Một câu của bài nghe: audio của câu (hoặc của đoạn văn), kịch bản, phương án, đáp án, lời giải."""
+    it = row_to_api(r)
+    own, shared = _audio_files(it["media"]), _audio_files(it["passage_media"])
+    audio = own + shared
+    return {"id": it["id"], "code": it["code"], "qtype": it["qtype"], "content": it["content"],
+            "options": it["options"], "answer": it["answer"], "solution": it["solution"],
+            "passage": it.get("passage") or "", "audio": audio,
+            "transcript": chr(10).join(a["script"] for a in audio if a["script"])}
+
+
+def listening_sets():
+    """Các chương có ít nhất một câu có file nghe (của câu hoặc của đoạn văn); bài thiếu audio bị ẩn."""
+    sets = {}
+    for r in q(QUESTION_SQL + " ORDER BY t.name, ch.code, qs.id", fetch=True):
+        if not _audio_files(json.loads(r["media"] or "[]")) and not _audio_files(passage_media(r["passage_id"])):
+            continue
+        s = sets.setdefault(r["chapter_id"], {"chapter_id": r["chapter_id"], "chapter": r["chapter_label"],
+                                              "chapter_code": r["chapter_code"], "chapter_title": r["chapter_title"],
+                                              "textbook_id": r["textbook_id"], "textbook": r["textbook"],
+                                              "course_id": r["course_id"], "course": r["course"], "count": 0})
+        s["count"] += 1
+    return list(sets.values())
+
+
+def listening_set(chapter_id):
+    """Toàn bộ câu của chương theo thứ tự nghe; chỉ giữ câu có audio."""
+    rows = q(QUESTION_SQL + " WHERE qs.chapter_id=? ORDER BY qs.id", (chapter_id,), fetch=True)
+    items = [listening_item(r) for r in rows]
+    items = [i for i in items if i["audio"]]
+    if not items:
+        raise ValueError("Bài này không có file nghe")
+    return {"chapter_id": chapter_id, "chapter": rows[0]["chapter_label"], "items": items}
+
+
 def get_tree():
     courses = q("SELECT id, name, code, exam_meta FROM courses ORDER BY name", fetch=True)
     for c in courses:
@@ -2523,7 +2569,19 @@ class Handler(BaseHTTPRequestHandler):
             ctype = {"jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png", "gif": "image/gif", "webp": "image/webp",
                      "mp3": "audio/mpeg", "wav": "audio/wav", "ogg": "audio/ogg", "m4a": "audio/mp4"}[ext]
             with open(os.path.join(MEDIA_DIR, mm.group(1)), "rb") as f:
-                return self._send(200, f.read(), ctype)
+                data = f.read()
+            rng = re.fullmatch(r"bytes=(\d*)-(\d*)", self.headers.get("Range", ""))
+            if rng and (rng.group(1) or rng.group(2)):  # trình duyệt cần Range để tua audio
+                size = len(data)
+                if rng.group(1):
+                    start, end = int(rng.group(1)), min(int(rng.group(2) or size - 1), size - 1)
+                else:  # "-N": N byte cuối
+                    start, end = max(size - int(rng.group(2)), 0), size - 1
+                if start > end:
+                    return self._send(416, b"", ctype, {"Content-Range": f"bytes */{size}"})
+                return self._send(206, data[start:end + 1], ctype,
+                                  {"Content-Range": f"bytes {start}-{end}/{size}", "Accept-Ranges": "bytes"})
+            return self._send(200, data, ctype, {"Accept-Ranges": "bytes"})
         self._guard(self._get)
 
     def do_POST(self):
@@ -2546,6 +2604,14 @@ class Handler(BaseHTTPRequestHandler):
         if p in ("/", "/index.html"):
             with open(os.path.join(STATIC, "index.html"), "rb") as f:
                 return self._send(200, f.read(), "text/html; charset=utf-8")
+        if p == "/luyen-nghe":  # trang luyện nghe cho lớp học (chiếu lên máy chiếu)
+            with open(os.path.join(STATIC, "luyen-nghe.html"), "rb") as f:
+                return self._send(200, f.read(), "text/html; charset=utf-8")
+        if p == "/api/listening/sets":
+            return self._json(200, listening_sets())
+        ls = re.fullmatch(r"/api/listening/sets/(\d+)", p)
+        if ls:
+            return self._json(200, listening_set(int(ls.group(1))))
         if p == "/favicon.ico":
             return self._send(204, b"", "image/x-icon")
         if p == "/api/version":

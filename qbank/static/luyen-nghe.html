@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>QBank - Luyện nghe</title>
+<style>
+:root{--bg:#10151c;--panel:#1a222d;--line:#2b3644;--fg:#eef2f7;--sub:#9fb0c3;--acc:#4da3ff;--ok:#38c172;--warn:#f5a623;--fs:30px}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:"Segoe UI","Yu Gothic UI","Meiryo",sans-serif;font-size:18px}
+button,select{font:inherit;color:var(--fg);background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px 14px;cursor:pointer}
+button:hover{border-color:var(--acc)}
+button.on{background:var(--acc);color:#04101f;border-color:var(--acc);font-weight:600}
+button:disabled{opacity:.4;cursor:default}
+header{display:flex;gap:10px;align-items:center;padding:10px 16px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+header h1{font-size:20px;margin:0 8px 0 0}
+header .sp{flex:1}
+#title{color:var(--sub)}
+main{padding:16px;max-width:1500px;margin:auto}
+.hidden{display:none!important}
+/* chọn bài */
+#picker .filters{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+#picker .sets{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:10px}
+.set{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 14px;cursor:pointer}
+.set:hover{border-color:var(--acc)}
+.set b{display:block;margin-bottom:4px}.set span{color:var(--sub);font-size:15px}
+.note{color:var(--sub);padding:20px;text-align:center}
+.err{background:#3a1b1b;border:1px solid #7a2c2c;border-radius:10px;padding:12px 16px;margin-bottom:12px}
+/* sân khấu */
+.stage{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px 22px;margin-bottom:12px}
+.stage .num{color:var(--acc);font-weight:700;margin-bottom:6px}
+.qtext,.passage{font-size:var(--fs);line-height:2.1;white-space:pre-wrap}
+.passage{color:var(--sub);font-size:calc(var(--fs) * .85);margin-bottom:8px}
+.opts{margin-top:10px}
+.opt{font-size:var(--fs);line-height:2;padding:2px 12px;border-radius:8px;border:2px solid transparent}
+.opt.right{border-color:var(--ok);background:#12301f}
+ruby rt{font-size:.5em}
+body.nofuri ruby rt{display:none}
+.ans{margin-top:10px;font-size:calc(var(--fs) * .8);color:var(--ok)}
+/* điều khiển */
+.ctl{position:sticky;bottom:0;background:var(--bg);padding:10px 0 4px;border-top:1px solid var(--line)}
+.bar{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.bar input[type=range]{flex:1;height:10px;accent-color:var(--acc)}
+.time{color:var(--sub);min-width:96px;text-align:center;font-variant-numeric:tabular-nums}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px}
+.row .big{font-size:22px;padding:10px 20px}
+.lab{color:var(--sub);margin-left:10px}
+/* bảng bên dưới */
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 18px;margin-bottom:12px}
+.panel h3{margin:0 0 8px;font-size:17px;color:var(--sub)}
+.tl{font-size:calc(var(--fs) * .8);line-height:2.1;margin:0 0 4px}
+.tl .role{display:inline-block;min-width:3.4em;color:var(--acc);font-size:.6em;vertical-align:middle}
+.tl .vi{display:block;color:var(--warn);font-size:.65em;line-height:1.4;padding-left:5.6em}
+body.novi .vi{display:none}
+.sol{font-size:calc(var(--fs) * .8);line-height:2.1;white-space:pre-wrap}
+kbd{background:#0b1016;border:1px solid var(--line);border-radius:5px;padding:1px 6px;font-size:14px}
+.keys{color:var(--sub);font-size:14px;line-height:1.9}
+</style>
+</head>
+<body class="novi">
+<header>
+  <h1>🎧 Luyện nghe</h1>
+  <button id="btnPick">Chọn bài</button>
+  <button id="btnRandom">🎲 Bốc ngẫu nhiên</button>
+  <span id="title"></span>
+  <span class="sp"></span>
+  <a href="/" style="color:var(--sub)">← Mở QBank</a>
+</header>
+<main>
+  <section id="picker">
+    <div class="filters">
+      <select id="fCourse"><option value="">Mọi học phần</option></select>
+      <select id="fBook"><option value="">Mọi giáo trình</option></select>
+      <input id="fText" placeholder="Tìm tên chương..." style="font:inherit;color:var(--fg);background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px 14px">
+    </div>
+    <div id="msg"></div>
+    <div id="sets" class="sets"></div>
+  </section>
+
+  <section id="player" class="hidden">
+    <div class="stage">
+      <div class="num" id="num"></div>
+      <div class="passage" id="passage"></div>
+      <div class="qtext" id="qtext"></div>
+      <div class="opts" id="opts"></div>
+      <div class="ans hidden" id="ans"></div>
+    </div>
+    <div class="panel hidden" id="pTrans"><h3>Transcript</h3><div id="trans"></div></div>
+    <div class="panel hidden" id="pNote"><h3>Chú thích / Giải nghĩa</h3><div class="sol" id="note"></div></div>
+    <div class="panel keys">Phím tắt: <kbd>Space</kbd> phát/dừng · <kbd>←</kbd><kbd>→</kbd> tua 5 giây · <kbd>P</kbd> câu trước · <kbd>N</kbd> câu sau · <kbd>R</kbd> nghe lại · <kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> tốc độ 0.6/0.8/1.0 · <kbd>T</kbd> transcript · <kbd>G</kbd> giải nghĩa · <kbd>A</kbd> đáp án · <kbd>F</kbd> furigana · <kbd>V</kbd> dịch · <kbd>+</kbd><kbd>-</kbd> cỡ chữ</div>
+    <div class="ctl">
+      <div class="bar">
+        <span class="time" id="time">0:00 / 0:00</span>
+        <input type="range" id="seek" min="0" max="1000" value="0">
+        <span class="time" id="fileNo"></span>
+      </div>
+      <div class="row">
+        <button id="bPrev">⏮ Câu trước</button>
+        <button id="bBack">⟲ -5s</button>
+        <button id="bPlay" class="big">▶ Phát</button>
+        <button id="bFwd">+5s ⟳</button>
+        <button id="bNext">Câu sau ⏭</button>
+        <button id="bAgain">🔁 Nghe lại</button>
+        <span class="lab">Tốc độ:</span>
+        <button class="sp" data-r="0.6">0.6×</button><button class="sp" data-r="0.8">0.8×</button><button class="sp on" data-r="1">1.0×</button>
+      </div>
+      <div class="row">
+        <button id="bTrans">📝 Transcript</button>
+        <button id="bNote">💡 Giải nghĩa</button>
+        <button id="bAns">✅ Đáp án</button>
+        <button id="bFuri" class="on">ふ Furigana</button>
+        <button id="bVi">🇻🇳 Dịch</button>
+        <button id="bMinus">A-</button><button id="bPlus">A+</button>
+      </div>
+    </div>
+    <audio id="au" preload="auto"></audio>
+  </section>
+</main>
+<script>
+"use strict";
+const $ = s => document.querySelector(s);
+const au = $("#au");
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+let sets = [], set = null, idx = 0, fileIdx = 0, rate = 1, fs = 30;
+
+// furigana: {漢字|かな} và 漢字{かな}; HTML đã được escape trước
+function furi(text) {
+  return esc(text)
+    .replace(/\{([^{}|]+)\|([^{}]+)\}/g, "<ruby>$1<rt>$2</rt></ruby>")
+    .replace(/([一-鿿々〆ヶ]+)\{([^{}]+)\}/g, "<ruby>$1<rt>$2</rt></ruby>");
+}
+const mmss = t => { t = Math.max(0, t || 0); return Math.floor(t / 60) + ":" + String(Math.floor(t % 60)).padStart(2, "0"); };
+
+async function api(path) {
+  const r = await fetch(path);
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(d.error || ("Lỗi " + r.status));
+  return d;
+}
+
+// ---- chọn bài
+async function loadSets() {
+  try {
+    sets = await api("/api/listening/sets");
+  } catch (e) {
+    $("#msg").innerHTML = `<div class="err">Không kết nối được QBank (${esc(e.message)}). Hãy bật QBank rồi tải lại trang.</div>`;
+    return;
+  }
+  const co = {}, bk = {};
+  sets.forEach(s => { if (s.course_id) co[s.course_id] = s.course; bk[s.textbook_id] = s.textbook; });
+  $("#fCourse").innerHTML = `<option value="">Mọi học phần</option>` + Object.entries(co).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join("");
+  $("#fBook").innerHTML = `<option value="">Mọi giáo trình</option>` + Object.entries(bk).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join("");
+  renderSets();
+}
+function filtered() {
+  const c = $("#fCourse").value, b = $("#fBook").value, t = $("#fText").value.trim().toLowerCase();
+  return sets.filter(s => (!c || String(s.course_id) === c) && (!b || String(s.textbook_id) === b)
+    && (!t || (s.chapter + " " + s.chapter_title).toLowerCase().includes(t)));
+}
+function renderSets() {
+  const list = filtered();
+  $("#sets").innerHTML = list.map(s => `<div class="set" data-id="${s.chapter_id}"><b>${esc(s.chapter)}</b>
+    <span>${esc(s.course || "")} · ${s.count} câu có audio</span></div>`).join("");
+  $("#msg").innerHTML = list.length ? "" : `<div class="note">${sets.length ? "Không có bài khớp bộ lọc." : "Chưa có bài nghe nào trong QBank (cần câu có file audio)."}</div>`;
+}
+$("#sets").onclick = e => { const el = e.target.closest(".set"); if (el) openSet(+el.dataset.id); };
+["#fCourse", "#fBook"].forEach(s => $(s).onchange = renderSets);
+$("#fText").oninput = renderSets;
+$("#btnPick").onclick = () => { au.pause(); $("#player").classList.add("hidden"); $("#picker").classList.remove("hidden"); $("#title").textContent = ""; };
+$("#btnRandom").onclick = () => {
+  const list = filtered();
+  if (!list.length) { $("#msg").innerHTML = `<div class="err">Không có bài nào để bốc.</div>`; return; }
+  openSet(list[Math.floor(Math.random() * list.length)].chapter_id);
+};
+
+// ---- phát bài
+async function openSet(id) {
+  try { set = await api("/api/listening/sets/" + id); }
+  catch (e) { $("#picker").classList.remove("hidden"); $("#msg").innerHTML = `<div class="err">${esc(e.message)}</div>`; return; }
+  $("#picker").classList.add("hidden"); $("#player").classList.remove("hidden");
+  $("#title").textContent = set.chapter;
+  go(0);
+}
+const cur = () => set.items[idx];
+function go(i) {
+  idx = Math.min(Math.max(i, 0), set.items.length - 1);
+  fileIdx = 0;
+  const it = cur();
+  $("#num").textContent = `Câu ${idx + 1} / ${set.items.length}  ·  ${it.code}`;
+  $("#passage").innerHTML = it.passage ? furi(it.passage) : "";
+  $("#qtext").innerHTML = furi(it.content);
+  const letters = "ABCDEFGH";
+  $("#opts").innerHTML = it.options.map((o, k) => `<div class="opt" data-l="${letters[k]}">${it.qtype === "DS" ? "abcdefgh"[k] + ")" : letters[k] + "."} ${furi(o)}</div>`).join("");
+  $("#ans").classList.add("hidden");
+  $("#ans").innerHTML = "Đáp án: <b>" + esc(it.answer) + "</b>";
+  renderTranscript(it);
+  $("#note").innerHTML = it.solution ? furi(it.solution) : `<span style="color:var(--sub)">Chưa có chú thích / giải nghĩa cho câu này.</span>`;
+  $("#bPrev").disabled = idx === 0;
+  $("#bNext").disabled = idx === set.items.length - 1;
+  loadAudio(true);
+}
+function renderTranscript(it) {
+  if (!it.transcript) { $("#trans").innerHTML = `<span style="color:var(--sub)">Chưa có transcript cho câu này.</span>`; return; }
+  const out = [];
+  for (let ln of it.transcript.split("\n")) {
+    ln = ln.trim();
+    if (!ln || ln[0] === "#" || /^\[(pause|sfx|bgm)/i.test(ln)) continue;
+    let vi = "";
+    const k = ln.indexOf("//");
+    if (k >= 0) { vi = ln.slice(k + 2).trim(); ln = ln.slice(0, k).trim(); }
+    let role = "";
+    ln = ln.replace(/^\[?(\d+)\]?[\s.:：]?\s*/, (_, n) => { role = "Vai " + n; return ""; });
+    ln = ln.replace(/\{(emotion|speed|fx|vol|overlap)=[^}]*\}/g, "").trim();
+    if (!ln) continue;
+    out.push(`<p class="tl"><span class="role">${esc(role)}</span>${furi(ln)}${vi ? `<span class="vi">${esc(vi)}</span>` : ""}</p>`);
+  }
+  $("#trans").innerHTML = out.join("") || `<span style="color:var(--sub)">Chưa có transcript cho câu này.</span>`;
+}
+function loadAudio(autoplay) {
+  const a = cur().audio[fileIdx];
+  au.src = a.url;
+  au.playbackRate = rate;
+  $("#fileNo").textContent = cur().audio.length > 1 ? `File ${fileIdx + 1}/${cur().audio.length}` : "";
+  if (autoplay) au.play().catch(() => {});
+  upd();
+}
+au.onerror = () => { $("#num").textContent += "  ⚠ Không phát được file nghe, bấm Câu sau để bỏ qua."; };
+au.onended = () => {
+  if (fileIdx < cur().audio.length - 1) { fileIdx++; loadAudio(true); }
+  upd();
+};
+["timeupdate", "loadedmetadata", "play", "pause"].forEach(ev => au.addEventListener(ev, upd));
+function upd() {
+  $("#time").textContent = mmss(au.currentTime) + " / " + mmss(au.duration);
+  if (au.duration) $("#seek").value = Math.round(au.currentTime / au.duration * 1000);
+  $("#bPlay").textContent = au.paused ? "▶ Phát" : "⏸ Dừng";
+}
+$("#seek").oninput = e => { if (au.duration) au.currentTime = e.target.value / 1000 * au.duration; };
+const toggle = () => au.paused ? au.play().catch(() => {}) : au.pause();
+const seek = d => { au.currentTime = Math.min(Math.max(au.currentTime + d, 0), au.duration || 1e9); };
+const again = () => { fileIdx = 0; loadAudio(true); };
+function setRate(r) {
+  rate = r; au.playbackRate = r;
+  document.querySelectorAll("button.sp").forEach(b => b.classList.toggle("on", +b.dataset.r === r));
+}
+function flip(panel, btn) { btn.classList.toggle("on", !panel.classList.toggle("hidden")); }
+const showTrans = () => flip($("#pTrans"), $("#bTrans"));
+const showNote = () => flip($("#pNote"), $("#bNote"));
+function showAns() {
+  const hidden = $("#ans").classList.toggle("hidden");
+  $("#bAns").classList.toggle("on", !hidden);
+  const it = cur();
+  document.querySelectorAll(".opt").forEach(o => o.classList.toggle("right", !hidden && it.qtype === "TN" && o.dataset.l === it.answer));
+}
+const furiBtn = () => $("#bFuri").classList.toggle("on", !document.body.classList.toggle("nofuri"));
+const viBtn = () => $("#bVi").classList.toggle("on", !document.body.classList.toggle("novi"));
+function size(d) { fs = Math.min(Math.max(fs + d, 18), 64); document.documentElement.style.setProperty("--fs", fs + "px"); }
+
+$("#bPlay").onclick = toggle; $("#bBack").onclick = () => seek(-5); $("#bFwd").onclick = () => seek(5);
+$("#bPrev").onclick = () => go(idx - 1); $("#bNext").onclick = () => go(idx + 1); $("#bAgain").onclick = again;
+document.querySelectorAll("button.sp").forEach(b => b.onclick = () => setRate(+b.dataset.r));
+$("#bTrans").onclick = showTrans; $("#bNote").onclick = showNote; $("#bAns").onclick = showAns;
+$("#bFuri").onclick = furiBtn; $("#bVi").onclick = viBtn;
+$("#bMinus").onclick = () => size(-3); $("#bPlus").onclick = () => size(3);
+
+document.addEventListener("keydown", e => {
+  if (!set || $("#player").classList.contains("hidden") || /INPUT|SELECT|TEXTAREA/.test(e.target.tagName) && e.target.type !== "range") return;
+  if (e.ctrlKey || e.altKey || e.metaKey) return;
+  const k = e.key.toLowerCase();
+  const map = {" ": toggle, arrowleft: () => seek(-5), arrowright: () => seek(5), p: () => go(idx - 1), n: () => go(idx + 1),
+    r: again, "1": () => setRate(0.6), "2": () => setRate(0.8), "3": () => setRate(1), t: showTrans, g: showNote, a: showAns,
+    f: furiBtn, v: viBtn, "+": () => size(3), "=": () => size(3), "-": () => size(-3)};
+  if (map[k]) { e.preventDefault(); map[k](); }
+});
+loadSets();
+</script>
+</body>
+</html>
