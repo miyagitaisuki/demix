@@ -75,7 +75,7 @@ Mở `http://127.0.0.1:8765/luyen-nghe` (cùng server QBank, chiếu lên máy c
 - **Điều khiển:** Phát/Dừng, Nghe lại, Câu trước/sau, tua ±5 giây, thanh tua, tốc độ 0.6× / 0.8× / 1.0×.
 - **Nội dung:** Transcript lấy từ kịch bản textts lưu kèm file nghe (bản dịch viết sau `//` hiện khi bật **Dịch**); **Giải nghĩa** lấy từ Lời giải của câu; **Đáp án** do giáo viên bấm hiện. Thiếu dữ liệu thì hiện "Chưa có".
 - **Hiển thị:** bật/tắt furigana, dịch tiếng Việt; cỡ chữ A-/A+.
-- **Phím tắt:** Space phát/dừng, ←/→ tua 5 giây, P/N câu trước/sau, R nghe lại, 1/2/3 tốc độ, T transcript, G giải nghĩa, A đáp án, F furigana, V dịch, +/- cỡ chữ.
+- **Phím tắt (giống VLC):** Space phát/dừng, S dừng về đầu, N/P câu sau/trước, Trái/Phải tua 5s (Shift 3s, Alt 10s, Ctrl 1 phút), Ctrl+Lên/Xuống âm lượng, M tắt tiếng, [ và ] chậm/nhanh hơn, = tốc độ 1×, 1/2/3 tốc độ 0.6/0.8/1.0, L lặp lại câu, Enter nghe lại, Ctrl+T nhảy tới thời điểm, R bốc bài ngẫu nhiên, F toàn màn hình, T transcript, G giải nghĩa, A đáp án, H furigana, V dịch, O đổi font, +/- cỡ chữ. Mỗi thao tác có thông báo nhỏ ở góc phải.
 - API (chỉ đọc): `GET /api/listening/sets`, `GET /api/listening/sets/<chapter_id>`. File `/media/...` hỗ trợ HTTP Range để tua.
 
 ## Template
