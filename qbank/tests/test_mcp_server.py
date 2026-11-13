@@ -51,6 +51,9 @@ class Stub(BaseHTTPRequestHandler):
                     {"line": 3, "code": "", "title": "", "status": "lỗi", "note": "thiếu mã chương"}]})
             return self._reply(200, {"counts": {"thêm": 1, "bỏ qua": 0, "lỗi": 1}, "rows": [
                 {"line": 3, "code": "", "title": "", "status": "lỗi", "note": "thiếu mã chương"}]})
+        if self.path == "/api/check-candidates":
+            n = len(json.loads(body)["items"])
+            return self._reply(200, {"results": [{"index": i, "status": "mới", "exact": [], "similar": [], "in_batch": []} for i in range(n)]})
         if self.path == "/api/chapters":
             return self._reply(400, {"error": "Mã chương đã tồn tại"})
         self._reply(201, {"ok": True, "id": 9})
@@ -134,8 +137,8 @@ def test_create_question_with_audio_attaches_to_passage(stub):
                                         "answer": "A", "passage": "[1] こんにちは\n[2] はい", "audio_script": "[1] こんにちは\n[2] はい",
                                         "audio_target": "passage", "audio_level": "N3"})
     assert not err and res["id"] == 9
-    paths = [c[1] for c in CALLS[-2:]]
-    assert paths == ["/api/tts", "/api/questions"]
+    paths = [c[1] for c in CALLS[-3:]]
+    assert paths == ["/api/check-candidates", "/api/tts", "/api/questions"]  # kiểm trùng chạy trước, rồi mới tạo audio
     sent = json.loads(CALLS[-1][2])
     assert "passage_media" in sent and "media" not in sent and sent["status"] == "nhap"
 
@@ -283,6 +286,8 @@ def test_create_question_passes_confirm_passage_only_when_true(monkeypatch):
     seen = []
 
     def fake_api(method, path, params=None, body=None, content_type="application/json"):
+        if path == "/api/check-candidates":
+            return {"results": [{"status": "mới", "exact": [], "similar": []}]}
         seen.append(body)
         return {"id": 1, "code": "X-1"}
 
@@ -294,3 +299,47 @@ def test_create_question_passes_confirm_passage_only_when_true(monkeypatch):
     assert seen[-1]["confirm_passage"] is True
     tool = mcp_server.TOOL_BY_NAME["create_question"]
     assert "confirm_passage" in tool["inputSchema"]["properties"]
+
+
+def _create_fake(monkeypatch, status, exact=None, similar=None, check_error=None):
+    calls = []
+
+    def fake_api(method, path, params=None, body=None, content_type="application/json"):
+        calls.append(path)
+        if path == "/api/check-candidates":
+            if check_error:
+                raise mcp_server.ApiError(check_error)
+            return {"results": [{"index": 0, "status": status, "exact": exact or [], "similar": similar or [], "in_batch": []}]}
+        if path == "/api/tts":
+            return {"kind": "audio", "file": "a.mp3", "name": "a.mp3"}
+        return {"id": 3, "code": "X-3", "warnings": []}
+
+    monkeypatch.setattr(mcp_server, "api", fake_api)
+    return calls
+
+
+BASE_Q = {"chapter_id": 1, "content": "c", "options": ["a", "b"], "answer": "A"}
+
+
+def test_create_question_auto_checks_and_blocks_similar(monkeypatch):
+    calls = _create_fake(monkeypatch, "gần giống", similar=[{"code": "N-1", "ratio": 0.94}])
+    err, msg = call("create_question", {**BASE_Q, "audio_script": "[1] あ"})
+    assert err and "N-1" in msg and "94%" in msg
+    assert "/api/tts" not in calls and "/api/questions" not in calls  # chặn trước khi tạo audio và ghi
+    err, res = call("create_question", {**BASE_Q, "allow_similar": True})
+    assert not err and res["code"] == "X-3"
+
+
+def test_create_question_blocks_exact_and_warns_other_chapter(monkeypatch):
+    _create_fake(monkeypatch, "trùng", exact=[{"code": "N-2", "same_chapter": True}])
+    err, msg = call("create_question", {**BASE_Q, "allow_similar": True})
+    assert err and "N-2" in msg  # trùng y hệt: allow_similar cũng không cho qua
+    _create_fake(monkeypatch, "trùng chương khác", exact=[{"code": "N-5", "same_chapter": False}])
+    err, res = call("create_question", BASE_Q)
+    assert not err and any("N-5" in w for w in res["warnings"])
+
+
+def test_create_question_skips_check_on_old_app(monkeypatch):
+    _create_fake(monkeypatch, "mới", check_error="không tìm thấy")
+    err, res = call("create_question", BASE_Q)
+    assert not err and any("build lại" in w for w in res["warnings"])
