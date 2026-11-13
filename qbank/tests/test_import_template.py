@@ -13,10 +13,10 @@ import app  # noqa: E402
 
 @pytest.fixture
 def captured(monkeypatch):
-    """Chương 1 = B01, chương 2 = B02; không đụng CSDL. Ghi lại payload mà clean_question trả về."""
+    """Chương 1 = B01, chương 2 = B02, chương 3 = B03; không đụng CSDL. Ghi lại payload mà clean_question trả về."""
     def fake_q(sql, args=(), fetch=False):
         if "FROM chapters" in sql:
-            return [{"id": 1, "code": "B01"}, {"id": 2, "code": "B02"}]
+            return [{"id": 1, "code": "B01"}, {"id": 2, "code": "B02"}, {"id": 3, "code": "B03"}]
         return []
     monkeypatch.setattr(app, "q", fake_q)
     payloads = []
@@ -50,7 +50,7 @@ def test_template_guidance_mentions_new_types():
 def test_template_examples_import_without_errors(captured):
     result = app.parse_import(app.make_import_template(), 1, dry_run=True)
     assert result["errors"] == []
-    assert len(result["rows"]) == 10
+    assert len(result["rows"]) == len(app.IMPORT_EXAMPLES)
 
 
 def test_new_types_reach_the_question_payload(captured):
@@ -79,13 +79,14 @@ def test_csv_template_examples_import_without_errors(captured):
     rows = app.read_table_text(app.make_import_template_csv())
     result = app.parse_rows([rows], 1, dry_run=True, docx=False)
     assert result["errors"] == []
-    assert len(result["rows"]) == 10
+    assert len(result["rows"]) == len(app.IMPORT_EXAMPLES)
 
 
 def test_transcript_and_translation_columns_are_imported(captured):
     app.parse_import(app.make_import_template(), 1, dry_run=True)
     hit = [p for p in captured if p["transcript"]]
-    assert len(hit) == 1 and "くつうりば" in hit[0]["transcript"] and "quầy giày" in hit[0]["translation"]
+    match = [p for p in hit if "くつうりば" in p["transcript"]]
+    assert len(match) == 1 and "quầy giày" in match[0]["translation"]
 
 
 def test_sample_files_in_mau_nhap_import_without_errors(captured):
