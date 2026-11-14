@@ -34,7 +34,7 @@ python3 app.py                 # rồi mở http://127.0.0.1:8765
 Ribbon tab Ngân hàng, nhóm "Reset ra đề": reset câu đang tick, chương đang lọc, hoặc toàn bộ CSDL (phải gõ `RESET`). Reset chỉ xóa số lần đã ra đề, không xóa câu hay file đề đã xuất. Trước khi xóa, app ghi bản sao lưu vào thư mục `data/backup` (`truoc_reset_<thời điểm>.json` chứa lịch sử bị xóa; khi reset toàn bộ còn có `qbank_<ngày>.json`).
 
 ## Định dạng file nhập (chuẩn)
-Tải mẫu bằng nút **Tải mẫu nhập** (ribbon tab Ngân hàng, nhóm "Nhập / Xuất"). File là .docx, mỗi bảng là một nhóm câu:
+Tải mẫu bằng nút **Tải mẫu .docx** hoặc **Tải mẫu .csv** (ribbon tab Ngân hàng, menu "Nhập / Xuất"). File là .docx, mỗi bảng là một nhóm câu:
 - **Dòng 1 là tiêu đề cột**, thứ tự cột tùy ý. Cột bắt buộc: `Mã chương`, `Nội dung`, `Đáp án`, `Loại`, `Mức`.
 - Cột tùy chọn: `Đoạn văn` (các câu cùng đoạn ghi **giống hệt** nhau; app in đoạn một lần cho cả nhóm), `Lời giải`, `Transcript` (câu nghe: kịch bản/lời thoại, mỗi lượt nói một dòng, vai `[1]` `[2]`), `Dịch` (bản dịch tiếng Việt của transcript, cùng số dòng), `CLO`, `Thẻ` (nhiều thẻ cách nhau bằng dấu phẩy), `Số từ` (chỉ cho DT: số từ tối đa 1–20, để trống = không giới hạn), `Dạng bài` (mã dạng bài, ví dụ `kanji-doc`, `np-sapxep`, `doc-tieude`; để trống = app tự nhận dạng).
 - `Loại`: TN (trắc nghiệm), DS (đúng/sai), DT (điền từ), TL (tự luận). `Mức`: 1–5.
