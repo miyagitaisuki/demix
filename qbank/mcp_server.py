@@ -221,13 +221,18 @@ def _read_file(path, exts, what):
 
 
 def tool_import_questions(args):
-    """Nhập câu hỏi từ file .docx theo mẫu 8 cột. Mặc định dry_run=true: chỉ kiểm tra.
+    """Nhập câu hỏi từ file .docx hoặc .csv/.xlsx theo mẫu 8 cột. Mặc định dry_run=true: chỉ kiểm tra.
     Câu nhập vào ở trạng thái Nháp. Đặt dry_run=false để ghi thật."""
     tid = _int(args.get("textbook_id"), "textbook_id")
-    data = _read_file(args.get("file_path"), (".docx",), "File nhập")
+    path = str(args.get("file_path") or "").strip()
+    data = _read_file(path, (".docx", ".csv", ".xlsx"), "File nhập")
     dry = args.get("dry_run", True) is not False
-    r = api("POST", "/api/import", {"textbook_id": tid, "dry_run": "1" if dry else None}, body=data,
-            content_type="application/octet-stream")
+    params = {"textbook_id": tid, "dry_run": "1" if dry else None}
+    if path.lower().endswith(".docx"):
+        r = api("POST", "/api/import", params, body=data, content_type="application/octet-stream")
+    else:  # CSV/XLSX đi qua đường dán/bảng của app (cùng cách với giao diện web)
+        ctype = "text/csv; charset=utf-8" if path.lower().endswith(".csv") else "application/octet-stream"
+        r = api("POST", "/api/import-text", params, body=data, content_type=ctype)
     return {"dry_run": dry, "added": r.get("added"), "errors": r.get("errors", []),
             "skipped": r.get("skipped", []), "warnings": r.get("warnings", []),
             "rows": [{"where": x.get("where"), "code": x.get("code"), "status": x.get("status"),
@@ -683,10 +688,10 @@ TOOLS = [
          "content": {"type": "string"}, "options": {"type": "array", "items": {"type": "string"}}}, ["chapter_id", "content"])}},
          ["items"])},
     {"name": "import_questions", "handler": tool_import_questions,
-     "description": "Nhập câu hỏi từ file .docx theo mẫu 8 cột (Mã chương phải có trong giáo trình đích). Mặc định chỉ kiểm tra "
+     "description": "Nhập câu hỏi từ file .docx, .csv hoặc .xlsx theo mẫu 8 cột (Mã chương phải có trong giáo trình đích). Mặc định chỉ kiểm tra "
                     "(dry_run=true); chỉ đặt dry_run=false sau khi người dùng đã xác nhận. Câu nhập vào ở trạng thái Nháp.",
      "inputSchema": _obj({"textbook_id": {"type": "integer"},
-                          "file_path": {"type": "string", "description": "đường dẫn .docx trên máy chạy app"},
+                          "file_path": {"type": "string", "description": "đường dẫn .docx, .csv hoặc .xlsx trên máy chạy app"},
                           "dry_run": {"type": "boolean", "default": True}}, ["textbook_id", "file_path"])},
     {"name": "attach_audio", "handler": tool_attach_audio,
      "description": "Gắn file âm thanh có sẵn (mp3, wav, ogg, m4a; tối đa 15 MB) vào một câu hoặc đoạn văn của câu. "
