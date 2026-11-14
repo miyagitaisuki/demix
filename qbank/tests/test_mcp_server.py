@@ -177,8 +177,26 @@ def test_import_questions_dry_run_default_and_extension_check(tmp_path, monkeypa
     assert not err and res["dry_run"] is False and seen[-1][2]["dry_run"] is None
     txt = tmp_path / "a.txt"
     txt.write_text("x")
-    err, msg = call("import_questions", {"textbook_id": 3, "file_path": str(txt)})
-    assert err and ".docx" in msg
+    err, msg = call("import_questions", {"textbook_id": 3, "file_path": str(tmp_path / "a.pdf")})
+    assert err and ".docx" in msg and ".csv" in msg
+    assert seen[-1][1] == "/api/import"
+
+
+def test_import_questions_csv_file_and_content(tmp_path, monkeypatch):
+    seen = []
+    monkeypatch.setattr(mcp_server, "api", lambda m, path, params=None, body=None, content_type=None:
+                        seen.append((path, params, body)) or {"added": 2, "updated": 0, "errors": []})
+    csv_text = "Mã chương,Nội dung,Đáp án,Loại,Mức,Đoạn văn,Lời giải,Transcript,Dịch,CLO,Thẻ,Số từ,Trạng thái,Mã câu,Dạng bài\n"
+    f = tmp_path / "B36_B50_qbank.csv"
+    f.write_text(csv_text, encoding="utf-8")
+    err, res = call("import_questions", {"textbook_id": 3, "file_path": str(f)})
+    assert not err and seen[-1][0] == "/api/import-text" and seen[-1][1]["dry_run"] == "1"
+    err, res = call("import_questions", {"textbook_id": 3, "content": csv_text})
+    assert not err and seen[-1][0] == "/api/import-text" and seen[-1][2] == csv_text.encode("utf-8")
+    err, msg = call("import_questions", {"textbook_id": 3})
+    assert err and "content" in msg
+    err, msg = call("import_questions", {"textbook_id": 3, "content": csv_text, "file_path": str(f)})
+    assert err and "một trong hai" in msg
 
 
 def test_attach_audio_keeps_fields_and_old_media(tmp_path, monkeypatch):

@@ -220,15 +220,28 @@ def _read_file(path, exts, what):
         return f.read()
 
 
+IMPORT_EXT = (".docx", ".csv", ".tsv", ".txt", ".xlsx")
+
+
 def tool_import_questions(args):
-    """Nhập câu hỏi từ file .docx theo mẫu 8 cột. Mặc định dry_run=true: chỉ kiểm tra.
-    Câu nhập vào ở trạng thái Nháp. Đặt dry_run=false để ghi thật."""
+    """Nhập câu hỏi từ .docx, .csv/.tsv hoặc .xlsx (cột nhận theo tên tiêu đề, thứ tự tùy ý), hoặc từ nội dung
+    CSV/TSV dán thẳng vào `content`. Mặc định dry_run=true: chỉ kiểm tra. Câu nhập vào ở trạng thái Nháp."""
     tid = _int(args.get("textbook_id"), "textbook_id")
-    data = _read_file(args.get("file_path"), (".docx",), "File nhập")
+    content = args.get("content")
+    path = str(args.get("file_path") or "").strip()
+    if content not in (None, "") and path:
+        raise ApiError("Chỉ truyền một trong hai: file_path hoặc content")
+    if content not in (None, ""):
+        data, route = str(content).encode("utf-8"), "/api/import-text"
+    elif path:
+        data = _read_file(path, IMPORT_EXT, "File nhập")
+        route = "/api/import" if path.lower().endswith(".docx") else "/api/import-text"
+    else:
+        raise ApiError("Thiếu file_path hoặc content")
     dry = args.get("dry_run", True) is not False
-    r = api("POST", "/api/import", {"textbook_id": tid, "dry_run": "1" if dry else None}, body=data,
+    r = api("POST", route, {"textbook_id": tid, "dry_run": "1" if dry else None}, body=data,
             content_type="application/octet-stream")
-    return {"dry_run": dry, "added": r.get("added"), "errors": r.get("errors", []),
+    return {"dry_run": dry, "added": r.get("added"), "updated": r.get("updated"), "errors": r.get("errors", []),
             "skipped": r.get("skipped", []), "warnings": r.get("warnings", []),
             "rows": [{"where": x.get("where"), "code": x.get("code"), "status": x.get("status"),
                       "note": x.get("note")} for x in r.get("rows", [])]}
@@ -683,11 +696,16 @@ TOOLS = [
          "content": {"type": "string"}, "options": {"type": "array", "items": {"type": "string"}}}, ["chapter_id", "content"])}},
          ["items"])},
     {"name": "import_questions", "handler": tool_import_questions,
-     "description": "Nhập câu hỏi từ file .docx theo mẫu 8 cột (Mã chương phải có trong giáo trình đích). Mặc định chỉ kiểm tra "
-                    "(dry_run=true); chỉ đặt dry_run=false sau khi người dùng đã xác nhận. Câu nhập vào ở trạng thái Nháp.",
+     "description": "Nhập câu hỏi từ bảng có dòng tiêu đề; cột nhận theo tên, thứ tự tùy ý. Bắt buộc: Mã chương, Nội dung, "
+                    "Đáp án, Loại, Mức. Tùy chọn: Đoạn văn, Lời giải, Transcript, Dịch, CLO, Thẻ, Số từ, Trạng thái, Mã câu "
+                    "(có thì cập nhật câu đó), Dạng bài. Mã chương phải có trong giáo trình đích. Truyền file_path "
+                    "(.docx/.csv/.tsv/.xlsx trên máy chạy app) HOẶC content (nội dung CSV/TSV dán thẳng, dùng khi không đọc "
+                    "được file trên máy đó). Mặc định chỉ kiểm tra (dry_run=true); chỉ đặt dry_run=false sau khi người dùng "
+                    "đã xác nhận. Câu nhập vào ở trạng thái Nháp.",
      "inputSchema": _obj({"textbook_id": {"type": "integer"},
-                          "file_path": {"type": "string", "description": "đường dẫn .docx trên máy chạy app"},
-                          "dry_run": {"type": "boolean", "default": True}}, ["textbook_id", "file_path"])},
+                          "file_path": {"type": "string", "description": "đường dẫn .docx/.csv/.tsv/.xlsx trên máy chạy app"},
+                          "content": {"type": "string", "description": "nội dung CSV/TSV (dòng đầu là tiêu đề cột)"},
+                          "dry_run": {"type": "boolean", "default": True}}, ["textbook_id"])},
     {"name": "attach_audio", "handler": tool_attach_audio,
      "description": "Gắn file âm thanh có sẵn (mp3, wav, ogg, m4a; tối đa 15 MB) vào một câu hoặc đoạn văn của câu. "
                     "Mặc định THAY file nghe cũ cùng cấp (replace=true) nên câu chỉ còn một file nghe. Không đổi trạng thái câu. "
