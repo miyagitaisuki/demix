@@ -175,10 +175,15 @@ def test_import_questions_dry_run_default_and_extension_check(tmp_path, monkeypa
     assert not err and res["dry_run"] is True and seen[-1][2]["dry_run"] == "1" and seen[-1][3] == b"PK-fake"
     err, res = call("import_questions", {"textbook_id": 3, "file_path": str(f), "dry_run": False})
     assert not err and res["dry_run"] is False and seen[-1][2]["dry_run"] is None
+    csv_f = tmp_path / "cau.csv"
+    csv_f.write_bytes("Mã câu,Mã chương\n".encode("utf-8"))
+    err, res = call("import_questions", {"textbook_id": 3, "file_path": str(csv_f)})
+    assert not err and seen[-1][1] == "/api/import-text" and seen[-1][2]["dry_run"] == "1"
+    assert seen[-1][3] == "Mã câu,Mã chương\n".encode("utf-8")
     txt = tmp_path / "a.txt"
     txt.write_text("x")
     err, msg = call("import_questions", {"textbook_id": 3, "file_path": str(txt)})
-    assert err and ".docx" in msg
+    assert err and ".docx" in msg and ".csv" in msg
 
 
 def test_attach_audio_keeps_fields_and_old_media(tmp_path, monkeypatch):
