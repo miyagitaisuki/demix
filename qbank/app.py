@@ -829,8 +829,15 @@ def listening_item(r):
     it = row_to_api(r)
     own, shared = _audio_files(it["media"]), _audio_files(it["passage_media"])
     audio = own + shared
+    opts, opt_imgs = [], []
+    for o in it["options"]:
+        f = option_image(o, it["media"])
+        opts.append("" if f else o)  # phương án ảnh: để chữ trống, ảnh gửi riêng
+        opt_imgs.append(f or None)
+    images = [{"file": m["file"], "name": m["name"]} for m in it["media"] if m["kind"] == "image"]
     return {"id": it["id"], "code": it["code"], "qtype": it["qtype"], "content": it["content"],
-            "options": it["options"], "answer": it["answer"], "solution": it["solution"],
+            "options": opts, "option_images": opt_imgs, "images": images,
+            "answer": it["answer"], "solution": it["solution"],
             "passage": it.get("passage") or "", "audio": audio,
             "transcript": it.get("transcript") or chr(10).join(a["script"] for a in audio if a["script"]),
             "translation": it.get("translation") or ""}
@@ -905,6 +912,21 @@ def norm_tags(value):
         seen.add(t.lower())
         out.append(t)
     return "," + ",".join(out) + "," if out else ""
+
+
+IMG_OPT = re.compile(r"\[(?:hình|hinh)\s*:\s*([^\]]+?)\s*\]", re.I)  # phương án ảnh: [hình: tên ảnh] (tên ảnh đã đính kèm câu)
+
+
+def option_image(opt, media):
+    """Phương án chỉ gồm [hình: tên] thì trả về file ảnh đính kèm câu có tên đó; "" nếu không tìm thấy; None nếu là chữ."""
+    m = IMG_OPT.fullmatch(str(opt).strip())
+    if not m:
+        return None
+    want = m.group(1).strip().lower()
+    for x in media or []:
+        if x.get("kind") == "image" and str(x.get("name", "")).lower() == want:
+            return x["file"]
+    return ""
 
 
 def norm_media(value):
@@ -1858,7 +1880,16 @@ def emit_passage(doc, marker, text, mode="ruby"):
     return spacer
 
 
-def emit_options(doc, marker, options, mode="ruby"):
+def add_option(para, opt, media, mode="ruby"):
+    """Ghi một phương án vào đoạn: chữ hoặc ảnh (khi phương án là [hình: tên])."""
+    f = option_image(opt, media)
+    if f and os.path.isfile(os.path.join(MEDIA_DIR, f)):
+        para.add_run().add_picture(os.path.join(MEDIA_DIR, f), width=Cm(3.5))
+    else:
+        add_rich(para, opt, mode=mode)
+
+
+def emit_options(doc, marker, options, mode="ruby", media=None):
     """Phương án TN xếp hai cột, đọc theo cột: A C / B D (đúng mẫu đề trường)."""
     half = (len(options) + 1) // 2
     tbl = doc.add_table(rows=half, cols=2)
@@ -1866,7 +1897,7 @@ def emit_options(doc, marker, options, mode="ruby"):
         row, col = (i, 0) if i < half else (i - half, 1)
         para = tbl.cell(row, col).paragraphs[0]
         para.add_run(f"{LETTERS[i]}. ")
-        add_rich(para, opt, mode=mode)
+        add_option(para, opt, media, mode)
     marker._p.addprevious(tbl._tbl)
 
 
@@ -1896,12 +1927,12 @@ def emit_question(doc, marker, n, it, mode="ruby"):
     if is_match(it):
         marker.insert_paragraph_before("    Đáp án (chữ cái tiêu đề): ……")
     elif it["qtype"] == "TN":
-        emit_options(doc, marker, it["options"], mode)
+        emit_options(doc, marker, it["options"], mode, it.get("media"))
     elif it["qtype"] == "DS":
         for k, opt in enumerate(it["options"]):
             line = marker.insert_paragraph_before("")
             line.add_run(f"    {'abcdefgh'[k]}) ")
-            add_rich(line, opt, mode=mode)
+            add_option(line, opt, it.get("media"), mode)
     elif it["qtype"] == "DT":
         limit = f" (không quá {it['word_limit']} từ)" if it.get("word_limit") else ""
         if is_label(it):
@@ -3906,6 +3937,14 @@ def rich_html(text):
     return out.replace("\n", "<br>")
 
 
+def opt_html(o, media):
+    """Phương án cho bản in: ảnh khi là [hình: tên], còn lại là chữ."""
+    f = option_image(o, media)
+    if f:
+        return f"<img src='/media/{f}' style='max-height:90px;max-width:100%'>"
+    return rich_html(o)
+
+
 def _print_media(media):
     out = []
     for m in media or []:
@@ -3958,10 +3997,10 @@ def print_html(body):
             lines.append("<div class='fill'>Đáp án (chữ cái tiêu đề): ……</div>")
         elif it["qtype"] == "TN":
             lines.append("<div class='opts'>" + "".join(
-                f"<span>{LETTERS[k]}. {rich_html(o)}</span>" for k, o in enumerate(it["options"])) + "</div>")
+                f"<span>{LETTERS[k]}. {opt_html(o, it.get('media'))}</span>" for k, o in enumerate(it["options"])) + "</div>")
         elif it["qtype"] == "DS":
             lines.append("<div class='opts ds'>" + "".join(
-                f"<span>{'abcdefgh'[k]}) {rich_html(o)}</span>" for k, o in enumerate(it["options"])) + "</div>")
+                f"<span>{'abcdefgh'[k]}) {opt_html(o, it.get('media'))}</span>" for k, o in enumerate(it["options"])) + "</div>")
         elif it["qtype"] == "DT":
             limit = f" (không quá {it['word_limit']} từ)" if it.get("word_limit") else ""
             lines.append(f"<div class='fill'>Đáp án{limit}: ……………………………</div>")

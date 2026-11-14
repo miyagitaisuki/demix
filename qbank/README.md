@@ -44,6 +44,7 @@ Tải mẫu bằng nút **Tải mẫu .docx** hoặc **Tải mẫu .csv** (ribbo
 - Thẻ `tfng` (TN): Đúng / Sai / Không có thông tin. Không ghi phương án; Đáp án `A` = Đúng, `B` = Sai, `C` = Không có thông tin.
 - Thẻ `noitieude` (TN): nối tiêu đề. Các câu cùng nhóm ghi cùng `Đoạn văn` và cùng danh sách tiêu đề `A.` `B.`… (tối đa 12); Đáp án là chữ cái tiêu đề.
 - Thẻ `ghinhan` (DT): ghi nhãn sơ đồ. Đáp án là tên cần ghi cho vị trí được đánh số; hình ảnh thêm trong app sau khi nhập.
+- **Phương án là ảnh:** viết `[hình: tên ảnh]` làm phương án (TN) với tên đúng tên ảnh đã đính kèm câu (tên hiển thị trong form câu). Dùng được khi nhập Word/CSV; ảnh được gắn trong app sau khi nhập. Trang luyện nghe và bản in hiện ảnh; xuất Moodle chưa hỗ trợ.
 - Furigana: `{試験|しけん}`. Khi xuất đề chọn "tự thêm" thì app tự thêm furigana cho chữ Hán chưa có cú pháp (cần `pip install pykakasi`). Cách đọc tự sinh có thể sai với từ đọc đặc biệt, nên kiểm tra và viết tay `{chữ|cách đọc}` để ghi đè.
 - `Mã chương` phải đã tồn tại trong giáo trình được chọn ở bộ lọc.
 

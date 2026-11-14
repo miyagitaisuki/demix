@@ -55,6 +55,7 @@ input[type=range]{width:100%;accent-color:var(--acc);height:8px;cursor:pointer}
 .passage,.qtext{font-size:var(--fs);line-height:2.1;white-space:pre-wrap}
 .passage{color:var(--sub);font-size:calc(var(--fs) * .8);margin-bottom:6px}
 .qtext{border-left:6px solid var(--acc);padding-left:18px;margin-bottom:18px;border-radius:3px}
+.qimg{margin:0 0 18px}.qimg img{max-width:100%;max-height:45vh;display:block;margin:0 0 10px}.opt img{max-height:160px;max-width:100%;display:block}
 .opts{display:grid;grid-template-columns:1fr 1fr;gap:14px}
 .opts.one{grid-template-columns:1fr}
 .opt{display:flex;align-items:center;gap:14px;font-size:calc(var(--fs) * .85);padding:10px 22px;border:1.5px solid var(--line);border-radius:14px;background:var(--card);line-height:1.8}
@@ -134,6 +135,7 @@ body.embed main{margin-top:14px}
       </div>
       <div class="passage" id="passage"></div>
       <div class="qtext" id="qtext"></div>
+      <div class="qimg" id="qimg"></div>
       <div class="opts" id="opts"></div>
       <div class="ans hidden" id="ans"></div>
       <div class="foot">
@@ -248,7 +250,10 @@ function go(i) {
   $("#qtext").innerHTML = furi(it.content);
   const letters = "ABCDEFGH";
   $("#opts").className = "opts" + (it.options.length > 4 ? " one" : "");
-  $("#opts").innerHTML = it.options.map((o, k) => `<div class="opt" data-l="${letters[k]}"><i></i><span><b>${it.qtype === "DS" ? "abcdefgh"[k] + ")" : letters[k] + "."}</b> ${furi(o)}</span></div>`).join("");
+  $("#qimg").innerHTML = (it.images || []).map(m => `<img src="/media/${esc(m.file)}" alt="${esc(m.name)}">`).join("");
+  $("#opts").innerHTML = it.options.map((o, k) => {
+    const img = it.option_images && it.option_images[k] ? `<img src="/media/${esc(it.option_images[k])}" alt="">` : "";
+    return `<div class="opt" data-l="${letters[k]}"><i></i><span><b>${it.qtype === "DS" ? "abcdefgh"[k] + ")" : letters[k] + "."}</b> ${img}${furi(o)}</span></div>`; }).join("");
   $("#ans").classList.add("hidden");
   $("#bAns").classList.remove("on");
   $("#ans").innerHTML = "Đáp án: <b>" + esc(it.answer) + "</b>";
