@@ -30,3 +30,83 @@ B02,"A: どこへ行きますか。
 B: 駅へ行きます。
 
 この会話の続きを書いてください。",,TL,3,,会話の内容と文法の正確さ,,,CLO3,,,viet-traloi
+B03,"「図書館」の読み方はどれですか。
+A. としょうかん
+B. としょかん",B,TN,1,,,,,CLO1,,,kanji-doc
+B03,"「学校」を漢字で書くと？
+A. 学校
+B. 学交",A,TN,1,,,,,CLO1,,,kanji-viet
+B03,"雨が降ったので、ピクニックは___ことになった。
+A. 中止する
+B. 歓迎する",A,TN,2,,,,,CLO1,,,tv-ngucanh
+B03,"「急ぐ」と最も近い意味はどれですか。
+A. 走る
+B. 休む",A,TN,1,,,,,CLO1,,,tv-dongnghia
+B03,"Câu dùng từ đúng:
+A. 服を洗濯します。
+B. 本を洗濯します。",A,TN,1,,,,,CLO1,,,tv-cachdung
+B03,"Ghép 「先」 với một chữ để tạo từ có nghĩa 「giáo viên」:
+先___
+A. 生
+B. 客",A,TN,2,,,,,CLO1,,,tv-taotu
+B03,"私は{学校|がっこう}___行きます。
+A. に
+B. を",A,TN,1,,,,,CLO1,,,np-trotu
+B03,"「〜ことにする」の意味はどれですか。
+A. quyết định làm gì
+B. đã làm xong",A,TN,2,,,,,CLO1,,,np-ynghia
+B03,"Sắp xếp thành câu đúng:
+A. 学校に 私は 毎日 行きます
+B. 私は 毎日 学校に 行きます",B,TN,2,,,,,CLO1,,,np-sapxep
+B03,"Trong đoạn văn, 「ので」 biểu thị điều gì?
+A. Lý do / nguyên nhân
+B. Sự tương phản",A,TN,2,雨が降ったので、試合は中止になりました。,,,,CLO2,,,np-doanvan
+B03,"Câu nào có lỗi sai?
+A. 昨日、映画を見ました。
+B. 先週、図書館に行きました。
+C. 明日、雨を降りました。",C,TN,2,,,,,CLO1,,,np-timloi
+B03,"Chọn câu đáp phù hợp cho lời nói: 今日はとても暑いですね。
+A. はい、本当に暑いですね。
+B. 私は学生です。",A,TN,1,,,,,CLO1,,,ht-dap
+B03,"Thư viện mở cửa mấy giờ?
+A. 9 giờ đến 17 giờ
+B. 10 giờ đến 18 giờ",A,TN,2,図書館は月曜日が休みです。開館時間は9時から17時までです。,,,,CLO2,,,doc-thongtin
+B03,"Điểm chung của hai bài đọc là gì?
+A. Cả hai đều nói về giao thông công cộng
+B. Cả hai đều nói về giá vé",A,TN,3,"Bài 1: Tàu điện giúp tiết kiệm thời gian.
+Bài 2: Tàu điện thường đông người vào giờ cao điểm.",,,,CLO2,,,doc-tonghop
+B03,"Luận điểm chính của tác giả là gì?
+A. Đọc sách mỗi ngày giúp suy nghĩ sâu hơn
+B. Sách giấy đang biến mất",A,TN,3,Tác giả cho rằng việc đọc sách mỗi ngày giúp con người suy nghĩ sâu hơn.,,,,CLO2,,,doc-chutruong
+B03,"Đúng/sai theo bài đọc:
+a) Trường có 500 sinh viên.
+b) Trường có 300 sinh viên học tiếng Nhật.",ĐS,DS,2,"Trường có 500 sinh viên, trong đó 200 sinh viên học tiếng Nhật.",,,,CLO2,,,doc-dungsai
+B03,"Người nghe cần làm gì?
+A. Đến ga lúc 10 giờ
+B. Mang theo hộ chiếu",A,TN,2,,,"[1] 明日、何時に駅前に集合しますか。
+[2] 10時に来てください。","[1] Ngày mai mấy giờ tập trung ở trước ga?
+[2] Hãy đến lúc 10 giờ.",CLO2,,,nghe-point
+B03,"Nội dung khái quát của đoạn hội thoại là gì?
+A. Thảo luận ba chủ đề trong cuộc họp
+B. Lên kế hoạch đi du lịch",A,TN,2,,,"[1] 今日の会議は三つのテーマについて話し合います。
+[2] はい、まず予算からですね。","[1] Cuộc họp hôm nay sẽ bàn về ba chủ đề.
+[2] Vâng, trước tiên là ngân sách.",CLO2,,,nghe-gaiyo
+B03,"Cách nói nào lịch sự nhất để xin lỗi?
+A. すみません、少し遅れます。
+B. ごめん、遅れる。",A,TN,2,,,[1] 会議に少し遅れそうです。,[1] Có vẻ tôi sẽ đến họp muộn một chút.,CLO2,,,nghe-hatsuwa
+B03,"Chọn câu đáp ngay:
+A. ぜひ行きましょう。
+B. 私は先生です。",A,TN,2,,,[1] 明日、一緒に映画を見に行きませんか。,[1] Ngày mai cùng đi xem phim không?,CLO2,,,nghe-sokuji
+B03,"Hai người đang bàn về điều gì?
+A. Địa điểm đi du lịch tuần tới
+B. Kế hoạch học tiếng Nhật",A,TN,3,,,"[1] 来週の旅行、どこに行きますか。
+[2] 京都に行きたいです。天気がいいといいですね。
+[1] そうですね。","[1] Chuyến du lịch tuần tới, bạn đi đâu?
+[2] Tôi muốn đi Kyoto. Thời tiết đẹp thì tốt quá.
+[1] Đúng vậy.",CLO2,,,nghe-tonghop
+B03,Viết một đoạn văn 80–100 chữ về kế hoạch cuối tuần của bạn.,,TL,3,,"Đủ ý, đúng ngữ pháp, từ vựng phù hợp",,,CLO3,,,viet-sakubun
+B03,"Viết lại câu sau bằng thể lịch sự (丁寧語):
+友達が来た。",,TL,2,,友達が来ました。,,,CLO3,,,viet-vietlai
+B03,"Trong tiếng Nhật thương mại, 「御社」 dùng để chỉ:
+A. Công ty của đối phương
+B. Công ty của mình",A,TN,2,,,,,CLO1,,,cn-kienthuc

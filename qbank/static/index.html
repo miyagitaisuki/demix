@@ -341,15 +341,17 @@
       <div class="rgroup">
         <div class="rgroup-items">
           <label class="rbtn" id="importBtn" for="importFile" title="Nhập từ .docx hoặc .csv vào giáo trình đã chọn"><i class="fa-solid fa-file-import"></i><span>Nhập</span></label>
-          <a class="rbtn" href="/api/backup" download title="Sao lưu toàn bộ CSDL ra .json"><i class="fa-solid fa-download"></i><span>Sao lưu</span></a>
+          <a class="rbtn" href="/api/backup" download title="Sao lưu toàn bộ CSDL ra .json"><i class="fa-solid fa-download"></i><span>Sao lưu .json</span></a>
           <div class="rmenu">
             <button class="rbtn" type="button"><i class="fa-solid fa-ellipsis"></i><span>Nhập / Xuất</span><i class="fa-solid fa-caret-down car"></i></button>
             <div class="rmenu-list">
-              <a class="rbtn sm" href="/api/import-template" download><i class="fa-solid fa-file-lines"></i>Tải mẫu nhập</a>
-              <a class="rbtn sm" href="/api/import-template?format=csv" download title="Mẫu CSV cùng cột với mẫu Word; mở bằng Excel rồi lưu lại khi nhập"><i class="fa-solid fa-file-csv"></i>Mẫu CSV</a>
-              <a class="rbtn sm" href="#" onclick="exportCsv(event)" title="Xuất câu hỏi của giáo trình đang chọn (và chương nếu đã chọn) ra CSV để sửa; nhập lại sẽ cập nhật đúng câu"><i class="fa-solid fa-file-export"></i>Xuất CSV</a>
-              <label class="rbtn sm" for="restoreFile"><i class="fa-solid fa-upload"></i>Khôi phục .json</label>
+              <a class="rbtn sm" href="/api/import-template" download title="Mẫu Word (.docx), mỗi bảng là một nhóm câu"><i class="fa-solid fa-file-lines"></i>Tải mẫu .docx</a>
+              <a class="rbtn sm" href="/api/import-template?format=csv" download title="Mẫu CSV cùng cột với mẫu Word; mở bằng Excel rồi lưu lại khi nhập"><i class="fa-solid fa-file-csv"></i>Tải mẫu .csv</a>
+              <label class="rbtn sm" id="importMenuItem" for="importFile" title="Nhập câu hỏi từ .csv hoặc .docx vào giáo trình đã chọn"><i class="fa-solid fa-file-import"></i>Nhập .csv / .docx</label>
               <button class="rbtn sm" onclick="togglePaste()"><i class="fa-solid fa-paste"></i>Dán từ Excel</button>
+              <a class="rbtn sm" href="#" onclick="exportCsv(event)" title="Xuất câu hỏi của giáo trình đang chọn (và chương nếu đã chọn) ra CSV để sửa; nhập lại sẽ cập nhật đúng câu"><i class="fa-solid fa-file-export"></i>Xuất .csv</a>
+              <a class="rbtn sm" href="/api/backup" download title="Sao lưu toàn bộ CSDL ra .json"><i class="fa-solid fa-download"></i>Sao lưu .json</a>
+              <label class="rbtn sm" for="restoreFile"><i class="fa-solid fa-upload"></i>Khôi phục .json</label>
             </div>
           </div>
         </div>
@@ -828,6 +830,7 @@ function updateImportTarget() {
   const btn = $("#importBtn");
   btn.classList.toggle("off", !tb);
   btn.title = tb ? `Nhập .docx/.csv vào giáo trình «${tb.name}»` : "Chọn giáo trình ở bộ lọc trước khi nhập";
+  $("#importMenuItem").classList.toggle("off", !tb);
   $("#importFile").disabled = !tb;
 }
 function fillChapterFilter() {
