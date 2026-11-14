@@ -1001,7 +1001,7 @@ function qRowHtml(q) {
               : q.qtype === "DS" ? q.options.map((_, k) => q.answer[k] === "D") : [];
   const opts = q.options.length ? `<div class="opts-grid">${q.options.map((o, k) => {
       const lab = q.qtype === "DS" ? "abcdefgh"[k].toUpperCase() : OPT_L[k];
-      return `<div class="opt ${marks[k] ? "ok" : ""}"><b>${lab}.</b>${esc(o)}</div>`; }).join("")}</div>` : "";
+      return `<div class="opt ${marks[k] ? "ok" : ""}"><b>${lab}.</b>${optHtml(o, q.media)}</div>`; }).join("")}</div>` : "";
   const ans = (q.qtype === "TN" || q.qtype === "DS") ? "" : `<div class="ans-line">Đáp án: <b>${esc(q.answer)}</b></div>`;
   const chap = `${esc(q.chapter_code)}${q.chapter_title ? " - " + esc(q.chapter_title) : ""}`;
   const tags = q.tags && q.tags.length ? `<div class="sub">🏷 ${esc(q.tags.join(", "))}</div>` : "";
@@ -1155,7 +1155,7 @@ async function editQ(id) {
       <span id="ePMediaList" class="row" style="gap:6px"></span></div>
     <div class="row"><label>Nội dung câu hỏi (furigana viết {漢字|かな})</label></div>
     <div class="row"><textarea id="eContent" rows="3" placeholder="Nội dung câu hỏi">${esc(q.content)}</textarea></div>
-    <div class="row"><label>Phương án (TN: mỗi dòng một phương án, # đầu dòng = cố định vị trí; ĐS: mỗi dòng một ý; ĐT/TL: để trống)</label></div>
+    <div class="row"><label>Phương án (TN: mỗi dòng một phương án, # đầu dòng = cố định vị trí; phương án ảnh viết [hình: tên ảnh] với ảnh đã đính kèm câu; ĐS: mỗi dòng một ý; ĐT/TL: để trống)</label></div>
     <div class="row"><textarea id="eOpts" rows="4">${esc(q.options.join("\n"))}</textarea></div>
     <div class="row"><label>Đáp án (TN: A/B/C…; ĐS: Đ S Đ…; ĐT: đáp án, nhiều đáp án cách nhau bằng |; TL: hướng dẫn chấm, in ở cuối đề)</label><input id="eAns" value="${esc(q.answer)}">
       <label>Lời giải</label><input id="eSol" style="flex:1" value="${esc(q.solution)}"></div>
@@ -1259,6 +1259,13 @@ const mediaHtml = list => (list && list.length)
       : `<audio controls preload="none" src="/media/${esc(m.file)}" style="height:30px"></audio>`).join("")}</div>` : "";
 let EDIT_PMEDIA = [];  // file của đoạn văn đang chọn (lưu cùng câu, áp dụng cho mọi câu của đoạn)
 const mediaList = t => t === "p" ? EDIT_PMEDIA : EDIT_MEDIA;
+const OPT_IMG = /^\s*\[(?:hình|hinh)\s*:\s*([^\]]+?)\s*\]\s*$/i;  // phương án ảnh: [hình: tên ảnh đã đính kèm]
+function optHtml(o, media) {
+  const m = String(o).match(OPT_IMG);
+  if (!m) return esc(o);
+  const f = (media || []).find(x => x.kind === "image" && x.name.toLowerCase() === m[1].toLowerCase());
+  return f ? `<img src="/media/${esc(f.file)}" alt="${esc(m[1])}" style="max-height:120px;max-width:100%;display:block">` : esc(o);
+}
 function mediaTags(list, t) {
   return list.map((m, i) => `<span class="tag">${m.kind === "image" ? "🖼" : "🔊"} ${esc(m.name)}
     ${m.tts ? `<button class="g" style="padding:0 6px;border:0" title="Sửa kịch bản và tạo lại" onclick="openTts('${t}',${i})">✎</button>` : ""}
