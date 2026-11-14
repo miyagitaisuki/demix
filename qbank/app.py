@@ -4122,6 +4122,7 @@ def moodle_xml(ids=None):
 UPDATE_REPO = os.environ.get("QBANK_UPDATE_REPO", "miyagitaisuki/demix")
 UPDATE_TAG_PREFIX = "qbank-v"  # release của QBank có tag dạng qbank-v1.2.3
 UPDATE_ASSET = "QBank.exe"
+UPDATE_MCP_ASSET = "QBankMCP.exe"  # MCP server đi kèm; có trong release thì cập nhật cùng lúc
 UPDATE_HOSTS = ("github.com", "objects.githubusercontent.com", "release-assets.githubusercontent.com")
 RELEASES_PAGE = f"https://github.com/{UPDATE_REPO}/releases"
 UPDATE_DIR = os.path.join(DATA_DIR, "data", "update")  # file tải về tạm, nằm cạnh dữ liệu nên không mất khi cập nhật
@@ -4168,8 +4169,12 @@ def pick_update(releases, current):
     if best is None or cur is None or best[0] <= cur:
         return None
     ver, asset, r = best
+    mcp = next((a for a in r.get("assets") or [] if a.get("name") == UPDATE_MCP_ASSET
+                and safe_download_url(a.get("browser_download_url"))), None)
     return {"version": ".".join(map(str, ver)), "url": asset["browser_download_url"],
-            "size": asset.get("size") or 0, "digest": asset.get("digest") or "", "notes": r.get("body") or ""}
+            "size": asset.get("size") or 0, "digest": asset.get("digest") or "", "notes": r.get("body") or "",
+            "mcp": {"url": mcp["browser_download_url"], "size": mcp.get("size") or 0,
+                    "digest": mcp.get("digest") or ""} if mcp else None}
 
 
 def fetch_releases():
@@ -4199,9 +4204,9 @@ def check_update():
             "notes": upd["notes"] if upd else "", "can_install": can_self_update(), "releases_url": RELEASES_PAGE}
 
 
-def download_update(upd):
+def download_update(upd, name="QBank.new.exe"):
     os.makedirs(UPDATE_DIR, exist_ok=True)
-    new_path = os.path.join(UPDATE_DIR, "QBank.new.exe")
+    new_path = os.path.join(UPDATE_DIR, name)
     h, size = hashlib.sha256(), 0
     try:
         with urlreq.urlopen(urlreq.Request(upd["url"], headers={"User-Agent": "QBank-updater"}), timeout=60) as resp, \
@@ -4237,6 +4242,19 @@ def swap_exe(new_path, current_path):
     return old_path
 
 
+def swap_mcp_exe(new_path, target):
+    """Đưa QBankMCP.exe mới vào cạnh QBank.exe (Claude đang chạy bản cũ vẫn được: đổi tên được file đang chạy).
+    Lỗi không làm hỏng lần cập nhật app; bản mới có hiệu lực khi khởi động lại Claude."""
+    try:
+        if os.path.exists(target):
+            swap_exe(new_path, target)
+        else:
+            os.replace(new_path, target)
+        return True
+    except OSError:
+        return False
+
+
 def install_update():
     if not can_self_update():
         raise ValueError("Chỉ cập nhật tự động khi chạy QBank.exe trên Windows. Hãy tải bản mới từ trang Releases.")
@@ -4245,7 +4263,10 @@ def install_update():
         raise ValueError("Đang là bản mới nhất, không có gì để cài.")
     auto_backup()  # sao lưu dữ liệu của hôm nay trước khi thay file
     new_path = download_update(upd)
+    mcp_new = download_update(upd["mcp"], "QBankMCP.new.exe") if upd.get("mcp") else None  # tải đủ rồi mới thay
     swap_exe(new_path, sys.executable)
+    if mcp_new:
+        swap_mcp_exe(mcp_new, os.path.join(os.path.dirname(sys.executable), UPDATE_MCP_ASSET))
     flags = getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
     subprocess.Popen([sys.executable, "--after-update"], close_fds=True, creationflags=flags)
     return upd["version"]
@@ -4254,10 +4275,12 @@ def install_update():
 def cleanup_old_exe():
     """Xóa bản .old của lần cập nhật trước (nếu đã tắt được)."""
     if getattr(sys, "frozen", False):
-        try:
-            os.remove(sys.executable + ".old")
-        except OSError:
-            pass
+        for old in (sys.executable + ".old",
+                    os.path.join(os.path.dirname(sys.executable), UPDATE_MCP_ASSET + ".old")):
+            try:
+                os.remove(old)
+            except OSError:
+                pass
 
 
 def main():

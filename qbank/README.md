@@ -164,11 +164,11 @@ Khi nâng cấp từ bản có cấu trúc cũ (giáo trình thuộc một học
 
 ### 4. Đóng gói và vận hành
 - Đóng gói PyInstaller thành file chạy trên Windows, không cần cài Python; mở app tự mở trình duyệt.
-- Cập nhật: nút **Cập nhật** trên thanh trên cùng so với bản mới nhất trên GitHub Releases. Bấm để tải và thay `QBank.exe`, app tự khởi động lại; dữ liệu trong `data/` được giữ nguyên (chỉ tự cập nhật trên Windows với file .exe).
+- Cập nhật: nút **Cập nhật** trên thanh trên cùng so với bản mới nhất trên GitHub Releases. Bấm để tải và thay `QBank.exe` cùng `QBankMCP.exe` nằm cạnh nó (MCP mới có hiệu lực khi khởi động lại Claude), app tự khởi động lại; dữ liệu trong `data/` được giữ nguyên (chỉ tự cập nhật trên Windows với file .exe).
 - Phát hành bản mới (cần quyền push tag):
   1. Sửa số phiên bản trong `qbank/VERSION`, ví dụ `1.0.1`, rồi commit và merge vào nhánh chính.
   2. Tạo và đẩy tag trùng số đó: `git tag qbank-v1.0.1 && git push origin qbank-v1.0.1`.
-  3. Workflow `.github/workflows/qbank-release.yml` chạy test, đóng gói và tạo GitHub Release kèm `QBank.exe`. Tag không khớp `VERSION` thì workflow báo lỗi và không phát hành.
+  3. Workflow `.github/workflows/qbank-release.yml` chạy test, đóng gói và tạo GitHub Release kèm `QBank.exe` và `QBankMCP.exe`. Tag không khớp `VERSION` thì workflow báo lỗi và không phát hành.
 - Đưa tên trường và khoa vào file cấu hình riêng để khoa khác dùng được.
 
 ### Thứ tự đề xuất
