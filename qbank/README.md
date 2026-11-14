@@ -117,7 +117,7 @@ Khi nâng cấp từ bản có cấu trúc cũ (giáo trình thuộc một học
    claude mcp add qbank -- python3 /duong/dan/toi/demix/qbank/mcp_server.py
    ```
    Nếu app không dùng cổng mặc định, thêm `-e QBANK_URL=http://127.0.0.1:<cổng>`.
-3. Công cụ có sẵn: `list_tree`, `list_questions`, `create_course`, `create_textbook`, `link_textbook`, `create_chapter`, `import_chapters`, `create_question`, `import_questions` (nhập .docx, mặc định chỉ kiểm tra) và `attach_audio` (gắn mp3 có sẵn vào câu hoặc đoạn văn). Không có công cụ xóa.
+3. Công cụ có sẵn: `list_tree`, `list_questions`, `create_course`, `create_textbook`, `link_textbook`, `create_chapter`, `import_chapters`, `create_question`, `import_questions` (nhập .docx/.csv/.tsv/.xlsx theo đường dẫn, hoặc dán nội dung CSV vào `content`; mặc định chỉ kiểm tra) và `attach_audio` (gắn mp3 có sẵn vào câu hoặc đoạn văn). Không có công cụ xóa.
 4. `import_chapters` mặc định chỉ kiểm tra (`dry_run`). Claude chỉ ghi thật sau khi bạn xác nhận kết quả kiểm tra.
 
 ## Hướng cải tiến
