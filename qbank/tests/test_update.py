@@ -103,3 +103,29 @@ def test_install_refused_when_not_frozen():
 def test_read_version_matches_file():
     with open(os.path.join(os.path.dirname(__file__), "..", "VERSION"), encoding="utf-8") as f:
         assert app.APP_VERSION == f.read().strip()
+
+
+def test_pick_update_includes_mcp_asset_when_present():
+    r = release("qbank-v1.2.0")
+    r["assets"].append({"name": "QBankMCP.exe", "size": 5,
+                        "browser_download_url": "https://github.com/miyagitaisuki/demix/releases/download/x/QBankMCP.exe"})
+    upd = app.pick_update([r], "1.0.0")
+    assert upd["mcp"]["url"].endswith("QBankMCP.exe") and upd["mcp"]["size"] == 5
+    assert app.pick_update([release("qbank-v1.2.0")], "1.0.0")["mcp"] is None
+
+
+def test_pick_update_ignores_mcp_asset_from_unsafe_host():
+    r = release("qbank-v1.2.0")
+    r["assets"].append({"name": "QBankMCP.exe", "browser_download_url": "https://evil.example/QBankMCP.exe"})
+    assert app.pick_update([r], "1.0.0")["mcp"] is None
+
+
+def test_swap_mcp_exe_replaces_or_places(tmp_path):
+    target = tmp_path / "QBankMCP.exe"
+    new = tmp_path / "new.exe"
+    new.write_bytes(b"MZnew1")
+    assert app.swap_mcp_exe(str(new), str(target)) and target.read_bytes() == b"MZnew1"
+    new.write_bytes(b"MZnew2")
+    assert app.swap_mcp_exe(str(new), str(target)) and target.read_bytes() == b"MZnew2"
+    assert (tmp_path / "QBankMCP.exe.old").read_bytes() == b"MZnew1"
+    assert app.swap_mcp_exe(str(tmp_path / "missing.exe"), str(target)) is False
