@@ -24,7 +24,7 @@ jobs:
         working-directory: qbank
         run: python -m pytest tests -q
 
-      - name: Đóng gói QBank.exe
+      - name: Đóng gói QBank.exe và QBankMCP.exe
         working-directory: qbank
         run: python tools/build_exe.py
 
@@ -32,5 +32,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: QBank-windows
-          path: qbank/dist/QBank.exe
+          path: |
+            qbank/dist/QBank.exe
+            qbank/dist/QBankMCP.exe
           if-no-files-found: error
