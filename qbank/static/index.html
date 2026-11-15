@@ -699,6 +699,15 @@ function toast(msg, isErr = false) {
   toastTimer = setTimeout(() => t.style.display = "none", isErr ? 5000 : 2800);
 }
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const renderRich = s => {
+  if (!s) return "";
+  let h = esc(s);
+  h = h.replace(/\{([^{}|]+)\|([^{}]+)\}/g, "<ruby>$1<rt>$2</rt></ruby>");
+  h = h.replace(/&lt;u&gt;(.*?)&lt;\/?u&gt;/gi, "<u>$1</u>");
+  h = h.replace(/&lt;b&gt;(.*?)&lt;\/?b&gt;/gi, "<b>$1</b>");
+  h = h.replace(/&lt;i&gt;(.*?)&lt;\/?i&gt;/gi, "<i>$1</i>");
+  return h;
+};
 const BLOOM = {1:"Biết",2:"Hiểu",3:"Vận dụng",4:"Phân tích",5:"Đánh giá"};
 const QT = {"": "Mọi dạng", TN: "Trắc nghiệm", DS: "Đúng/sai", DT: "Điền từ", TL: "Tự luận"};
 const DEFAULT_PARTS = [["Phần I. Trắc nghiệm", "TN"], ["Phần II. Đúng sai", "DS"], ["Phần III. Điền từ", "DT"], ["Phần IV. Tự luận", "TL"]];
@@ -1013,7 +1022,7 @@ function qRowHtml(q) {
     <td><span class="badge ${BLOOM_CLS[q.bloom]}">${q.bloom}. ${BLOOM[q.bloom]}</span></td>
     <td>${q.clo ? `<span class="badge clo">${esc(q.clo)}</span>` : `<span class="sub">—</span>`}</td>
     <td><span class="qt">${q.qtype}</span>${q.task ? `<div class="sub" style="margin-top:4px">${esc(taskShort(q.task))}</div>` : `<div class="sub warn" style="margin-top:4px">Chưa phân loại</div>`}</td>
-    <td><div class="stem">${esc(q.content)}</div>${mediaHtml(q.media)}${opts}${ans}</td>
+    <td><div class="stem">${renderRich(q.content)}</div>${mediaHtml(q.media)}${opts}${ans}</td>
     <td>${statusBadge(q.status)}<div class="sub" style="margin-top:4px">${q.points != null ? q.points + " điểm · " : ""}${used}</div></td>
     <td class="acts"><button class="ib" title="Sửa" onclick="editQ(${q.id})"><i class="fa-solid fa-pen-to-square"></i></button><button class="ib del" title="Xóa" onclick="delQ(${q.id})"><i class="fa-solid fa-trash-can"></i></button></td>
   </tr>`;
@@ -1262,9 +1271,9 @@ const mediaList = t => t === "p" ? EDIT_PMEDIA : EDIT_MEDIA;
 const OPT_IMG = /^\s*\[(?:hình|hinh)\s*:\s*([^\]]+?)\s*\]\s*$/i;  // phương án ảnh: [hình: tên ảnh đã đính kèm]
 function optHtml(o, media) {
   const m = String(o).match(OPT_IMG);
-  if (!m) return esc(o);
+  if (!m) return renderRich(o);
   const f = (media || []).find(x => x.kind === "image" && x.name.toLowerCase() === m[1].toLowerCase());
-  return f ? `<img src="/media/${esc(f.file)}" alt="${esc(m[1])}" style="max-height:120px;max-width:100%;display:block">` : esc(o);
+  return f ? `<img src="/media/${esc(f.file)}" alt="${esc(m[1])}" style="max-height:120px;max-width:100%;display:block">` : renderRich(o);
 }
 function mediaTags(list, t) {
   return list.map((m, i) => `<span class="tag">${m.kind === "image" ? "🖼" : "🔊"} ${esc(m.name)}
@@ -2637,7 +2646,7 @@ function renderPreview() {
       items.map((it, ii) => { n++; return `
         <div class="row" style="align-items:flex-start;border-bottom:1px solid var(--line);padding-bottom:6px">
           <div style="width:32px">${n}.</div>
-          <div style="flex:1">${esc(it.content)}
+          <div style="flex:1">${renderRich(it.content)}
             <div class="opts">${esc(it.options.map((o, k) => (it.qtype === "DS" ? "abcdefgh"[k] + ") " : "ABCDEFGH"[k] + ". ") + o).join("\n"))}</div>
             <div class="sub">${esc(it.code)} · ${it.clo ? "CLO: " + esc(it.clo) + " · " : ""}Bloom ${it.bloom} · ĐA: ${esc(it.qtype === "DS" ? it.answer.replace(/D/g, "Đ") : it.answer)} · ${it.last_used ? "đã dùng" : "chưa dùng"}</div></div>
           <button class="g" ${it.passage ? `disabled title="Câu thuộc đoạn văn: không đổi riêng lẻ"` : ""} onclick="swapItem(${si},${ii})">Đổi câu</button>

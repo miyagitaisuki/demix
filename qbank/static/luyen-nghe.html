@@ -184,7 +184,10 @@ $("#bTheme").onclick = () => theme(document.documentElement.dataset.theme === "d
 function furi(text) {
   return esc(text)
     .replace(/\{([^{}|]+)\|([^{}]+)\}/g, "<ruby>$1<rt>$2</rt></ruby>")
-    .replace(/([一-鿿々〆ヶ]+)\{([^{}]+)\}/g, "<ruby>$1<rt>$2</rt></ruby>");
+    .replace(/([一-鿿々〆ヶ]+)\{([^{}]+)\}/g, "<ruby>$1<rt>$2</rt></ruby>")
+    .replace(/&lt;u&gt;(.*?)&lt;\/?u&gt;/gi, "<u>$1</u>")
+    .replace(/&lt;b&gt;(.*?)&lt;\/?b&gt;/gi, "<b>$1</b>")
+    .replace(/&lt;i&gt;(.*?)&lt;\/?i&gt;/gi, "<i>$1</i>");
 }
 const mmss = t => { t = Math.max(0, t || 0); return Math.floor(t / 60) + ":" + String(Math.floor(t % 60)).padStart(2, "0"); };
 

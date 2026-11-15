@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "qbank-dev",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "set QBANK_PORT=8799&& cd qbank && python app.py"],
+      "port": 8799
+    }
+  ]
+}

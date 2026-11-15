@@ -1339,13 +1339,41 @@ def read_table_text(raw: bytes):
     return [r for r in csv.reader(io.StringIO(text), delimiter=delim)]
 
 
+def _cell_import_text(c):
+    """Lấy nội dung ô trong bảng Word; nếu ô có chữ gạch chân (Ctrl+U) thì tự bọc trong <u>...</u>."""
+    raw = c.text
+    if "<u>" in raw or "<U>" in raw or "<u " in raw or "<U " in raw:
+        return raw
+    has_u = any(r.underline for p in c.paragraphs for r in p.runs if r.text and r.text.strip())
+    if not has_u:
+        return raw
+    lines = []
+    for p in c.paragraphs:
+        parts = []
+        for r in p.runs:
+            txt = r.text
+            if not txt:
+                continue
+            if r.underline and txt.strip():
+                l_sp = len(txt) - len(txt.lstrip())
+                r_sp = len(txt) - len(txt.rstrip())
+                core = txt.strip()
+                lead = txt[:l_sp] if l_sp else ""
+                trail = txt[len(txt) - r_sp:] if r_sp else ""
+                parts.append(f"{lead}<u>{core}</u>{trail}")
+            else:
+                parts.append(txt)
+        lines.append("".join(parts))
+    return "\n".join(lines)
+
+
 def parse_import(data: bytes, textbook_id, dry_run=False):
     """Nhập câu hỏi từ bảng Word (xem /api/import-template để có mẫu)."""
     try:
         doc = Document(io.BytesIO(data))
     except Exception:
         raise ValueError("File không phải .docx hợp lệ (hãy lưu lại bằng Word dưới định dạng .docx)")
-    tables = [[[c.text for c in row.cells] for row in t.rows] for t in doc.tables]
+    tables = [[[_cell_import_text(c) for c in row.cells] for row in t.rows] for t in doc.tables]
     return parse_rows(tables, textbook_id, dry_run, docx=True)
 
 
@@ -1760,8 +1788,78 @@ def _all_paragraphs(doc):
 RUBY_RE = re.compile(r"\{([^{}|]+)\|([^{}]+)\}")  # cú pháp furigana: {試験|しけん}
 
 
-def _wrun(text):
+TAG_OR_RUBY_RE = re.compile(
+    r"\{([^{}|]+)\|([^{}]+)\}"                        # 1: base, 2: kana
+    r"|(</?([a-zA-Z]+)\b[^>]*>)"                      # 3: full tag, 4: tag name
+)
+
+
+def parse_rich_segments(text):
+    """Phân rã văn bản có chứa furigana {chữ|cách đọc} và các thẻ định dạng HTML (u, b, i, s).
+    Hỗ trợ cả trường hợp gõ nhầm thẻ đóng (vd <u>...<u> lặp lại thẻ mở thay vì </u>)."""
+    tokens = []
+    pos = 0
+    tag_u = False
+    tag_b = False
+    tag_i = False
+    tag_s = False
+
+    for m in TAG_OR_RUBY_RE.finditer(text):
+        if m.start() > pos:
+            seg = text[pos:m.start()]
+            if seg:
+                tokens.append(("text", seg, {"u": tag_u, "b": tag_b, "i": tag_i, "s": tag_s}))
+        if m.group(1) is not None:
+            base, kana = m.group(1), m.group(2)
+            inner_u = bool(re.search(r"</?(?:u|ins)\b", base, re.I))
+            inner_b = bool(re.search(r"</?(?:b|strong)\b", base, re.I))
+            inner_i = bool(re.search(r"</?(?:i|em)\b", base, re.I))
+            inner_s = bool(re.search(r"</?(?:s|del|strike)\b", base, re.I))
+            clean_b = re.sub(r"</?[a-zA-Z][^>]*>", "", base)
+            clean_k = re.sub(r"</?[a-zA-Z][^>]*>", "", kana)
+            tokens.append(("ruby", (clean_b, clean_k), {
+                "u": tag_u or inner_u,
+                "b": tag_b or inner_b,
+                "i": tag_i or inner_i,
+                "s": tag_s or inner_s,
+            }))
+        elif m.group(3) is not None:
+            raw_tag = m.group(3)
+            tag_name = m.group(4).lower()
+            is_close = raw_tag.startswith("</")
+            if tag_name in ("u", "ins"):
+                tag_u = False if is_close else not tag_u
+            elif tag_name in ("b", "strong"):
+                tag_b = False if is_close else not tag_b
+            elif tag_name in ("i", "em"):
+                tag_i = False if is_close else not tag_i
+            elif tag_name in ("s", "del", "strike"):
+                tag_s = False if is_close else not tag_s
+            else:
+                tokens.append(("text", raw_tag, {"u": tag_u, "b": tag_b, "i": tag_i, "s": tag_s}))
+        pos = m.end()
+    if pos < len(text):
+        seg = text[pos:]
+        if seg:
+            tokens.append(("text", seg, {"u": tag_u, "b": tag_b, "i": tag_i, "s": tag_s}))
+    return tokens
+
+
+def _wrun(text, bold=False, italic=False, underline=False, strike=False):
     r = OxmlElement("w:r")
+    if bold or italic or underline or strike:
+        rpr = OxmlElement("w:rPr")
+        if bold:
+            rpr.append(OxmlElement("w:b"))
+        if italic:
+            rpr.append(OxmlElement("w:i"))
+        if underline:
+            u = OxmlElement("w:u")
+            u.set(qn("w:val"), "single")
+            rpr.append(u)
+        if strike:
+            rpr.append(OxmlElement("w:strike"))
+        r.append(rpr)
     t = OxmlElement("w:t")
     t.set(qn("xml:space"), "preserve")
     t.text = text
@@ -1769,7 +1867,7 @@ def _wrun(text):
     return r
 
 
-def _add_ruby(p, base, kana):
+def _add_ruby(p, base, kana, bold=False, italic=False, underline=False, strike=False):
     ruby = OxmlElement("w:ruby")
     rpr = OxmlElement("w:rubyPr")
     for tag, val in (("w:rubyAlign", "center"), ("w:hps", "10"), ("w:hpsRaise", "18"),
@@ -1782,9 +1880,22 @@ def _add_ruby(p, base, kana):
     rt.append(_wrun(kana))
     ruby.append(rt)
     rb = OxmlElement("w:rubyBase")
-    rb.append(_wrun(base))
+    rb.append(_wrun(base, bold=bold, italic=italic, underline=underline, strike=strike))
     ruby.append(rb)
     holder = OxmlElement("w:r")  # Word đặt w:ruby bên trong một w:r
+    if underline or bold or italic or strike:
+        holder_rpr = OxmlElement("w:rPr")
+        if bold:
+            holder_rpr.append(OxmlElement("w:b"))
+        if italic:
+            holder_rpr.append(OxmlElement("w:i"))
+        if underline:
+            u = OxmlElement("w:u")
+            u.set(qn("w:val"), "single")
+            holder_rpr.append(u)
+        if strike:
+            holder_rpr.append(OxmlElement("w:strike"))
+        holder.append(holder_rpr)
     holder.append(ruby)
     p._p.append(holder)
 
@@ -1830,27 +1941,52 @@ def _auto_plain(kk, seg):
 
 
 def add_rich(p, text, bold=False, mode="ruby"):
-    """Thêm văn bản vào đoạn, đổi cú pháp {chữ|cách đọc} thành furigana.
+    """Thêm văn bản vào đoạn Word, đổi {chữ|cách đọc} thành furigana và áp dụng định dạng <u>, <b>, <i>, <s>.
     mode='ruby': chữ đọc phía trên (chuẩn Word); mode='paren': chữ(cách đọc) cùng dòng (dự phòng).
     Thêm '+auto' (vd 'ruby+auto') để tự thêm furigana cho chữ Hán chưa có cú pháp."""
+    if not text:
+        return
     auto = mode.endswith("+auto")
     mode = mode.split("+")[0]
     if auto:
         text = auto_ruby(text)
-    pos = 0
-    for m in RUBY_RE.finditer(text):
-        if m.start() > pos:
-            p.add_run(text[pos:m.start()]).bold = bold
-        if mode == "paren":
-            p.add_run(m.group(1)).bold = bold
-            small = p.add_run(f"({m.group(2)})")
-            small.font.size = Pt(8)
-            small.bold = bold
-        else:
-            _add_ruby(p, m.group(1), m.group(2))
-        pos = m.end()
-    if pos < len(text):
-        p.add_run(text[pos:]).bold = bold
+
+    for kind, val, fmt in parse_rich_segments(text):
+        eff_b = bold or fmt.get("b", False)
+        eff_i = fmt.get("i", False)
+        eff_u = fmt.get("u", False)
+        eff_s = fmt.get("s", False)
+
+        if kind == "text":
+            r = p.add_run(val)
+            if eff_b:
+                r.bold = True
+            if eff_i:
+                r.italic = True
+            if eff_u:
+                r.underline = True
+            if eff_s:
+                r.font.strike = True
+        elif kind == "ruby":
+            base, kana = val
+            if mode == "paren":
+                r1 = p.add_run(base)
+                if eff_b:
+                    r1.bold = True
+                if eff_i:
+                    r1.italic = True
+                if eff_u:
+                    r1.underline = True
+                if eff_s:
+                    r1.font.strike = True
+                small = p.add_run(f"({kana})")
+                small.font.size = Pt(8)
+                if eff_b:
+                    small.bold = True
+                if eff_i:
+                    small.italic = True
+            else:
+                _add_ruby(p, base, kana, bold=eff_b, italic=eff_i, underline=eff_u, strike=eff_s)
 
 
 def _set_borders(tbl):
@@ -3932,9 +4068,26 @@ RUBY_HTML = re.compile(r"\{([^{}|]+)\|([^{}]+)\}")
 
 
 def rich_html(text):
-    """Văn bản câu hỏi sang HTML: escape, furigana {chữ|cách đọc} thành <ruby>, xuống dòng thành <br>."""
-    out = RUBY_HTML.sub(lambda m: f"<ruby>{m.group(1)}<rt>{m.group(2)}</rt></ruby>", hesc(text))
-    return out.replace("\n", "<br>")
+    """Văn bản câu hỏi sang HTML: giữ các thẻ an toàn (u, b, i, s), furigana {chữ|cách đọc} thành <ruby>, xuống dòng thành <br>."""
+    if not text:
+        return ""
+    out = []
+    for kind, val, fmt in parse_rich_segments(text):
+        if kind == "ruby":
+            b, k = val
+            s = f"<ruby>{hesc(b)}<rt>{hesc(k)}</rt></ruby>"
+        else:
+            s = hesc(val)
+        if fmt.get("s"):
+            s = f"<s>{s}</s>"
+        if fmt.get("i"):
+            s = f"<i>{s}</i>"
+        if fmt.get("b"):
+            s = f"<b>{s}</b>"
+        if fmt.get("u"):
+            s = f"<u>{s}</u>"
+        out.append(s)
+    return "".join(out).replace("\n", "<br>")
 
 
 def opt_html(o, media):
