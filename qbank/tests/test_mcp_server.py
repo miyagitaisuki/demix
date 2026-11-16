@@ -361,3 +361,153 @@ def test_create_question_skips_check_on_old_app(monkeypatch):
     _create_fake(monkeypatch, "mới", check_error="không tìm thấy")
     err, res = call("create_question", BASE_Q)
     assert not err and any("build lại" in w for w in res["warnings"])
+
+
+def test_create_question_with_images_and_audio(monkeypatch, tmp_path):
+    img1 = tmp_path / "t1.png"
+    img2 = tmp_path / "t2.jpg"
+    img1.write_bytes(b"PNG")
+    img2.write_bytes(b"JPG")
+    seen = []
+
+    def fake_api(method, path, params=None, body=None, content_type="application/json"):
+        seen.append((method, path, params, body))
+        if path == "/api/check-candidates":
+            return {"results": [{"status": "mới"}]}
+        if path == "/api/tts":
+            return {"kind": "audio", "file": "a.mp3", "name": "a.mp3", "duration_s": 2.0}
+        if path == "/api/media":
+            n = params["name"]
+            return {"kind": "image", "file": f"h_{n}", "name": n}
+        return {"id": 10, "code": "X-10", "warnings": []}
+
+    monkeypatch.setattr(mcp_server, "api", fake_api)
+    err, res = call("create_question", {**BASE_Q, "audio_script": "[1] あ", "image_path": str(img1),
+                                        "image_paths": [str(img2)]})
+    assert not err and res["images"] == ["t1.png", "t2.jpg"] and res["audio"]["file"] == "a.mp3"
+    q_body = [b for m, p, _, b in seen if p == "/api/questions"][-1]
+    assert [x["kind"] for x in q_body["media"]] == ["audio", "image", "image"]
+
+    # Gắn ảnh vào đoạn văn khi thiếu passage -> báo lỗi trước khi upload
+    err, msg = call("create_question", {**BASE_Q, "image_path": str(img1), "image_target": "passage"})
+    assert err and "passage" in msg
+
+
+def test_attach_get_remove_image_and_update_question(monkeypatch, tmp_path):
+    img = tmp_path / "pic.png"
+    img.write_bytes(b"PNG")
+    img2 = tmp_path / "pic2.webp"
+    img2.write_bytes(b"WEBP")
+    state = {
+        "id": 7, "code": "X-7", "chapter_id": 1, "bloom": 1, "qtype": "TN", "content": "c",
+        "options": ["a", "b"], "answer": "A", "solution": "", "passage": "đoạn", "passage_id": 9,
+        "rubric": [], "points": 1, "clo": "", "tags": [], "status": "nhap", "word_limit": 0,
+        "transcript": "", "translation": "", "task": "",
+        "media": [{"kind": "audio", "file": "au.mp3", "name": "au.mp3"}],
+        "passage_media": [],
+    }
+    calls = []
+
+    def fake_api(method, path, params=None, body=None, content_type="application/json"):
+        calls.append((method, path, body))
+        if method == "GET" and path == "/api/questions/7":
+            return json.loads(json.dumps(state))
+        if method == "POST" and path == "/api/media":
+            n = params["name"]
+            return {"kind": "image", "file": f"h_{n}", "name": n}
+        if method == "PUT" and path == "/api/questions/7":
+            state["media"] = body["media"]
+            return {"ok": True}
+        if method == "PUT" and path == "/api/passages/9":
+            state["passage_media"] = body["media"]
+            return {"ok": True}
+        return {"ok": True}
+
+    monkeypatch.setattr(mcp_server, "api", fake_api)
+
+    # attach_image gắn thêm vào câu, giữ nguyên audio
+    err, res = call("attach_image", {"question_id": 7, "file_path": str(img)})
+    assert not err and res["file"] == "pic.png" and res["replaced"] == []
+    assert [m["name"] for m in state["media"]] == ["au.mp3", "pic.png"]
+
+    # get_question_image
+    err, res = call("get_question_image", {"question_id": 7})
+    assert not err and [x["name"] for x in res["question_images"]] == ["pic.png"] and res["passage_images"] == []
+
+    # update_question với dry_run=True không upload cũng không PUT
+    before = len(calls)
+    err, res = call("update_question", {"question_id": 7, "image_path": str(img2)})
+    assert not err and res["dry_run"] is True
+    assert res["changed"]["images"] == {"cũ": ["pic.png"], "mới": ["pic2.webp"]}
+    assert all(m == "GET" for m, _, _ in calls[before:])
+
+    # update_question với dry_run=False thay ảnh cũ, vẫn giữ audio
+    err, res = call("update_question", {"question_id": 7, "image_path": str(img2), "dry_run": False})
+    assert not err and res["dry_run"] is False
+    assert [m["name"] for m in state["media"]] == ["au.mp3", "pic2.webp"]
+
+    # remove_image chỉ xóa ảnh, giữ nguyên audio
+    err, res = call("remove_image", {"question_id": 7})
+    assert not err and res["removed"]["question"] == ["pic2.webp"]
+    assert [m["name"] for m in state["media"]] == ["au.mp3"]
+
+
+def test_create_exam_and_list_templates(monkeypatch, tmp_path):
+    calls = []
+
+    def fake_api(method, path, params=None, body=None, content_type="application/json"):
+        calls.append((method, path, params, body))
+        if path == "/api/templates":
+            return ["de_thi_chuan.docx", "de_trac_nghiem.docx", "kiem_tra_giua_ky.docx"]
+        if path == "/api/tree":
+            return {"courses": [{"id": 1, "name": "Tiếng Nhật 1", "code": "JP101", "exam_meta": {"so_tc": "3"}}],
+                    "textbooks": [], "chapters": []}
+        if path == "/api/questions":
+            return [
+                {"id": 1, "chapter_id": 10, "bloom": 1, "qtype": "TN", "task": "kanji-doc"},
+                {"id": 2, "chapter_id": 10, "bloom": 2, "qtype": "TN", "task": "np-chon"},
+                {"id": 3, "chapter_id": 11, "bloom": 1, "qtype": "TN", "task": "kanji-doc"},
+                {"id": 4, "chapter_id": 11, "bloom": 2, "qtype": "TN", "task": "np-chon"},
+            ]
+        if path == "/api/exam/preview":
+            return {"sections": [{"items": [{"id": 1, "code": "C1", "qtype": "TN", "bloom": 1, "content": "q1"},
+                                            {"id": 2, "code": "C2", "qtype": "TN", "bloom": 2, "content": "q2"},
+                                            {"id": 3, "code": "C3", "qtype": "TN", "bloom": 1, "content": "q3"}]}]}
+        return {"ok": True}
+
+    def fake_api_raw(method, path, body=None):
+        calls.append((method, path, None, body))
+        return b"PK-exam", {"Content-Disposition": 'attachment; filename="De_JP101.zip"',
+                           "X-Variants": "1", "X-Seed": "42", "X-Reused": "0"}
+
+    monkeypatch.setattr(mcp_server, "api", fake_api)
+    monkeypatch.setattr(mcp_server, "api_raw", fake_api_raw)
+
+    err, tpls = call("list_templates", {})
+    assert not err and "kiem_tra_giua_ky.docx" in tpls["templates"]
+
+    base_args = {"exam_name": "Kiểm tra giữa kỳ", "course": "Tiếng Nhật 1", "duration": 45,
+                 "num_questions": 3, "exam_type": "giua_ky", "exam_date": "2026-2027"}
+
+    # Mặc định dry_run=True: không xuất file, không gọi /api/export
+    err, res = call("create_exam", base_args)
+    assert not err and res["dry_run"] is True
+    assert res["exam_info"]["template"] == "kiem_tra_giua_ky.docx"
+    assert res["exam_info"]["duration_min"] == 45
+    assert not any(p == "/api/export" for _, p, _, _ in calls)
+
+    # Xuất thật cần confirm=True và out_dir
+    err, res = call("create_exam", {**base_args, "dry_run": False, "confirm": True, "out_dir": str(tmp_path)})
+    assert not err and res["dry_run"] is False and os.path.isfile(res["file"])
+    exp_body = [b for _, p, _, b in calls if p == "/api/export"][-1]
+    assert exp_body["template"] == "kiem_tra_giua_ky.docx"
+    assert exp_body["meta"]["ten_de"] == "Kiểm tra giữa kỳ"
+    assert exp_body["meta"]["ten_hp"] == "Tiếng Nhật 1"
+    assert exp_body["meta"]["ma_hp"] == "JP101"
+    assert exp_body["meta"]["thoi_gian"] == "45"
+    assert exp_body["meta"]["nam_hoc"] == "2026-2027"
+    assert sum(m["n"] for m in exp_body["sections"][0]["matrix"]) == 3
+
+    # Thiếu câu đã duyệt -> báo lỗi rõ
+    err, msg = call("create_exam", {**base_args, "num_questions": 10})
+    assert err and "4 câu đã duyệt" in msg

@@ -192,7 +192,7 @@ def test_no_delete_capability_besides_merge():
     for route in ("bulk-delete", "/api/trash/empty", "/api/usage/reset", "/api/restore\""):
         assert route not in src
     names = [t["name"] for t in mcp_server.TOOLS]
-    assert not [n for n in names if "delete" in n or n.startswith("remove_") and n != "remove_audio"]
+    assert not [n for n in names if "delete" in n or n.startswith("remove_") and n not in ("remove_audio", "remove_image")]
     users = [t["name"] for t in mcp_server.TOOLS if "tool_merge_duplicates" in str(t["handler"])]
     assert users == ["merge_duplicates"]
     assert src.count('"/api/duplicates/merge"') == 1  # chỉ một chỗ xóa câu

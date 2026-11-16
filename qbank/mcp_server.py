@@ -82,6 +82,7 @@ def tool_list_questions(args):
     items = [{"id": i.get("id"), "code": i["code"], "qtype": i["qtype"], "task": i.get("task", ""), "bloom": i["bloom"], "status": i["status"],
               "course": i.get("courses_all") or i.get("course"), "textbook": i.get("textbook"),
               "chapter": i.get("chapter_label"), "content": (i.get("content") or "")[:300],
+              "images": [m.get("name") for m in (i.get("media") or []) if _is_image(m)],
               "used_count": i.get("used_count", 0)} for i in r["items"]]
     return {"total": r["total"], "page": page, "per": per, "items": items}
 
@@ -159,7 +160,8 @@ def _auto_check(body, allow_similar):
 
 def tool_create_question(args):
     """Tạo một câu hỏi (mặc định trạng thái Nháp). Có audio_script thì nhờ textts đọc kịch bản thành mp3 rồi đính kèm:
-    audio_target="passage" gắn vào đoạn văn (dùng chung cho mọi câu của đoạn, cần có passage), "question" gắn riêng vào câu."""
+    audio_target="passage" gắn vào đoạn văn (dùng chung cho mọi câu của đoạn, cần có passage), "question" gắn riêng vào câu.
+    Có image_path / image_paths thì tải ảnh lên rồi đính kèm vào image_target ("question" hoặc "passage")."""
     body = {"chapter_id": _int(args.get("chapter_id"), "chapter_id"), "bloom": args.get("bloom", 1),
             "qtype": args.get("qtype", "TN"), "content": args.get("content", ""), "options": args.get("options") or [],
             "answer": args.get("answer", ""), "solution": args.get("solution", ""), "passage": args.get("passage", ""),
@@ -170,6 +172,16 @@ def tool_create_question(args):
         body["points"] = args["points"]
     if args.get("confirm_passage") is True:  # nhãn đoạn văn gần giống đoạn có sẵn: chỉ tạo đoạn mới khi người dùng đã xác nhận
         body["confirm_passage"] = True
+    img_paths = _collect_image_paths(args)
+    img_target = args.get("image_target", "question")
+    if img_paths:
+        if img_target not in ("question", "passage"):
+            raise ApiError('image_target phải là "question" hoặc "passage"')
+        if img_target == "passage" and not str(body["passage"]).strip():
+            raise ApiError("Gắn ảnh vào đoạn văn thì phải có passage")
+        img_raws = [(os.path.basename(p), _read_file(p, IMAGE_EXT, "File ảnh")) for p in img_paths]
+    else:
+        img_raws = []
     check_warnings = _auto_check(body, args.get("allow_similar") is True)
     script = str(args.get("audio_script") or "").strip()
     audio = None
@@ -183,11 +195,22 @@ def tool_create_question(args):
             raise ApiError("Gắn audio vào đoạn văn thì phải có passage")
         audio = api("POST", "/api/tts", body={"script": script, "engine": args.get("audio_engine") or "voicevox",
                                               "level": args.get("audio_level")})
-        body["passage_media" if target == "passage" else "media"] = [audio]
+        key = "passage_media" if target == "passage" else "media"
+        body.setdefault(key, []).append(audio)
+    uploaded_imgs = []
+    if img_raws:
+        key = "passage_media" if img_target == "passage" else "media"
+        for name, raw in img_raws:
+            up = api("POST", "/api/media", {"name": name}, body=raw, content_type="application/octet-stream")
+            item = {"kind": up["kind"], "file": up["file"], "name": up["name"]}
+            uploaded_imgs.append(item)
+            body.setdefault(key, []).append(item)
     r = api("POST", "/api/questions", body=body)
     out = {"ok": True, "id": r.get("id"), "code": r.get("code"), "warnings": r.get("warnings", []) + check_warnings}
     if audio:
         out["audio"] = {"file": audio.get("name"), "duration_s": audio.get("duration_s")}
+    if uploaded_imgs:
+        out["images"] = [m.get("name") for m in uploaded_imgs]
     return out
 
 
@@ -204,6 +227,7 @@ def tool_check_duplicates(args):
 
 
 AUDIO_EXT = (".mp3", ".wav", ".ogg", ".m4a")
+IMAGE_EXT = (".png", ".jpg", ".jpeg", ".gif", ".webp")
 QUESTION_FIELDS = ("chapter_id", "bloom", "qtype", "content", "options", "answer", "solution", "transcript", "translation", "passage",
                    "rubric", "points", "clo", "tags", "status", "word_limit", "task")
 
@@ -249,6 +273,25 @@ def tool_import_questions(args):
 
 def _is_audio(m):
     return (m or {}).get("kind") == "audio"
+
+
+def _is_image(m):
+    return (m or {}).get("kind") == "image"
+
+
+def _collect_image_paths(args):
+    """Gộp image_path (1 file) và image_paths (nhiều file) thành danh sách đường dẫn không rỗng (tối đa 4)."""
+    paths = []
+    if args.get("image_path") not in (None, ""):
+        paths.append(str(args["image_path"]).strip())
+    if args.get("image_paths") is not None:
+        raw = args["image_paths"]
+        if not isinstance(raw, list):
+            raise ApiError("image_paths phải là danh sách đường dẫn file ảnh")
+        paths.extend(str(p).strip() for p in raw if str(p or "").strip())
+    if len(paths) > 4:
+        raise ApiError("Mỗi câu tối đa 4 file ảnh đính kèm")
+    return paths
 
 
 def _put_media(q, target, media):
@@ -326,6 +369,64 @@ def tool_get_question_audio(args):
                        for m in (media or []) if _is_audio(m)]
     return {"question_id": qid, "code": q.get("code"), "question_audio": f(q.get("media")),
             "passage_audio": f(q.get("passage_media"))}
+
+
+def tool_attach_image(args):
+    """Gắn file ảnh có sẵn (png, jpg, jpeg, gif, webp) vào câu (target=question) hoặc đoạn văn của câu (target=passage).
+    Mặc định gắn thêm (replace=false) để câu có thể có nhiều ảnh (ví dụ 4 phương án ảnh); replace=true thì thay ảnh cũ cùng cấp.
+    Giữ nguyên mọi trường khác, file âm thanh và trạng thái câu."""
+    qid = _int(args.get("question_id"), "question_id")
+    target = args.get("target", "question")
+    if target not in ("question", "passage"):
+        raise ApiError('target phải là "question" hoặc "passage"')
+    replace = args.get("replace") is True
+    raw = _read_file(args.get("file_path"), IMAGE_EXT, "File ảnh")
+    q = api("GET", f"/api/questions/{qid}")
+    q.setdefault("id", qid)
+    if target == "passage" and not q.get("passage_id"):
+        raise ApiError("Câu này không có đoạn văn để gắn ảnh")
+    name = os.path.basename(str(args["file_path"]))
+    up = api("POST", "/api/media", {"name": name}, body=raw, content_type="application/octet-stream")
+    item = {"kind": up["kind"], "file": up["file"], "name": up["name"]}
+    old = (q.get("passage_media") if target == "passage" else q.get("media")) or []
+    removed = [m.get("name") or m.get("file") for m in old if replace and _is_image(m)]
+    _put_media(q, target, [m for m in old if not (replace and _is_image(m))] + [item])
+    return {"ok": True, "question_id": qid, "code": q.get("code"), "target": target, "file": name, "replaced": removed}
+
+
+def tool_remove_image(args):
+    """Xóa ảnh khỏi câu (target=question), khỏi đoạn văn (target=passage; đoạn dùng chung nên MỌI câu của đoạn mất ảnh) hoặc cả hai.
+    Chọn ảnh bằng `file` (tên hiển thị hoặc tên lưu trong get_question_image); bỏ trống thì xóa mọi ảnh ở cấp đó.
+    Chỉ gỡ khỏi dữ liệu câu/đoạn; âm thanh và các trường khác giữ nguyên. Đặt dry_run=true để chỉ xem sẽ xóa gì."""
+    qid = _int(args.get("question_id"), "question_id")
+    target = args.get("target", "question")
+    if target not in ("question", "passage", "both"):
+        raise ApiError('target phải là "question", "passage" hoặc "both"')
+    wanted = str(args.get("file") or "").strip()
+    dry = args.get("dry_run") is True
+    q = api("GET", f"/api/questions/{qid}")
+    q.setdefault("id", qid)
+    removed = {}
+    for level in (("question", "passage") if target == "both" else (target,)):
+        old = (q.get("passage_media") if level == "passage" else q.get("media")) or []
+        drop = [m for m in old if _is_image(m) and (not wanted or wanted in (m.get("name"), m.get("file")))]
+        if not drop:
+            continue
+        removed[level] = [m.get("name") or m.get("file") for m in drop]
+        if not dry:
+            _put_media(q, level, [m for m in old if m not in drop])
+    if wanted and not removed:
+        raise ApiError(f"Không thấy ảnh {wanted!r} ở {target}. Xem các ảnh hiện có bằng get_question_image.")
+    return {"ok": True, "dry_run": dry, "question_id": qid, "code": q.get("code"), "removed": removed}
+
+
+def tool_get_question_image(args):
+    """Liệt kê ảnh hiện có của một câu: ở câu và ở đoạn văn (để chọn ảnh cần xóa/thay)."""
+    qid = _int(args.get("question_id"), "question_id")
+    q = api("GET", f"/api/questions/{qid}")
+    f = lambda media: [{"name": m.get("name"), "file": m.get("file")} for m in (media or []) if _is_image(m)]
+    return {"question_id": qid, "code": q.get("code"), "question_images": f(q.get("media")),
+            "passage_images": f(q.get("passage_media"))}
 
 
 # ---------------------------------------------------------------- công cụ rà soát, sửa, ra đề, sao lưu
@@ -421,20 +522,47 @@ def tool_difficulty_report(args):
 
 # --- sửa và duyệt
 def tool_update_question(args):
-    """Sửa một câu: chỉ các trường được nêu thay đổi; trường khác, file đính kèm và trạng thái giữ nguyên.
+    """Sửa một câu: chỉ các trường được nêu thay đổi; trường khác, file âm thanh và trạng thái giữ nguyên.
+    Có thể kèm image_path / image_paths để cập nhật ảnh ở câu hoặc đoạn văn (image_target).
     Mặc định dry_run: chỉ cho xem thay đổi. Không đổi trạng thái (dùng set_status)."""
     qid = _int(args.get("question_id"), "question_id")
     changes = {k: args[k] for k in EDITABLE_FIELDS if k in args}
-    if not changes:
-        raise ApiError("Chưa nêu trường nào cần sửa: " + ", ".join(EDITABLE_FIELDS))
+    img_paths = _collect_image_paths(args)
+    if not changes and not img_paths:
+        raise ApiError("Chưa nêu trường nào cần sửa: " + ", ".join(EDITABLE_FIELDS + ("image_path", "image_paths")))
+    img_target = args.get("image_target", "question")
+    if img_paths and img_target not in ("question", "passage"):
+        raise ApiError('image_target phải là "question" hoặc "passage"')
+    img_raws = [(os.path.basename(p), _read_file(p, IMAGE_EXT, "File ảnh")) for p in img_paths]
     q = api("GET", f"/api/questions/{qid}")
+    q.setdefault("id", qid)
+    if img_raws and img_target == "passage" and not q.get("passage_id") and not str(changes.get("passage", "")).strip():
+        raise ApiError("Câu này không có đoạn văn để gắn ảnh")
     diff = {k: {"cũ": q.get(k), "mới": v} for k, v in changes.items() if q.get(k) != v}
+    old_media = (q.get("passage_media") if img_target == "passage" else q.get("media")) or []
+    replace_imgs = args.get("replace_images", True) is not False
+    if img_raws:
+        old_names = [m.get("name") or m.get("file") for m in old_media if _is_image(m)]
+        new_names = ([] if replace_imgs else list(old_names)) + [name for name, _ in img_raws]
+        diff["passage_images" if img_target == "passage" else "images"] = {"cũ": old_names, "mới": new_names}
     if diff and _writes(args):
-        body = {k: q[k] for k in QUESTION_FIELDS if k in q}
-        body.update(changes)
-        body["media"] = q.get("media") or []
-        body["confirm_passage"] = args.get("confirm_passage") is True
-        api("PUT", f"/api/questions/{qid}", body=body)
+        new_media = None
+        if img_raws:
+            uploaded = []
+            for name, raw in img_raws:
+                up = api("POST", "/api/media", {"name": name}, body=raw, content_type="application/octet-stream")
+                uploaded.append({"kind": up["kind"], "file": up["file"], "name": up["name"]})
+            new_media = [m for m in old_media if not (replace_imgs and _is_image(m))] + uploaded
+        if changes or (new_media is not None and img_target == "question"):
+            body = {k: q[k] for k in QUESTION_FIELDS if k in q}
+            body.update(changes)
+            body["media"] = new_media if (new_media is not None and img_target == "question") else (q.get("media") or [])
+            body["confirm_passage"] = args.get("confirm_passage") is True
+            if new_media is not None and img_target == "passage":
+                body["passage_media"] = new_media
+            api("PUT", f"/api/questions/{qid}", body=body)
+        elif new_media is not None and img_target == "passage":
+            _put_media(q, "passage", new_media)
     return {"ok": True, "dry_run": not _writes(args), "question_id": qid, "code": q.get("code"), "changed": diff}
 
 
@@ -529,6 +657,177 @@ def tool_export_exam(args):
         f.write(data)
     return {"ok": True, "dry_run": False, "file": path, "bytes": len(data), "variants": headers.get("X-Variants"),
             "seed": headers.get("X-Seed"), "reused_questions": headers.get("X-Reused")}
+
+
+EXAM_TYPE_ALIASES = {
+    "chuan": "de_thi_chuan.docx", "de_thi": "de_thi_chuan.docx", "de_thi_chuan": "de_thi_chuan.docx",
+    "cuoi_ky": "de_thi_chuan.docx", "thi": "de_thi_chuan.docx",
+    "trac_nghiem": "de_trac_nghiem.docx", "de_trac_nghiem": "de_trac_nghiem.docx", "tn": "de_trac_nghiem.docx",
+    "giua_ky": "kiem_tra_giua_ky.docx", "kiem_tra_giua_ky": "kiem_tra_giua_ky.docx", "gk": "kiem_tra_giua_ky.docx",
+    "nhanh": "kiem_tra_nhanh.docx", "kiem_tra_nhanh": "kiem_tra_nhanh.docx", "15_phut": "kiem_tra_nhanh.docx",
+    "bai_tap": "bai_tap_ve_nha.docx", "bai_tap_ve_nha": "bai_tap_ve_nha.docx", "btvn": "bai_tap_ve_nha.docx",
+    "ve_nha": "bai_tap_ve_nha.docx", "gon": "mau_gon.docx", "mau_gon": "mau_gon.docx", "mau_chuan": "mau_chuan.docx",
+}
+
+
+def tool_list_templates(args):
+    """Danh sách file mẫu đề Word (.docx) đang có trong thư mục templates của app."""
+    return {"templates": api("GET", "/api/templates")}
+
+
+def _resolve_course(course_arg, tree):
+    """Tìm học phần theo id, mã (code) hoặc tên (không phân biệt hoa thường)."""
+    courses = tree.get("courses") or []
+    if not courses:
+        raise ApiError("Ngân hàng chưa có học phần nào")
+    if isinstance(course_arg, int) or (isinstance(course_arg, str) and course_arg.strip().isdigit()):
+        cid = int(course_arg)
+        for c in courses:
+            if c["id"] == cid:
+                return c
+        raise ApiError(f"Không tìm thấy học phần id={cid}")
+    key = str(course_arg or "").strip().lower()
+    if not key:
+        raise ApiError("Thiếu tên hoặc mã học phần (course)")
+    exact = [c for c in courses if key in (str(c.get("name", "")).lower(), str(c.get("code", "")).lower())]
+    if len(exact) == 1:
+        return exact[0]
+    partial = exact or [c for c in courses if key in str(c.get("name", "")).lower() or key in str(c.get("code", "")).lower()]
+    if len(partial) == 1:
+        return partial[0]
+    if len(partial) > 1:
+        names = ", ".join(f"{c['name']} ({c.get('code') or c['id']})" for c in partial[:10])
+        raise ApiError(f"Có nhiều học phần khớp {course_arg!r}: {names}. Hãy nêu rõ hơn.")
+    names = ", ".join(f"{c['name']} ({c.get('code') or c['id']})" for c in courses[:15])
+    raise ApiError(f"Không tìm thấy học phần {course_arg!r}. Hiện có: {names}")
+
+
+def _resolve_template(exam_type):
+    """Ánh xạ loại đề mong muốn sang file mẫu .docx hợp lệ trong app."""
+    raw = str(exam_type or "chuan").strip()
+    norm = re.sub(r"[\s-]+", "_", raw.lower())
+    tpl = EXAM_TYPE_ALIASES.get(norm)
+    if not tpl:
+        tpl = raw if raw.lower().endswith(".docx") else f"{raw}.docx"
+    available = api("GET", "/api/templates")
+    if available and tpl not in available:
+        raise ApiError(f"Không có mẫu đề {tpl!r}. Các mẫu hiện có: {', '.join(available)}")
+    return tpl, norm in ("trac_nghiem", "de_trac_nghiem", "tn")
+
+
+def _allocate_matrix(candidates, num_questions):
+    """Phân bổ đều num_questions vào các cặp (chapter_id, bloom) theo số câu đã duyệt hiện có."""
+    buckets = {}
+    for q in candidates:
+        key = (int(q["chapter_id"]), int(q["bloom"]))
+        buckets[key] = buckets.get(key, 0) + 1
+    total_avail = sum(buckets.values())
+    if total_avail < num_questions:
+        raise ApiError(f"Ngân hàng chỉ có {total_avail} câu đã duyệt khớp điều kiện (cần {num_questions} câu).")
+    keys = sorted(buckets)
+    picked = {k: 0 for k in keys}
+    remaining = num_questions
+    while remaining > 0:
+        progressed = False
+        for k in keys:
+            if remaining == 0:
+                break
+            if picked[k] < buckets[k]:
+                picked[k] += 1
+                remaining -= 1
+                progressed = True
+        if not progressed:
+            break
+    return [{"chapter_id": cid, "bloom": bloom, "n": n} for (cid, bloom), n in sorted(picked.items()) if n > 0]
+
+
+def tool_create_exam(args):
+    """Tạo đề thi nhanh từ QBank chỉ với: tên bài thi, học phần, thời gian làm bài, số câu và loại đề mong muốn.
+    Tự động tìm học phần, trích đều các câu đã duyệt theo chương và mức Bloom, điền thông tin đầu đề và xuất file zip.
+    Mặc định dry_run=true (chỉ xem trước danh sách câu được trích); đặt dry_run=false và confirm=true kèm out_dir để xuất file thật."""
+    exam_name = str(args.get("exam_name") or "").strip()
+    if not exam_name:
+        raise ApiError("Thiếu tên bài thi (exam_name)")
+    duration = _int(args.get("duration"), "duration")
+    if duration <= 0:
+        raise ApiError("Thời gian làm bài (duration) phải là số phút dương")
+    num_questions = _int(args.get("num_questions"), "num_questions")
+    if num_questions <= 0:
+        raise ApiError("Số câu mong muốn (num_questions) phải là số nguyên dương")
+
+    tree = api("GET", "/api/tree")
+    course = _resolve_course(args.get("course") if args.get("course") is not None else args.get("course_id"), tree)
+    template, is_tn_preset = _resolve_template(args.get("exam_type") or args.get("template"))
+
+    qtype = args.get("qtype") or ("TN" if is_tn_preset else None)
+    if qtype and qtype not in ("TN", "DS", "DT", "TL"):
+        raise ApiError("qtype phải là TN, DS, DT hoặc TL")
+    tasks = args.get("tasks")
+    if tasks is not None and not isinstance(tasks, list):
+        raise ApiError("tasks phải là danh sách mã dạng bài")
+
+    params = {"course_id": course["id"], "status": "da_duyet"}
+    if qtype:
+        params["qtype"] = qtype
+    candidates = api("GET", "/api/questions", params)
+    if isinstance(candidates, dict):
+        candidates = candidates.get("items", [])
+
+    chapter_ids = args.get("chapter_ids")
+    if chapter_ids is not None:
+        if not isinstance(chapter_ids, list) or not chapter_ids:
+            raise ApiError("chapter_ids phải là danh sách ID chương không rỗng")
+        allowed_ch = {_int(c, "chapter_ids") for c in chapter_ids}
+        candidates = [q for q in candidates if int(q.get("chapter_id", 0)) in allowed_ch]
+    if tasks:
+        task_set = set(tasks)
+        candidates = [q for q in candidates if (q.get("task") or "") in task_set]
+
+    matrix = _allocate_matrix(candidates, num_questions)
+    section = {"title": "", "qtype": qtype, "shuffle": args.get("shuffle", True) is not False, "matrix": matrix}
+    if tasks:
+        section["tasks"] = tasks
+    sections = [section]
+
+    course_meta = dict(course.get("exam_meta") or {})
+    meta = {
+        "ten_de": exam_name,
+        "ten_hp": course_meta.get("ten_hp") or course["name"],
+        "ma_hp": course_meta.get("ma_hp") or course.get("code", ""),
+        "so_tc": course_meta.get("so_tc", ""),
+        "khoa_hoc": course_meta.get("khoa_hoc", ""),
+        "nam_hoc": str(args.get("exam_date") or args.get("nam_hoc") or course_meta.get("nam_hoc") or "").strip(),
+        "hoc_ky": str(args.get("hoc_ky") or course_meta.get("hoc_ky") or "").strip(),
+        "thoi_gian": str(duration),
+    }
+
+    export_args = {
+        "sections": sections,
+        "template": template,
+        "meta": meta,
+        "variants": max(1, int(args.get("variants") or 1)),
+        "answer_key": args.get("answer_key", True) is not False,
+        "shuffle": args.get("shuffle", True) is not False,
+        "dry_run": args.get("dry_run", True),
+        "confirm": args.get("confirm", False),
+    }
+    if args.get("furigana"):
+        export_args["furigana"] = args["furigana"]
+    if args.get("out_dir"):
+        export_args["out_dir"] = args["out_dir"]
+    if "record_usage" in args:
+        export_args["record_usage"] = args["record_usage"]
+
+    res = tool_export_exam(export_args)
+    res["exam_info"] = {
+        "exam_name": exam_name,
+        "course": course["name"],
+        "duration_min": duration,
+        "num_questions": num_questions,
+        "template": template,
+        "qtype": qtype or "tất cả",
+    }
+    return res
 
 
 # --- sao lưu và khôi phục
@@ -683,6 +982,10 @@ TOOLS = [
          "audio_target": {"type": "string", "enum": ["question", "passage"], "default": "question"},
          "audio_engine": {"type": "string", "description": "voicevox (mặc định), aivis, edge… theo textts"},
          "audio_level": {"type": "string", "enum": ["N5", "N4", "N3", "N2", "N1"]},
+         "image_path": {"type": "string", "description": "Đường dẫn 1 file ảnh (png, jpg, jpeg, gif, webp; tối đa 5 MB) trên máy chạy app"},
+         "image_paths": {"type": "array", "items": {"type": "string"}, "maxItems": 4,
+                         "description": "Danh sách đường dẫn nhiều file ảnh (tối đa 4) trên máy chạy app"},
+         "image_target": {"type": "string", "enum": ["question", "passage"], "default": "question"},
          "allow_similar": {"type": "boolean", "default": False, "description": "Chỉ đặt true khi người dùng đồng ý tạo câu dù gần giống câu đã có"},
          "confirm_passage": {"type": "boolean", "default": False, "description": "Đặt true khi app báo nhãn/đoạn văn gần giống đoạn có sẵn trong chương và người dùng đồng ý tạo đoạn mới (hoặc dùng đúng chữ của đoạn có sẵn để dùng chung)"}},
          ["chapter_id", "content"])},
@@ -724,6 +1027,24 @@ TOOLS = [
      "inputSchema": _obj({"question_id": {"type": "integer"},
                           "target": {"type": "string", "enum": ["question", "passage", "both"], "default": "question"},
                           "file": {"type": "string"}, "dry_run": {"type": "boolean", "default": False}}, ["question_id"])},
+    {"name": "attach_image", "handler": tool_attach_image,
+     "description": "Gắn file ảnh có sẵn (png, jpg, jpeg, gif, webp; tối đa 5 MB) vào một câu hoặc đoạn văn của câu. "
+                    "Mặc định gắn thêm (replace=false) để có thể đính kèm nhiều ảnh; đặt replace=true để thay ảnh cũ cùng cấp. "
+                    "Giữ nguyên file âm thanh và trạng thái câu.",
+     "inputSchema": _obj({"question_id": {"type": "integer"},
+                          "file_path": {"type": "string", "description": "đường dẫn file ảnh trên máy chạy app"},
+                          "target": {"type": "string", "enum": ["question", "passage"], "default": "question"},
+                          "replace": {"type": "boolean", "default": False}}, ["question_id", "file_path"])},
+    {"name": "get_question_image", "handler": tool_get_question_image,
+     "description": "Liệt kê ảnh hiện có của một câu (ở câu và ở đoạn văn) để chọn ảnh cần xóa hoặc thay.",
+     "inputSchema": _obj({"question_id": {"type": "integer"}}, ["question_id"])},
+    {"name": "remove_image", "handler": tool_remove_image,
+     "description": "Xóa ảnh khỏi dữ liệu câu hoặc đoạn văn. Chọn ảnh bằng `file` (xem get_question_image) hoặc bỏ trống để xóa mọi "
+                    "ảnh ở cấp đó. target=passage ảnh hưởng MỌI câu dùng chung đoạn văn đó. Nên chạy dry_run=true trước và chỉ xóa "
+                    "thật sau khi người dùng đồng ý.",
+     "inputSchema": _obj({"question_id": {"type": "integer"},
+                          "target": {"type": "string", "enum": ["question", "passage", "both"], "default": "question"},
+                          "file": {"type": "string"}, "dry_run": {"type": "boolean", "default": False}}, ["question_id"])},
     # ---- rà soát (chỉ đọc)
     {"name": "bank_stats", "handler": tool_bank_stats,
      "description": "CHỈ ĐỌC. Thống kê ngân hàng: tổng số câu, theo dạng, và theo chương (số câu theo mức Bloom).",
@@ -739,7 +1060,8 @@ TOOLS = [
      "inputSchema": _obj({})},
     # ---- sửa và duyệt
     {"name": "update_question", "handler": tool_update_question,
-     "description": "Sửa một câu: chỉ các trường được nêu thay đổi, trường khác/file đính kèm/trạng thái giữ nguyên. Mặc định dry_run=true "
+     "description": "Sửa một câu: chỉ các trường được nêu thay đổi, trường khác/file âm thanh/trạng thái giữ nguyên. "
+                    "Có thể truyền image_path / image_paths để cập nhật ảnh. Mặc định dry_run=true "
                     "(chỉ cho xem thay đổi cũ/mới); dry_run=false mới ghi. KHÔNG đổi trạng thái (dùng set_status).",
      "inputSchema": _obj({"question_id": {"type": "integer"}, "content": {"type": "string"},
                           "options": {"type": "array", "items": {"type": "string"}}, "answer": {"type": "string"},
@@ -749,7 +1071,14 @@ TOOLS = [
                           "tags": {"type": "string"}, "points": {"type": "number"}, "word_limit": {"type": "integer"},
                           "task": {"type": "string", "description": "mã dạng bài (list_tasks)"},
                           "transcript": {"type": "string"}, "translation": {"type": "string"},
-                          "rubric": {"type": "array", "items": {}}, "confirm_passage": {"type": "boolean"},
+                          "rubric": {"type": "array", "items": {}},
+                          "image_path": {"type": "string", "description": "Đường dẫn 1 file ảnh (png, jpg, jpeg, gif, webp) trên máy chạy app"},
+                          "image_paths": {"type": "array", "items": {"type": "string"}, "maxItems": 4,
+                                          "description": "Danh sách đường dẫn nhiều file ảnh (tối đa 4)"},
+                          "image_target": {"type": "string", "enum": ["question", "passage"], "default": "question"},
+                          "replace_images": {"type": "boolean", "default": True,
+                                             "description": "True (mặc định): thay ảnh cũ cùng cấp; False: gắn thêm vào ảnh đang có"},
+                          "confirm_passage": {"type": "boolean"},
                           "dry_run": {"type": "boolean", "default": True}}, ["question_id"])},
     {"name": "set_status", "handler": tool_set_status,
      "description": "Đổi trạng thái hàng loạt (nhap, da_duyet, ngung; tối đa 200 câu). Chuyển sang da_duyet CHỈ khi người dùng đã bảo duyệt "
@@ -774,6 +1103,34 @@ TOOLS = [
                     "Mặc định dry_run=true: chỉ báo số câu chưa phân loại.",
      "inputSchema": _obj({"all": {"type": "boolean", "default": False}, "dry_run": {"type": "boolean", "default": True}})},
     # ---- ra đề và xuất đề
+    {"name": "list_templates", "handler": tool_list_templates,
+     "description": "CHỈ ĐỌC. Liệt kê các mẫu đề Word (.docx) hiện có trong app (de_thi_chuan.docx, de_trac_nghiem.docx, kiem_tra_giua_ky.docx, ...).",
+     "inputSchema": _obj({})},
+    {"name": "create_exam", "handler": tool_create_exam,
+     "description": "Tạo đề thi nhanh từ QBank chỉ với tên bài thi, học phần, thời gian làm bài (phút), số câu mong muốn và loại đề. "
+                    "Tự động tìm học phần, lọc câu đã duyệt, phân bổ đều theo chương/mức Bloom và xuất file zip (.docx + đáp án). "
+                    "Mặc định dry_run=true (chỉ xem trước các câu sẽ trích); xuất thật cần dry_run=false, confirm=true và out_dir.",
+     "inputSchema": _obj({
+         "exam_name": {"type": "string", "description": "Tên bài thi (ví dụ: Kiểm tra giữa kỳ Tiếng Nhật 1)"},
+         "course": {"type": "string", "description": "Tên học phần, mã học phần hoặc ID học phần"},
+         "duration": {"type": "integer", "minimum": 1, "description": "Thời gian làm bài (phút)"},
+         "num_questions": {"type": "integer", "minimum": 1, "description": "Tổng số câu hỏi mong muốn"},
+         "exam_type": {"type": "string", "default": "chuan",
+                       "description": "Loại đề: chuan (đề thi chuẩn), trac_nghiem, giua_ky, nhanh (15 phút), bai_tap (BTVN), gon, hoặc tên file .docx"},
+         "qtype": {"type": "string", "enum": ["TN", "DS", "DT", "TL"], "description": "Lọc hình thức câu (tùy chọn)"},
+         "tasks": {"type": "array", "items": {"type": "string"}, "description": "Lọc theo mã dạng bài (tùy chọn)"},
+         "chapter_ids": {"type": "array", "items": {"type": "integer"}, "description": "Giới hạn các chương được trích (tùy chọn)"},
+         "variants": {"type": "integer", "minimum": 1, "default": 1, "description": "Số mã đề"},
+         "shuffle": {"type": "boolean", "default": True},
+         "answer_key": {"type": "boolean", "default": True},
+         "furigana": {"type": "string", "enum": ["ruby", "paren", "ruby_auto", "paren_auto"]},
+         "exam_date": {"type": "string", "description": "Thời gian/kỳ thi hoặc năm học hiển thị trên đầu đề (tùy chọn)"},
+         "hoc_ky": {"type": "string", "description": "Học kỳ (tùy chọn)"},
+         "record_usage": {"type": "boolean"},
+         "out_dir": {"type": "string", "description": "Thư mục lưu file zip (bắt buộc khi dry_run=false)"},
+         "dry_run": {"type": "boolean", "default": True},
+         "confirm": {"type": "boolean", "default": False},
+     }, ["exam_name", "course", "duration", "num_questions"])},
     {"name": "preview_exam", "handler": tool_preview_exam,
      "description": "CHỈ ĐỌC. Xem trước các câu sẽ được chọn cho đề theo cấu trúc sections (matrix chương x mức Bloom x số câu, passages; "
                     "mỗi phần lọc được theo qtype và tasks = danh sách mã dạng bài, '' = câu chưa phân loại). "

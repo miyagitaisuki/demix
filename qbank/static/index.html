@@ -201,6 +201,8 @@
   .st-nhap { background:#fef3c7; color:#92400e; border-color:#fde68a; }
   .st-da_duyet { background:#dcfce7; color:#166534; border-color:#bbf7d0; }
   .st-ngung { background:#f1f5f9; color:#475569; border-color:#e2e8f0; }
+  .btn-approve { display:inline-flex; align-items:center; gap:4px; margin-top:4px; padding:2px 8px; border-radius:999px; font-size:11px; font-weight:600; background:#dcfce7; color:#166534; border:1px solid #86efac; cursor:pointer; }
+  .btn-approve:hover { background:#bbf7d0; border-color:#4ade80; }
   .qt { display:inline-block; padding:1px 7px; border-radius:6px; background:#f1f5f9; color:#334155; font:600 11px ui-monospace,SFMono-Regular,Menlo,monospace; }
   .ib { border:0; background:none; padding:6px; border-radius:6px; color:#64748b; }
   .ib:hover { background:#f1f5f9; color:var(--b); }
@@ -925,6 +927,14 @@ async function setStatus(status) {
     clearSel(); loadQuestions();
   } catch (e) { toast(e.message, true); }
 }
+async function quickApprove(id) {
+  try {
+    await postJson("/api/questions/status", { ids: [id], status: "da_duyet" });
+    SEL.delete(id);
+    toast("Đã duyệt câu hỏi.");
+    loadQuestions(QPAGE);
+  } catch (e) { toast(e.message, true); }
+}
 // xuất Moodle XML: các câu đã chọn; không chọn câu nào thì xuất mọi câu đã duyệt
 async function exportMoodle() {
   try {
@@ -1015,6 +1025,9 @@ function qRowHtml(q) {
   const chap = `${esc(q.chapter_code)}${q.chapter_title ? " - " + esc(q.chapter_title) : ""}`;
   const tags = q.tags && q.tags.length ? `<div class="sub">🏷 ${esc(q.tags.join(", "))}</div>` : "";
   const used = q.used_count ? `Đã dùng ${q.used_count} lần` : "Chưa dùng";
+  const approveBtn = q.status === "nhap"
+    ? `<div><button class="btn-approve" title="Duyệt nhanh câu này" onclick="quickApprove(${q.id})"><i class="fa-solid fa-check"></i> Duyệt</button></div>`
+    : "";
   return `<tr>
     <td class="ck"><input type="checkbox" class="qsel" value="${q.id}" ${SEL.has(q.id) ? "checked" : ""} onchange="toggleSel(${q.id}, this.checked)"></td>
     <td><div class="code">${esc(q.code)}</div></td>
@@ -1023,7 +1036,7 @@ function qRowHtml(q) {
     <td>${q.clo ? `<span class="badge clo">${esc(q.clo)}</span>` : `<span class="sub">—</span>`}</td>
     <td><span class="qt">${q.qtype}</span>${q.task ? `<div class="sub" style="margin-top:4px">${esc(taskShort(q.task))}</div>` : `<div class="sub warn" style="margin-top:4px">Chưa phân loại</div>`}</td>
     <td><div class="stem">${renderRich(q.content)}</div>${mediaHtml(q.media)}${opts}${ans}</td>
-    <td>${statusBadge(q.status)}<div class="sub" style="margin-top:4px">${q.points != null ? q.points + " điểm · " : ""}${used}</div></td>
+    <td>${statusBadge(q.status)}${approveBtn}<div class="sub" style="margin-top:4px">${q.points != null ? q.points + " điểm · " : ""}${used}</div></td>
     <td class="acts"><button class="ib" title="Sửa" onclick="editQ(${q.id})"><i class="fa-solid fa-pen-to-square"></i></button><button class="ib del" title="Xóa" onclick="delQ(${q.id})"><i class="fa-solid fa-trash-can"></i></button></td>
   </tr>`;
 }
