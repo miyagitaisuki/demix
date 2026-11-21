@@ -273,7 +273,11 @@
   .upd-btn { margin-left:auto; margin-right:8px; display:inline-flex; align-items:center; gap:6px; border:1px solid var(--line); background:#fff; color:#334155; border-radius:6px; padding:4px 10px; font-size:13px; cursor:pointer; }
   .upd-btn:hover { border-color:#94a3b8; }
   .upd-btn.has-update { background:#2563eb; border-color:#2563eb; color:#fff; font-weight:600; }
-  header.topbar nav.ribbon-tabs { margin-left:24px; overflow-x:auto; }
+  header.topbar nav.ribbon-tabs { margin-left:24px; overflow-x:auto; scrollbar-width:none; }
+  header.topbar nav.ribbon-tabs button { flex:none; white-space:nowrap; }
+  .upd-btn { flex:none; white-space:nowrap; }
+  :focus-visible { outline:2px solid var(--b); outline-offset:2px; }
+  @media (max-width:640px) { header.topbar nav.ribbon-tabs { margin-left:8px; } .bn { display:none; } .upd-btn span { display:none; } .rbar-top { padding:0 8px; } }
   .rcollapse { margin-left:auto; border:0; background:none; color:var(--mut); padding:6px 9px; flex:none; }
   .rcollapse:hover { color:var(--b); background:#eff6ff; }
   .rcollapse i { transition:transform .15s; }
